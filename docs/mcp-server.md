@@ -64,7 +64,7 @@ Nada nesta seção escreve.
 | `list_runs` | Execuções mais recentes, filtrando por status ou por agent. |
 | `get_run` | Uma execução com os passos e o spec da versão que ela executou. |
 | `list_findings` | Achados de uma execução, vindos da tabela ou da saída do passo que os produziu. |
-| `get_metrics` | Métricas por versão de agent e o gasto diário registrado numa janela. |
+| `get_metrics` | Métricas por versão de agent e o gasto diário registrado numa janela. Só lê: quem recalcula é `locum metrics` na linha de comando. |
 | `list_mcp_servers` | Servidores que o Locum consome como cliente, com transporte, escopo e se estão expostos ao executor. O segredo mora no keychain e nunca passa por aqui: sai só o nome da credencial. |
 | `list_providers` | Provedores de modelo desta máquina, a tabela de substituição e, se um modelo for informado, onde ele cairia. |
 | `get_machine_profile` | Retrato da máquina: identidade, banco, provedores, substituições e servidores cadastrados. |

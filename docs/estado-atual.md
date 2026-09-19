@@ -27,7 +27,7 @@ executor que a interface vai usar.
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
-| métricas por versão de agent | gabarito coletado em `finding_outcomes`, agregação por versão não começou |
+| métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador com eventos de energia | não começou |
 | casca Electron e interface | não começou |
 
@@ -61,6 +61,7 @@ npm run dev poll 'time/.*'
 npm run dev inbox
 npm run dev runs
 npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
+npm run dev metrics                   # recalcula e imprime precisão por versão
 npm run dev rerun <run-id> audit
 npm run dev providers
 npm run dev mcp

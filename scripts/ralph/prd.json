@@ -153,7 +153,7 @@
       "description": "Agregar agent_metrics a partir de finding_outcomes, guardando o conjunto de skills junto da versao.",
       "done_when": "cli.ts metrics imprime precisao por versao.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts metrics",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

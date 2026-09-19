@@ -5,6 +5,7 @@ import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
 import { executionService } from "./services/execution-service.js";
 import { machineId } from "./services/machine-service.js";
+import { metricsService, type VersionMetrics } from "./services/metrics-service.js";
 import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { reconcileService } from "./services/reconcile-service.js";
@@ -128,6 +129,46 @@ async function reconcile(runId: string, force: boolean): Promise<void> {
   console.log(`  ${"nao visto pelo agent".padEnd(20)} ${report.unmatchedSignals}`);
 }
 
+/**
+ * Recalcula as janelas a partir do gabarito e imprime precisao por versao.
+ *
+ * Agrega antes de imprimir porque a tabela e derivada: sem recalcular, o
+ * numero na tela seria o da ultima vez que alguem rodou isto.
+ */
+async function metrics(agentId?: string): Promise<void> {
+  const versions = await metricsService.aggregate(agentId ? { agentId } : {});
+  if (versions.length === 0) {
+    console.log("nenhuma janela medida: rode reconcile para gravar os desfechos");
+  }
+  for (const v of versions) console.log(formatVersion(v));
+
+  const usage = await metricsService.usage(agentId ? { agentId, days: 7 } : { days: 7 });
+  if (usage.length > 0) {
+    console.log("\ngasto dos ultimos 7 dias:");
+    for (const u of usage) {
+      console.log(`  ${u.day}  ${u.agentId.padEnd(20)} ${u.costUsd.toFixed(3)} USD  ${u.runs} run(s)`);
+    }
+  }
+}
+
+function formatVersion(v: VersionMetrics): string {
+  const janela = [v.windowStart, v.windowEnd]
+    .map((t) => new Date(t * 1000).toISOString().slice(0, 10))
+    .join(" a ");
+  const skills = v.skillSet.length > 0 ? v.skillSet.map((s) => s.name).join("+") : "sem skill";
+  return (
+    `${v.agentId} v${v.version}`.padEnd(22) +
+    ` ${janela}  ${String(v.findingCount).padStart(3)} achado(s)` +
+    `  precisao ${pct(v.precision)}  concordancia ${pct(v.agreement)}` +
+    `  ${String(v.missed).padStart(3)} nao visto(s)  ${skills}`
+  );
+}
+
+/** Sem desfecho que sustente a fracao, mostrar zero mentiria. */
+function pct(value: number | null): string {
+  return value === null ? "  n/d" : `${(value * 100).toFixed(0).padStart(3)}%`;
+}
+
 async function inbox(): Promise<void> {
   const rows = await approvalService.listPending();
   if (rows.length === 0) {
@@ -212,6 +253,9 @@ async function main(): Promise<void> {
       await reconcile(arg, args.includes("--force"));
       break;
     }
+    case "metrics":
+      await metrics(arg);
+      break;
     case "providers":
       await providers();
       break;
@@ -291,6 +335,7 @@ async function main(): Promise<void> {
           "  inbox                    lista aprovacoes pendentes",
           "  runs [status]            lista as ultimas execucoes",
           "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",
+          "  metrics [agent-id]       recalcula e imprime precisao por versao de agent",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
