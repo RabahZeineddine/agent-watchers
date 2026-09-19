@@ -119,9 +119,9 @@ export class RunService {
   }
 
   /**
-   * Achados do run. A tabela `findings` so e preenchida pelo reconciliador, que
-   * ainda nao existe, entao ate la o achado vive na saida do passo que o
-   * produziu e e de la que ele sai.
+   * Achados do run. A tabela `findings` so e preenchida quando o reconciliador
+   * roda, entao antes disso o achado vive na saida do passo que o produziu e e
+   * de la que ele sai.
    */
   async findings(runId: string): Promise<RunFinding[]> {
     const rows = await this.db

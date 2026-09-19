@@ -7,6 +7,7 @@ import { executionService } from "./services/execution-service.js";
 import { machineId } from "./services/machine-service.js";
 import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
+import { reconcileService } from "./services/reconcile-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
 import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
@@ -112,6 +113,21 @@ async function providers(): Promise<void> {
   }
 }
 
+/** Cruza o review humano com os achados do run e imprime o gabarito. */
+async function reconcile(runId: string, force: boolean): Promise<void> {
+  const report = await reconcileService.reconcileRun(runId, { force });
+  console.log(`${report.prKey}  ${report.state}`);
+  if (report.skipped) {
+    console.log(`nada gravado: ${report.skipped}`);
+    return;
+  }
+  console.log(`${report.findingCount} achado(s), ${report.signalCount} sinal(is) humano(s)`);
+  for (const [estado, quantos] of Object.entries(report.outcomes)) {
+    if (quantos > 0) console.log(`  ${estado.padEnd(20)} ${quantos}`);
+  }
+  console.log(`  ${"nao visto pelo agent".padEnd(20)} ${report.unmatchedSignals}`);
+}
+
 async function inbox(): Promise<void> {
   const rows = await approvalService.listPending();
   if (rows.length === 0) {
@@ -191,6 +207,11 @@ async function main(): Promise<void> {
     case "runs":
       await runs(arg);
       break;
+    case "reconcile": {
+      if (!arg) throw new Error("uso: reconcile <run-id> [--force]");
+      await reconcile(arg, args.includes("--force"));
+      break;
+    }
     case "providers":
       await providers();
       break;
@@ -269,6 +290,7 @@ async function main(): Promise<void> {
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",
           "  runs [status]            lista as ultimas execucoes",
+          "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",

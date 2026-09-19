@@ -110,6 +110,18 @@ export async function pollOpenPullRequests(owner: string, repoFilter: RegExp): P
   return created;
 }
 
+/**
+ * Marca invisivel no corpo do que o Locum publica. O token e pessoal, entao a
+ * review automatica sai assinada pela mesma conta que revisa a mao: sem a marca
+ * o reconciliador leria o proprio achado como confirmacao humana dele mesmo.
+ */
+export const LOCUM_MARKER = "<!-- locum -->";
+
+/** Review ou comentario que saiu daqui. Sem a marca, conta como humano. */
+export function isLocumAuthored(body: string | null | undefined): boolean {
+  return typeof body === "string" && body.includes(LOCUM_MARKER);
+}
+
 const SEVERITY_MARK: Record<Finding["severity"], string> = {
   critical: "critico",
   high: "alto",
@@ -118,14 +130,15 @@ const SEVERITY_MARK: Record<Finding["severity"], string> = {
 };
 
 function renderBody(findings: Finding[]): string {
-  if (findings.length === 0) return "Revisao automatica: nenhum achado.";
-  return findings
+  if (findings.length === 0) return `Revisao automatica: nenhum achado.\n\n${LOCUM_MARKER}`;
+  const corpo = findings
     .map((f) => {
       const local = f.file ? `${f.file}${f.line ? `:${f.line}` : ""}` : "geral";
       const fix = f.fix ? `\n\nSugestao: ${f.fix}` : "";
       return `**${local}** (${SEVERITY_MARK[f.severity]})\n\n${f.problem}${fix}`;
     })
     .join("\n\n---\n\n");
+  return `${corpo}\n\n${LOCUM_MARKER}`;
 }
 
 /**
@@ -142,7 +155,7 @@ export function githubReviewHandler(): ActionHandler {
       .map((f) => ({
         path: f.file,
         line: f.line,
-        body: `**${SEVERITY_MARK[f.severity]}**: ${f.problem}${f.fix ? `\n\nSugestao: ${f.fix}` : ""}`,
+        body: `**${SEVERITY_MARK[f.severity]}**: ${f.problem}${f.fix ? `\n\nSugestao: ${f.fix}` : ""}\n\n${LOCUM_MARKER}`,
       }));
 
   return {

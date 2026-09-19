@@ -142,7 +142,7 @@
       "description": "app/src/sources/github-reconciler.ts: ao fechar um pull request, puxar reviews humanos, casar por arquivo e linha com os achados, comparar o diff final e preencher finding_outcomes e review_signals.",
       "done_when": "Roda contra uma execucao existente e grava desfechos.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

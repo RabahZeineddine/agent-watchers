@@ -26,8 +26,8 @@ executor que a interface vai usar.
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
-| reconciliador de review humano | não começou |
-| métricas por versão de agent | tabela criada, sem coleta |
+| reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
+| métricas por versão de agent | gabarito coletado em `finding_outcomes`, agregação por versão não começou |
 | agendador com eventos de energia | não começou |
 | casca Electron e interface | não começou |
 
@@ -60,6 +60,7 @@ npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
 npm run dev runs
+npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
 npm run dev rerun <run-id> audit
 npm run dev providers
 npm run dev mcp
@@ -78,6 +79,12 @@ npm run dev resume
 **`drizzle-kit push` com dados.** Alteração que exige recriar tabela falha com
 `SQLITE_CONSTRAINT_FOREIGNKEY` quando já existem linhas. Coluna nova se resolve
 com `alter table add column` manual.
+
+**Autoria da review automática.** O token é pessoal, então o que o Locum
+publica sai assinado pela mesma conta que revisa a mão. Sem marca no corpo, o
+reconciliador leria o próprio achado como confirmação humana dele mesmo. Por
+isso tudo que sai leva um `<!-- locum -->`, invisível no GitHub, e o
+reconciliador descarta a review e os comentários que a carregam.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

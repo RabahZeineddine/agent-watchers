@@ -37,9 +37,9 @@ export interface MetricsReport {
 /**
  * Leitura das metricas por versao e do gasto diario.
  *
- * Aqui so se le. Quem preenche `agent_metrics` e o reconciliador de review
- * humano, que ainda nao existe, entao por enquanto a lista de versoes volta
- * vazia e o gasto diario e a unica parte com dado de verdade.
+ * Aqui so se le. O reconciliador de review humano preenche o gabarito em
+ * `finding_outcomes`, e a agregacao dele em `agent_metrics` e o N.2, entao ate
+ * la a lista de versoes volta vazia e o gasto diario e a unica parte com dado.
  */
 export class MetricsService {
   constructor(private readonly db: Db = defaultDb) {}
@@ -101,7 +101,7 @@ export class MetricsService {
       usage,
       note:
         versions.length === 0
-          ? "nenhuma janela medida ainda: o reconciliador de review humano preenche agent_metrics"
+          ? "nenhuma janela medida ainda: agent_metrics agrega os desfechos que o reconciliador grava"
           : undefined,
     };
   }
