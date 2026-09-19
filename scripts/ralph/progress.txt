@@ -9,3 +9,4 @@
 2026-09-19  M2.3  feito      sete ferramentas de configuracao no servidor MCP, TriggerService novo, zod formatado no erro
 2026-09-19  M2.4  feito      run_agent e rerun_step no servidor MCP, ExecutionService novo, 19 ferramentas, tsc limpo
 2026-09-19  M2.5  feito      .mcp.json na raiz sobe o servidor com node e tsx de app/node_modules, tools/list devolve as 19
+2026-09-19  M2.6  feito      docs/mcp-server.md cobre as 19 ferramentas e a fronteira de aprovacao do ADR 0002

@@ -131,7 +131,7 @@
       "description": "Escrever docs/mcp-server.md listando cada ferramenta e a secao explicando por que aprovacao e publicacao nao estao la, conforme o ADR 0002.",
       "done_when": "O arquivo existe e cobre todas as ferramentas implementadas.",
       "verify": "test -f ../docs/mcp-server.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
