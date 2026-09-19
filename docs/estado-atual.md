@@ -24,7 +24,7 @@ executor que a interface vai usar.
 | fonte GitHub com varredura por cursor | escrito, sem teste com token |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
-| servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço |
+| servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | não começou |
 | métricas por versão de agent | tabela criada, sem coleta |
@@ -84,6 +84,12 @@ com `alter table add column` manual.
 **Tipagem das ferramentas.** Tipar o conjunto de ferramentas como
 `Record<string, unknown>` faz a inferência do `stopWhen` cair para `never`. Use
 `ToolSet` do pacote `ai`.
+
+**Caminho do servidor no `.mcp.json`.** O formato não tem campo para diretório
+de trabalho: o cliente sobe o processo na raiz do repositório, onde não existe
+`node_modules`. Por isso o registro chama `node` com o caminho do `tsx` dentro
+de `app/node_modules`, em vez de `npm run mcp`, que ainda escreveria o cabeçalho
+do script no stdout e corromperia a sessão.
 
 ## Próximos passos
 

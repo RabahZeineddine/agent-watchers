@@ -8,3 +8,4 @@
 2026-09-19  M2.2  feito      nove ferramentas de leitura no servidor MCP, MachineService e MetricsService novos, tsc limpo
 2026-09-19  M2.3  feito      sete ferramentas de configuracao no servidor MCP, TriggerService novo, zod formatado no erro
 2026-09-19  M2.4  feito      run_agent e rerun_step no servidor MCP, ExecutionService novo, 19 ferramentas, tsc limpo
+2026-09-19  M2.5  feito      .mcp.json na raiz sobe o servidor com node e tsx de app/node_modules, tools/list devolve as 19

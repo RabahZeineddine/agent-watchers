@@ -120,7 +120,7 @@
       "description": "Criar .mcp.json na raiz apontando para o servidor, para que um assistente externo o carregue ao abrir o projeto.",
       "done_when": "O arquivo existe e e JSON valido.",
       "verify": "node -e \"JSON.parse(require('fs').readFileSync('../.mcp.json','utf8'))\"",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
