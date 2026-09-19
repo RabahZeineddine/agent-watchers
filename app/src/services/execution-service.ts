@@ -5,7 +5,7 @@ import { buildExecutor } from "../executor/build.js";
 import { demoPr } from "../seed/demo-event.js";
 import { prReviewSpec } from "../seed/pr-review.js";
 import { fetchPr, type PrContext } from "../sources/github.js";
-import { agentService, AgentService } from "./agent-service.js";
+import { agentService, AgentService, type AgentVersion } from "./agent-service.js";
 
 type Db = typeof defaultDb;
 
@@ -23,6 +23,17 @@ export interface StartInput {
   agentId?: string;
   /** Falso devolve assim que o run existe e deixa a execucao correndo atras. */
   wait?: boolean;
+  /** Gatilho que pediu a execucao, quando nao foi gente que pediu. */
+  triggerId?: string;
+}
+
+/** Disparo a partir de um evento que ja esta no banco, ou sem evento nenhum. */
+export interface StartForEventInput {
+  /** Nulo roda o agent sem evento, que e o caso do gatilho de relogio. */
+  eventId: string | null;
+  agentId?: string;
+  triggerId?: string;
+  wait?: boolean;
 }
 
 export interface StartedRun {
@@ -38,7 +49,7 @@ export interface StartedRun {
 
 /** O minimo do executor que este servico usa, para poder trocar em teste. */
 export interface RunStarter {
-  createRun(agentVersionId: string, eventId: string | null): Promise<string>;
+  createRun(agentVersionId: string, eventId: string | null, triggerId?: string | null): Promise<string>;
   execute(runId: string): Promise<"done" | "paused" | "failed">;
 }
 
@@ -69,12 +80,11 @@ export class ExecutionService {
     const source = target.kind === "github" ? "github" : "demo";
     const context =
       target.kind === "github" ? await fetchPr(target.owner, target.repo, target.pull) : demoPr;
-    const eventId = await this.recordEvent(source, externalId(source, context), context);
+    const { id: eventId } = await this.recordEvent(source, externalId(source, context), context);
 
-    const runner = await this.makeRunner();
-    const runId = await runner.createRun(version.id, eventId);
+    const { runId, status } = await this.startForEvent({ ...input, eventId, version });
 
-    const started = {
+    return {
       runId,
       agentId: version.agentId,
       agentVersion: version.version,
@@ -82,17 +92,33 @@ export class ExecutionService {
       source,
       repo: context.repo,
       pull: context.pull,
+      status,
     };
+  }
+
+  /**
+   * Cria e dispara o run de um evento que ja esta gravado.
+   *
+   * O agendador entra por aqui, e nao por `start`, porque o evento dele veio da
+   * varredura que ja passou pela deduplicacao da fonte: refazer o caminho do
+   * alvo iria buscar o pull request de novo so para reencontrar a mesma linha.
+   */
+  async startForEvent(
+    input: StartForEventInput & { version?: AgentVersion },
+  ): Promise<{ runId: string; status: RunStatus }> {
+    const version = input.version ?? (await this.versionFor(input.agentId));
+    const runner = await this.makeRunner();
+    const runId = await runner.createRun(version.id, input.eventId, input.triggerId ?? null);
 
     if (input.wait === false) {
       // O executor grava o desfecho no banco mesmo quando falha, entao soltar a
       // promessa nao perde informacao: quem chamou acompanha pelo run. Um
       // cliente MCP nao pode ficar minutos preso esperando o pipeline acabar.
       void runner.execute(runId).catch(() => undefined);
-      return { ...started, status: "queued" };
+      return { runId, status: "queued" };
     }
 
-    return { ...started, status: await runner.execute(runId) };
+    return { runId, status: await runner.execute(runId) };
   }
 
   private async versionFor(agentId?: string) {
@@ -106,21 +132,28 @@ export class ExecutionService {
    * Grava o evento e devolve o identificador que vale, seja o novo ou o da
    * linha que ja estava la. Apontar o run para um identificador descartado pela
    * deduplicacao quebraria a chave estrangeira de `runs`.
+   *
+   * O `created` e o que separa evento novo de repetido, e e disso que o
+   * agendador vive: resultado igual ao da varredura anterior nao vira run.
    */
-  private async recordEvent(source: string, external: string, payload: object): Promise<string> {
+  async recordEvent(
+    source: string,
+    external: string,
+    payload: object,
+  ): Promise<{ id: string; created: boolean }> {
     const [inserted] = await this.db
       .insert(schema.events)
       .values({ id: randomUUID(), source, externalId: external, payload })
       .onConflictDoNothing()
       .returning();
-    if (inserted) return inserted.id;
+    if (inserted) return { id: inserted.id, created: true };
 
     const [existing] = await this.db
       .select({ id: schema.events.id })
       .from(schema.events)
       .where(and(eq(schema.events.source, source), eq(schema.events.externalId, external)));
     if (!existing) throw new Error(`evento ${source}/${external} nao pode ser gravado`);
-    return existing.id;
+    return { id: existing.id, created: false };
   }
 }
 

@@ -41,9 +41,13 @@ const nowSec = () => Math.floor(Date.now() / 1000);
 export class Executor {
   constructor(private deps: Deps) {}
 
-  async createRun(agentVersionId: string, eventId: string | null): Promise<string> {
+  async createRun(
+    agentVersionId: string,
+    eventId: string | null,
+    triggerId: string | null = null,
+  ): Promise<string> {
     const id = randomUUID();
-    await db.insert(schema.runs).values({ id, agentVersionId, eventId, status: "queued" });
+    await db.insert(schema.runs).values({ id, agentVersionId, eventId, triggerId, status: "queued" });
     return id;
   }
 

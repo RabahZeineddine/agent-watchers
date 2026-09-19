@@ -28,7 +28,7 @@ executor que a interface vai usar.
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
-| agendador com eventos de energia | não começou |
+| agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; falta o evento de energia do M3 |
 | casca Electron e interface | não começou |
 
 ## Execução verificada
@@ -63,6 +63,8 @@ npm run dev runs
 npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
 npm run dev metrics                   # recalcula e imprime precisão por versão
 npm run dev rerun <run-id> audit
+npm run dev triggers                  # gatilhos cadastrados e quando o agendador quer a próxima batida
+npm run dev tick                      # uma batida nos gatilhos habilitados
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
@@ -105,6 +107,13 @@ Quebrados em tarefas atômicas em `scripts/ralph/prd.json`, na ordem revisada pe
 ADR 0002: camada de serviço, servidor MCP próprio, casca Electron, interface,
 empacotamento. O cadastro de MCP já vem do banco, e o passo de contexto de
 deploy passa a depender só de cadastrar o servidor certo.
+
+O agendador não tem relógio próprio. Ele é batido de fora, hoje pelo comando
+`tick`, e devolve em `nextDueAt` quando quer a próxima batida, para quem chama
+armar um temporizador só. Cada gatilho tem seu cursor de tempo na tabela
+`cursors`, então sono da máquina não perde janela: a primeira batida depois de
+acordar já encontra o gatilho vencido. O `onWake()` existe esperando o evento de
+energia do M3.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as

@@ -10,7 +10,9 @@ import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { reconcileService } from "./services/reconcile-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
+import { triggerService } from "./services/trigger-service.js";
 import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
+import { scheduler, type TickResult } from "./triggers/scheduler.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
@@ -219,6 +221,41 @@ async function mcpTest(name: string): Promise<void> {
   process.exitCode = 1;
 }
 
+/** Lista os gatilhos cadastrados e quando cada um quer a proxima batida. */
+async function triggers(): Promise<void> {
+  const list = await triggerService.list();
+  if (list.length === 0) {
+    console.log("nenhum gatilho cadastrado");
+    return;
+  }
+  for (const t of list) {
+    const estado = t.enabled ? "habilitado " : "desabilitado";
+    console.log(`${t.id}  ${estado}  ${t.agentId}  ${JSON.stringify(t.config)}`);
+  }
+  const next = await scheduler.nextDueAt();
+  console.log(`\nproxima batida: ${next === null ? "nenhuma" : new Date(next).toISOString()}`);
+}
+
+/** Uma batida do agendador. Quem repete e o sistema, nao um laco daqui. */
+async function tick(wait: boolean): Promise<void> {
+  const result: TickResult = await scheduler.tick({ wait });
+  if (result.outcomes.length === 0) {
+    console.log("nenhum gatilho habilitado");
+    return;
+  }
+  for (const o of result.outcomes) {
+    const detalhe = o.detail ? `  ${o.detail}` : "";
+    console.log(
+      `${o.status.padEnd(8)} ${o.kind.padEnd(9)} ${o.agentId}  ` +
+        `${o.events} evento(s), ${o.runs.length} run(s)${detalhe}`,
+    );
+    for (const runId of o.runs) console.log(`         run ${runId}`);
+  }
+  console.log(
+    `\nproxima batida: ${result.nextDueAt === null ? "nenhuma" : new Date(result.nextDueAt).toISOString()}`,
+  );
+}
+
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
   const arg = args[0];
@@ -255,6 +292,12 @@ async function main(): Promise<void> {
     }
     case "metrics":
       await metrics(arg);
+      break;
+    case "triggers":
+      await triggers();
+      break;
+    case "tick":
+      await tick(args.includes("--wait"));
       break;
     case "providers":
       await providers();
@@ -336,6 +379,8 @@ async function main(): Promise<void> {
           "  runs [status]            lista as ultimas execucoes",
           "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",
           "  metrics [agent-id]       recalcula e imprime precisao por versao de agent",
+          "  triggers                 lista os gatilhos e quando o agendador quer a proxima batida",
+          "  tick [--wait]            uma batida do agendador nos gatilhos habilitados",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",

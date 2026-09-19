@@ -12,3 +12,4 @@
 2026-09-19  M2.6  feito      docs/mcp-server.md cobre as 19 ferramentas e a fronteira de aprovacao do ADR 0002
 2026-09-19  N.1   feito      reconciliador cruza review humano com achados, grava finding_outcomes e review_signals, tsc limpo
 2026-09-19  N.2   feito      agregacao de finding_outcomes em agent_metrics por versao mais skills, cli ganhou metrics
+2026-09-19  N.3   feito      agendador por cursor de tempo, sem relogio proprio, guarda de cadencia e guarda de evento por run, cli ganhou tick e triggers

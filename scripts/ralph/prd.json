@@ -164,7 +164,7 @@
       "description": "app/src/triggers/scheduler.ts com cursor de tempo, sem setInterval de janela fixa, preparado para receber o evento de acordar da maquina no M3.",
       "done_when": "Duas execucoes seguidas nao reprocessam o mesmo evento.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

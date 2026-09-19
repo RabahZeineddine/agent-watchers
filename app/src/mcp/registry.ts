@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { ToolSet } from "ai";
@@ -147,6 +148,41 @@ export class McpRegistry {
         estimatedTokens: estimateTokens(toolName, tool.description, tool.inputSchema),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Chama uma ferramenta direto, sem passar por modelo.
+   *
+   * Quem usa isto e o gatilho de varredura por MCP: ele nao precisa de um passo
+   * nem de contexto, so do resultado bruto para virar evento. A contagem de
+   * referencia e a mesma de `toolsFor`, senao o encerramento por ocioso mataria
+   * o processo no meio da chamada.
+   *
+   * A chamada vai pelo embrulho do AI SDK porque o cliente desta versao do
+   * pacote nao expoe `callTool`. O `toolCallId` e exigido pela assinatura e nao
+   * significa nada aqui: nao ha conversa nem modelo esperando resposta.
+   */
+  async callTool(
+    server: string,
+    tool: string,
+    args: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const entry = await this.connect(server);
+    const found = entry.tools[tool];
+    if (!found) throw new Error(`ferramenta "${tool}" nao existe no servidor "${server}"`);
+    if (!found.execute) throw new Error(`ferramenta "${tool}" do servidor "${server}" nao executa`);
+
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    entry.refs += 1;
+    try {
+      return await found.execute(args, { toolCallId: randomUUID(), messages: [] });
+    } finally {
+      entry.refs = Math.max(0, entry.refs - 1);
+      this.scheduleIdleClose(server);
+    }
   }
 
   /** Servidores obrigatorios do passo que nao existem nesta maquina. */
