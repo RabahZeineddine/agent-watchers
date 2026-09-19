@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
 import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
 import { buildExecutor, machineId } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
+import { approvalService } from "./services/approval-service.js";
 import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
@@ -154,17 +154,13 @@ async function providers(): Promise<void> {
 }
 
 async function inbox(): Promise<void> {
-  const rows = await db
-    .select()
-    .from(schema.approvals)
-    .where(eq(schema.approvals.status, "pending"));
-
+  const rows = await approvalService.listPending();
   if (rows.length === 0) {
     console.log("nada pendente");
     return;
   }
   for (const r of rows) {
-    console.log(`${r.id}  ${r.kind}  run ${r.runId}`);
+    console.log(`${r.id}  ${r.kind}  ${r.agentId} v${r.agentVersion} / ${r.stepName}  run ${r.runId}`);
     console.log(`   ${JSON.stringify(r.payload).slice(0, 200)}`);
   }
 }

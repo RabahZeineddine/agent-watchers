@@ -65,7 +65,7 @@
       "description": "Extrair da ApprovalGate a parte de consulta: listPending() e get(approvalId). A decisao continua na ApprovalGate, que permanece o unico caminho de publicacao.",
       "done_when": "inbox no cli.ts consome o servico.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts inbox",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

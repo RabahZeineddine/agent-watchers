@@ -3,3 +3,4 @@
 2026-09-19  M1.3  feito      testConnection e listTools no McpService, cli ganhou mcp:tools e mcp:test, fixture lista as quatro
 2026-09-19  M1.4  feito      ProviderService com fallback sem ciclo e resolvePreview, cli ganhou providers
 2026-09-19  M1.5  feito      RunService com list, get, findings e rerunStep, cli ganhou runs e rerun
+2026-09-19  M1.6  feito      ApprovalService com listPending e get, inbox do cli consome o servico, decisao segue na gate
