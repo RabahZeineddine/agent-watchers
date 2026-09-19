@@ -1,0 +1,138 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModel } from "ai";
+import { execFileSync } from "node:child_process";
+
+/**
+ * Identificador de modelo e sempre "provider/model-id".
+ * O provider "claude-code" nao e um provider de API: e o runtime que gasta a
+ * assinatura Max, e por isso nao expoe LanguageModel.
+ */
+export type ModelId = `${string}/${string}`;
+
+export function splitModelId(id: string): { provider: string; model: string } {
+  const at = id.indexOf("/");
+  if (at < 1) throw new Error(`model id invalido: "${id}", esperado "provider/model"`);
+  return { provider: id.slice(0, at), model: id.slice(at + 1) };
+}
+
+type ProviderEntry = {
+  /** Sem credencial, o provider simplesmente nao existe nesta maquina. */
+  available: () => boolean;
+  model?: (id: string) => LanguageModel;
+};
+
+function env(name: string): string | undefined {
+  const v = process.env[name];
+  return v && v.length > 0 ? v : undefined;
+}
+
+let claudeBinaryChecked: boolean | undefined;
+
+/** Binario presente e sessao valida. Sem isso a via de assinatura nao existe. */
+export function claudeCodeAvailable(): boolean {
+  if (claudeBinaryChecked !== undefined) return claudeBinaryChecked;
+  try {
+    execFileSync("claude", ["--version"], { stdio: "ignore", timeout: 5000 });
+    claudeBinaryChecked = true;
+  } catch {
+    claudeBinaryChecked = false;
+  }
+  return claudeBinaryChecked;
+}
+
+export function buildProviders(): Record<string, ProviderEntry> {
+  const compat = (name: string, keyVar: string, urlVar: string) => {
+    const apiKey = env(keyVar);
+    const baseURL = env(urlVar);
+    return {
+      available: () => Boolean(apiKey && baseURL),
+      model: (id: string) =>
+        createOpenAICompatible({ name, apiKey: apiKey!, baseURL: baseURL! }).chatModel(id),
+    } satisfies ProviderEntry;
+  };
+
+  return {
+    "claude-code": { available: claudeCodeAvailable },
+
+    anthropic: {
+      available: () => Boolean(env("ANTHROPIC_API_KEY")),
+      model: (id) => createAnthropic({ apiKey: env("ANTHROPIC_API_KEY")! })(id),
+    },
+    openai: {
+      available: () => Boolean(env("OPENAI_API_KEY")),
+      model: (id) => createOpenAI({ apiKey: env("OPENAI_API_KEY")! })(id),
+    },
+    google: {
+      available: () => Boolean(env("GOOGLE_GENERATIVE_AI_API_KEY")),
+      model: (id) => createGoogleGenerativeAI({ apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY")! })(id),
+    },
+
+    glm: compat("glm", "GLM_API_KEY", "GLM_BASE_URL"),
+    gateway: compat("gateway", "GATEWAY_API_KEY", "GATEWAY_BASE_URL"),
+
+    ollama: {
+      available: () => Boolean(env("OLLAMA_BASE_URL")),
+      model: (id) =>
+        createOpenAICompatible({ name: "ollama", apiKey: "ollama", baseURL: env("OLLAMA_BASE_URL")! }).chatModel(id),
+    },
+  };
+}
+
+export type ModelResolution = {
+  requested: string;
+  used: string;
+  provider: string;
+  model: string;
+  substitutionReason?: string;
+};
+
+export type FallbackRow = { fromModel: string; toModel: string; order: number };
+
+/**
+ * Resolve o modelo do passo nesta maquina. O passo nunca muda, so a tabela.
+ * Cadeia sem saida devolve erro em vez de escolher sozinho.
+ */
+export function resolveModel(
+  requested: string,
+  fallbacks: FallbackRow[],
+  providers: Record<string, ProviderEntry> = buildProviders(),
+): ModelResolution {
+  const seen = new Set<string>();
+  let current = requested;
+  let hops = 0;
+
+  while (!seen.has(current)) {
+    seen.add(current);
+    const { provider, model } = splitModelId(current);
+    const entry = providers[provider];
+
+    if (entry?.available()) {
+      return {
+        requested,
+        used: current,
+        provider,
+        model,
+        substitutionReason:
+          hops === 0 ? undefined : `${requested} indisponivel nesta maquina, ${hops} substituicao(oes)`,
+      };
+    }
+
+    const next = fallbacks
+      .filter((f) => f.fromModel === current)
+      .sort((a, b) => a.order - b.order)
+      .find((f) => !seen.has(f.toModel));
+
+    if (!next) {
+      throw new Error(
+        `modelo "${requested}" indisponivel nesta maquina e sem fallback restante (parou em "${current}")`,
+      );
+    }
+    current = next.toModel;
+    hops += 1;
+  }
+
+  throw new Error(`ciclo na tabela de fallback a partir de "${requested}"`);
+}

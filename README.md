@@ -1,124 +1,51 @@
-# 🤖 Agent Watchers & Personal AI Hub
+# Agent Watchers
 
-> An open-source, extensible platform for multi-agent code reviews, asynchronous PR watching, and automated task-tracker reconciliation (Shortcut, Jira, GitHub Issues).
+Aplicativo pessoal para macOS que roda agents em segundo plano, prepara trabalho
+enquanto você não está olhando e entrega o resultado numa fila de aprovação.
+Nada que escreve fora sai sem um clique seu.
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Primeiro caso de uso: revisão dos pull requests do time, com triagem e auditoria
+em modelos diferentes, contexto de deploy cruzado do ArgoCD, e convenções da
+time carregadas como skill conforme os arquivos alterados.
 
----
+## Estado
 
-## 🌟 Key Highlights
-
-- **Multi-Agent Review Pipeline**:
-  - **Triage Agent** (lightweight/fast model, e.g., GLM 5.3 Flash, GPT-4o-mini, Ollama) categorizes changes, maps sensitive modules, and prepares execution scope.
-  - **Critical Auditor Agent** (high-reasoning model, e.g., Gemini 3.8 Flash, DeepSeek V3.2, Claude 3.5 Sonnet) conducts strict evidence-backed defect audits (`file:line`, reproducible failure scenarios, idempotency, security, zero cosmetic nitpicks).
-- **Task Tracker Reconciliation (`Task Sync`)**:
-  - Connects to **Shortcut**, **Jira**, or **GitHub Issues**.
-  - **Smart Ownership Filter**: Distinguishes *your* PRs from *team* PRs.
-  - **AI-Assisted Story Creation**: Synthesizes PR diffs into structured tickets (`🎯 Objective`, `🛠️ Changes`, `🧪 Tests`, `🔗 Links`) with 1-click publishing.
-- **Local MCP Integration**:
-  - Seamlessly leverages Model Context Protocol (MCP) servers (Slack, GitHub, Grafana, DataGrip).
-- **Prompt Studio with SQLite Versioning**:
-  - Dynamically rewrites and aligns system prompts with your personal tech lead style and past review history.
-- **Manual Publication Gateways**:
-  - Reviews and Slack notifications are never posted without your explicit 1-click confirmation or private draft review.
-
----
-
-## 🏗️ Architecture
-
-```
-agent-watchers/
-├── core/
-│   ├── config_loader.py    # Resolves environment variables (${VAR:-default})
-│   ├── llm.py              # Pluggable OpenAI-compatible / Gateway / Local LLM client
-│   ├── state_store.py      # SQLite persistence for reviews, runs, initiatives, and prompts
-│   ├── task_trackers.py    # Pluggable Task Trackers (Shortcut, Jira, GitHub Issues)
-│   ├── task_sync.py        # Bidirectional reconciliation engine
-│   ├── prompt_optimizer.py # Self-learning prompt alignment engine
-│   ├── slack_mcp.py        # Local Slack MCP bridge
-│   └── github_mcp.py       # Local GitHub CLI/MCP bridge
-├── watchers/
-│   └── pr_reviewer/        # Asynchronous multi-agent PR review watcher
-├── static/
-│   └── index.html          # Clean, responsive Web UI dashboard
-├── app.py                  # FastAPI application entrypoint
-├── config.yaml             # Declarative configuration file
-└── .env.example            # Environment variables template
-```
-
----
-
-## 🚀 Quickstart
-
-### 1. Prerequisites
-- Python 3.10+
-- [`uv`](https://docs.astral.sh/uv/) (recommended for instant package resolution)
-- Git and GitHub CLI (`gh`)
-
-### 2. Setup
+O núcleo headless funciona e foi verificado de ponta a ponta. A casca Electron e
+a interface ainda não existem; por enquanto tudo passa pela linha de comando,
+com o mesmo executor que a interface vai usar.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/agent-watchers.git
-cd agent-watchers
-
-# Copy and configure environment variables
-cp .env.example .env
-
-# Edit .env with your credentials and preferred provider
+cd app
+npm install
+npm run db:push
+npm run dev seed
+npm run dev demo     # pipeline completo num PR sintético, sem credencial
 ```
 
-### 3. Running Locally
+Detalhes em [docs/estado-atual.md](docs/estado-atual.md).
 
-```bash
-# Start Web UI & API Server
-uv run python3 app.py
+## Documentação
+
+| documento | conteúdo |
+|---|---|
+| [ADR 0001](docs/adr/0001-arquitetura-v2.md) | as dez decisões de arquitetura e as alternativas descartadas |
+| [decisoes-da-conversa.md](docs/decisoes-da-conversa.md) | o caminho até o desenho, incluindo o que mudou de ideia |
+| [pesquisa.md](docs/pesquisa.md) | o que foi verificado na documentação externa, separado de suposição |
+| [estado-atual.md](docs/estado-atual.md) | o que existe, o que falta, e as armadilhas encontradas |
+| [roadmap.md](docs/roadmap.md) | fases, da v1 ao que ficou fora de propósito |
+
+## Estrutura
+
 ```
-Open **`http://localhost:8080`** in your browser.
-
-### 4. Running with Docker
-
-```bash
-docker compose up --build
-```
-
----
-
-## ⚙️ Configuration (`config.yaml`)
-
-The platform reads settings with environment variable interpolation (`${VAR:-fallback}`):
-
-```yaml
-user:
-  github_username: "${GITHUB_USER:-your_user}"
-  name: "${USER_NAME:-Tech Lead}"
-
-llm:
-  provider: "openai_compatible"
-  api_base: "${LLM_API_BASE:-https://api.openai.com/v1}"
-  api_key: "${LLM_API_KEY}"
-  models:
-    fast: "gpt-4o-mini"
-    reasoning: "gpt-4o"
-
-task_tracker:
-  provider: "shortcut" # or "github_issues" / "jira"
-  api_token: "${TASK_TRACKER_TOKEN}"
+app/            núcleo em TypeScript, o produto daqui para a frente
+docs/           decisões, pesquisa, estado e roadmap
+app.py          versão anterior em Python, mantida só como referência
+core/           idem
+watchers/       idem
+static/         idem
 ```
 
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to submit issues or pull requests for:
-- New Task Tracker adapters (Jira Cloud, Linear, ClickUp).
-- New watcher types (Grafana log anomaly watcher, Incident thread watcher).
-- Additional LLM provider bridges.
-
----
-
-## 📄 License
-
-MIT License. See [LICENSE](LICENSE) for details.
+A versão em Python continua no repositório por enquanto para consulta. O gateway
+de LLM, o cliente de LLM e as pontes MCP dela deixam de existir na v2, porque
+são resolvidos por biblioteca. O que sobrevive em espírito é o armazenamento de
+estado e os adaptadores de tracker, reescritos em TypeScript.

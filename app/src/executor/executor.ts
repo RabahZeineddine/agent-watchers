@@ -1,0 +1,318 @@
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import { db, schema } from "../db/index.js";
+import {
+  AgentSpec,
+  type ActionStep,
+  type ModelStep,
+  type Step,
+  resolveTools,
+  topoSort,
+} from "../config/types.js";
+import { McpRegistry } from "../mcp/registry.js";
+import { resolveModel, type FallbackRow } from "../providers/registry.js";
+import type { Runtime } from "../runtimes/types.js";
+import { selectSkills, skillsPreamble, type SkillContext } from "../skills/loader.js";
+import { ApprovalGate } from "../approval/gate.js";
+import { BudgetExceeded, assertWithinBudget, recordSpend } from "./budget.js";
+
+export type EventPayload = {
+  repo: string;
+  changedFiles: string[];
+  [k: string]: unknown;
+};
+
+type Deps = {
+  mcp: McpRegistry;
+  runtimes: Map<string, Runtime>;
+  gate: ApprovalGate;
+  machineId: string;
+};
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+/**
+ * Maquina de estado duravel.
+ *
+ * Toda transicao vai para o banco antes de seguir. Fechou o app no meio de um
+ * run, ao reabrir ele retoma do primeiro passo que nao esta `done`.
+ */
+export class Executor {
+  constructor(private deps: Deps) {}
+
+  async createRun(agentVersionId: string, eventId: string | null): Promise<string> {
+    const id = randomUUID();
+    await db.insert(schema.runs).values({ id, agentVersionId, eventId, status: "queued" });
+    return id;
+  }
+
+  /** Runs interrompidos por fechamento do app ou por crash. */
+  async resumeAll(): Promise<string[]> {
+    const pending = await db
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .where(inArray(schema.runs.status, ["queued", "running"]));
+
+    const ids: string[] = [];
+    for (const row of pending) {
+      ids.push(row.id);
+      await this.execute(row.id);
+    }
+    return ids;
+  }
+
+  async execute(runId: string): Promise<"done" | "paused" | "failed"> {
+    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (!run) throw new Error(`run ${runId} nao encontrado`);
+
+    const [version] = await db
+      .select()
+      .from(schema.agentVersions)
+      .where(eq(schema.agentVersions.id, run.agentVersionId));
+    if (!version) throw new Error(`versao de agent ${run.agentVersionId} nao encontrada`);
+
+    const spec = AgentSpec.parse(version.spec);
+    const event = run.eventId
+      ? (await db.select().from(schema.events).where(eq(schema.events.id, run.eventId)))[0]
+      : undefined;
+    const payload = (event?.payload ?? { repo: "", changedFiles: [] }) as EventPayload;
+
+    await db
+      .update(schema.runs)
+      .set({ status: "running", startedAt: run.startedAt ?? nowSec() })
+      .where(eq(schema.runs.id, runId));
+
+    const fallbacks = (await db
+      .select()
+      .from(schema.modelFallbacks)
+      .where(eq(schema.modelFallbacks.machineId, this.deps.machineId))) as FallbackRow[];
+
+    const outputs = new Map<string, unknown>();
+    let runCost = run.costUsd;
+    let runEstimate = run.estimateUsd;
+
+    try {
+      for (const [idx, step] of topoSort(spec.steps).entries()) {
+        const existing = await this.loadStep(runId, step.key);
+
+        if (existing?.status === "done" || existing?.status === "skipped") {
+          outputs.set(step.key, existing.output);
+          continue;
+        }
+        if (existing?.status === "awaiting_approval") {
+          return this.pause(runId);
+        }
+
+        const stepId = existing?.id ?? randomUUID();
+        if (!existing) {
+          await db.insert(schema.steps).values({
+            id: stepId,
+            runId,
+            idx,
+            stepKey: step.key,
+            name: step.name,
+            status: "pending",
+          });
+        }
+
+        const outcome =
+          step.type === "model"
+            ? await this.runModelStep({ runId, stepId, step, spec, payload, outputs, fallbacks, runCost })
+            : await this.runActionStep({ runId, stepId, step, outputs });
+
+        if (outcome.kind === "paused") return this.pause(runId);
+        if (outcome.kind === "skipped") {
+          outputs.set(step.key, null);
+          continue;
+        }
+
+        if (outcome.billable) runCost += outcome.costUsd;
+        runEstimate += outcome.costUsd;
+        outputs.set(step.key, outcome.output);
+        await db
+          .update(schema.runs)
+          .set({ costUsd: runCost, estimateUsd: runEstimate })
+          .where(eq(schema.runs.id, runId));
+      }
+
+      await recordSpend(spec.id, runCost);
+      await db
+        .update(schema.runs)
+        .set({ status: "done", endedAt: nowSec() })
+        .where(eq(schema.runs.id, runId));
+      return "done";
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Orcamento nao e falha: o run para e espera decisao sua.
+      const status = err instanceof BudgetExceeded ? "paused" : "failed";
+      await db
+        .update(schema.runs)
+        .set({ status, endedAt: status === "failed" ? nowSec() : null, error: message })
+        .where(eq(schema.runs.id, runId));
+      return status;
+    } finally {
+      await this.deps.mcp.closeAll().catch(() => undefined);
+    }
+  }
+
+  private async pause(runId: string): Promise<"paused"> {
+    await db.update(schema.runs).set({ status: "paused" }).where(eq(schema.runs.id, runId));
+    return "paused";
+  }
+
+  private async loadStep(runId: string, stepKey: string) {
+    const [row] = await db
+      .select()
+      .from(schema.steps)
+      .where(and(eq(schema.steps.runId, runId), eq(schema.steps.stepKey, stepKey)));
+    return row;
+  }
+
+  private async runModelStep(args: {
+    runId: string;
+    stepId: string;
+    step: ModelStep;
+    spec: AgentSpec;
+    payload: EventPayload;
+    outputs: Map<string, unknown>;
+    fallbacks: FallbackRow[];
+    runCost: number;
+  }): Promise<{ kind: "ok"; output: unknown; costUsd: number; billable: boolean } | { kind: "skipped" }> {
+    const { runId, stepId, step, spec, payload, outputs, fallbacks, runCost } = args;
+
+    await assertWithinBudget(spec.id, runCost, spec.budget);
+
+    const missing = this.deps.mcp.missing(step.requiresServers);
+    if (missing.length > 0) {
+      if (!step.optional) {
+        throw new Error(`passo "${step.key}" exige servidores ausentes nesta maquina: ${missing.join(", ")}`);
+      }
+      await db
+        .update(schema.steps)
+        .set({ status: "skipped", error: `servidores indisponiveis: ${missing.join(", ")}`, endedAt: nowSec() })
+        .where(eq(schema.steps.id, stepId));
+      return { kind: "skipped" };
+    }
+
+    const resolution = resolveModel(step.model, fallbacks);
+    const runtime =
+      this.deps.runtimes.get(resolution.provider === "claude-code" ? "claude-code" : "native");
+    if (!runtime) throw new Error(`runtime indisponivel para "${resolution.provider}"`);
+
+    const ctx: SkillContext = { repo: payload.repo, changedFiles: payload.changedFiles };
+    const skills = selectSkills(spec.skills, ctx);
+    const toolRefs = resolveTools(spec, step);
+    const { tools, release } = await this.deps.mcp.toolsFor(toolRefs);
+
+    await db
+      .update(schema.steps)
+      .set({
+        status: "running",
+        startedAt: nowSec(),
+        attempt: (await this.loadStep(runId, step.key))!.attempt + 1,
+        modelRequested: resolution.requested,
+        modelUsed: resolution.used,
+        substitutionReason: resolution.substitutionReason,
+        skillsUsed: skills.map((s) => ({ name: s.name, origin: s.origin, hash: s.hash })),
+        input: { needs: step.needs.map((k) => outputs.get(k)) },
+      })
+      .where(eq(schema.steps.id, stepId));
+
+    try {
+      // O runtime claude-code carrega skills nativamente; o nativo precisa do texto.
+      const inlineSkills = runtime.id === "native";
+      const system = [skillsPreamble(skills, inlineSkills)].filter((s) => s.length > 0).join("\n\n");
+
+      const result = await runtime.run({
+        provider: resolution.provider,
+        model: resolution.model,
+        system: system.length > 0 ? system : undefined,
+        prompt: renderPrompt(step.prompt, payload, outputs),
+        tools,
+        mcpServers: [...new Set(toolRefs.map((t) => t.server))],
+        maxSteps: step.maxSteps,
+        outputSchema: step.outputSchema,
+      });
+
+      const output = step.outputSchema ? result.structured : result.text;
+
+      await db
+        .update(schema.steps)
+        .set({
+          status: "done",
+          endedAt: nowSec(),
+          output: output as object,
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          costUsd: result.costUsd,
+          billable: result.billable,
+          toolsUsed: result.toolsUsed,
+        })
+        .where(eq(schema.steps.id, stepId));
+
+      return { kind: "ok", output, costUsd: result.costUsd, billable: result.billable };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await db
+        .update(schema.steps)
+        .set({ status: "failed", endedAt: nowSec(), error: message })
+        .where(eq(schema.steps.id, stepId));
+      throw err;
+    } finally {
+      release();
+    }
+  }
+
+  private async runActionStep(args: {
+    runId: string;
+    stepId: string;
+    step: ActionStep;
+    outputs: Map<string, unknown>;
+  }): Promise<{ kind: "ok"; output: unknown; costUsd: number; billable: boolean } | { kind: "paused" }> {
+    const { runId, stepId, step, outputs } = args;
+    const source = step.input ?? step.needs[0];
+    const payload = source ? outputs.get(source) : undefined;
+
+    const state = await this.deps.gate.submit(
+      { runId, stepId, kind: step.action, payload },
+      step.mode,
+    );
+
+    if (state === "pending") {
+      await db
+        .update(schema.steps)
+        .set({ status: "awaiting_approval", startedAt: nowSec() })
+        .where(eq(schema.steps.id, stepId));
+      return { kind: "paused" };
+    }
+
+    await db
+      .update(schema.steps)
+      .set({ status: "done", endedAt: nowSec(), output: { state } })
+      .where(eq(schema.steps.id, stepId));
+    return { kind: "ok", output: { state }, costUsd: 0, billable: false };
+  }
+}
+
+/** Interpolacao simples: {{event.x}} e {{steps.chave}}. */
+export function renderPrompt(
+  template: string,
+  payload: EventPayload,
+  outputs: Map<string, unknown>,
+): string {
+  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path: string) => {
+    const [root, ...rest] = path.split(".");
+    if (root === "steps") {
+      const value = outputs.get(rest.join("."));
+      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
+    }
+    if (root === "event") {
+      const value = rest.reduce<unknown>(
+        (acc, key) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
+        payload,
+      );
+      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
+    }
+    return "";
+  });
+}
