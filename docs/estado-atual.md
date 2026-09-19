@@ -75,11 +75,9 @@ com `alter table add column` manual.
 `Record<string, unknown>` faz a inferência do `stopWhen` cair para `never`. Use
 `ToolSet` do pacote `ai`.
 
-## Próximos passos, na ordem
+## Próximos passos
 
-1. Cadastro de servidores MCP vindo do banco, no lugar da lista vazia em
-   `src/cli.ts`.
-2. Reconciliador de review humano e coleta de métricas.
-3. Agendador com cursor e escuta de eventos de energia.
-4. Casca Electron: bandeja, início automático, keychain, deep link, notificação.
-5. Interface: inbox, execuções, editor de agent, configuração.
+Quebrados em tarefas atômicas em `docs/backlog.md`, na ordem revisada pelo
+ADR 0002: camada de serviço, servidor MCP próprio, casca Electron, interface,
+empacotamento. O cadastro de MCP vindo do banco é a tarefa M1.2 e destrava o
+passo de contexto de deploy.

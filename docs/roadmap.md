@@ -1,49 +1,83 @@
 # Roadmap
 
-## v1, núcleo do review de PR
+Ordem revisada pelo ADR 0002: o servidor MCP vem antes da interface, porque é o
+que torna o produto configurável enquanto não há tela.
 
-Objetivo: uma coisa funcionando de verdade, ponta a ponta, útil sozinha.
+## Pendências pequenas do núcleo
 
-- [x] esquema do banco e versão imutável de agent
-- [x] executor durável com retomada e orçamento
-- [x] runtime nativo e runtime de assinatura
-- [x] registro MCP sob demanda
-- [x] skills por regra de arquivo
-- [x] fila de aprovação
-- [x] fonte GitHub e ação de review
-- [ ] cadastro de MCP vindo do banco
-- [ ] reconciliador de review humano e métricas
-- [ ] agendador com cursor e eventos de energia
+Absorvidas pelos marcos abaixo, listadas aqui para não sumirem.
 
-## v2, assinatura como segundo runtime
+- cadastro de servidores MCP vindo do banco, hoje uma lista vazia em `src/cli.ts`
+- reconciliador de review humano e coleta de métricas
+- agendador com cursor e escuta de eventos de energia
 
-Já implementado antes do previsto. Resta o adaptador `codex exec` para usar o
-plano ChatGPT na máquina sem assinatura Claude.
+## M1, camada de serviço
 
-## v3, interface
+`AgentService`, `McpService`, `ProviderService`, `RunService` e
+`ApprovalService`. Linha de comando passa a ser casca fina.
 
-Bandeja, início automático, keychain, deep link de OAuth, notificação com ação.
+Pronto quando a linha de comando não tiver mais nenhuma regra de cadastro e o
+`demo` continuar passando.
+
+Estimativa: um fim de semana.
+
+## M2, servidor MCP próprio
+
+Transporte stdio sobre o mesmo banco. Ferramentas de leitura, configuração e
+execução. Aprovação e publicação ficam de fora, por decisão do ADR 0002.
+
+Pronto quando um assistente externo conseguir cadastrar um servidor MCP, montar
+um agent e disparar uma execução sem tocar no código.
+
+Estimativa: um fim de semana.
+
+## M3, casca Electron
+
+Processo principal carregando o núcleo, bandeja, início automático,
+`powerMonitor`, `safeStorage` para credencial, notificação com ação, deep link
+para OAuth.
+
+Pronto quando o aplicativo ficar na bandeja, sobreviver ao sono da máquina e
+notificar uma pendência.
+
+Estimativa: um a dois fins de semana.
+
+## M4, interface
+
 Quatro telas: inbox, execuções, agents, configuração. Visualização somente
 leitura da execução. Exportação para pasta versionada em git.
 
-## v4, radar de Slack e Teams
+Pronto quando der para aprovar um achado sem abrir o terminal.
 
-Digest em vez de notificação item a item. Depende de acesso corporativo, que não
-é risco técnico. A fonte por consulta a MCP existe para o caso de o registro de
-aplicativo não sair.
+Estimativa: dois a três fins de semana.
 
-É o teste do desenho: se este watcher entrar sem tocar no núcleo, a arquitetura
-está certa.
+## M5, empacotamento
 
-## v5, incidente
+`electron-builder`, ícone, `.dmg`. Módulo nativo recompilado para o runtime do
+Electron. Assinatura e notarização ficam condicionadas a conta de desenvolvedor
+Apple; sem ela o aplicativo roda com aviso na primeira abertura e a atualização
+automática não funciona.
 
-Alarme do New Relic como gatilho determinístico. O agent entra depois do alarme
-para correlacionar deploy, trace e pull request recente, e entregar a hipótese.
+Pronto quando existir um `.dmg` que instala e abre em uma máquina limpa.
 
-## v6, o resto
+Estimativa: um fim de semana, mais o tempo da conta Apple se você quiser
+assinatura.
 
-Jira, deploy, watcher dos próprios pull requests. Cada um é configuração mais
-uma fonte, não código novo.
+## Depois do aplicativo
+
+**Radar de Slack e Teams.** Digest em vez de notificação item a item. Depende de
+acesso corporativo, que não é risco técnico. A fonte por consulta a MCP existe
+para o caso de o registro de aplicativo não sair. É o teste do desenho: se este
+watcher entrar sem tocar no núcleo, a arquitetura está certa.
+
+**Incidente.** Alarme do New Relic como gatilho determinístico, com o agent
+entrando depois para correlacionar deploy, trace e pull request recente.
+
+**Adaptador `codex exec`.** Plano ChatGPT como terceira via, para a máquina sem
+assinatura Claude.
+
+**O resto.** Jira, deploy, watcher dos próprios pull requests. Cada um é
+configuração mais uma fonte, não código novo.
 
 ## Fora de escopo, de propósito
 

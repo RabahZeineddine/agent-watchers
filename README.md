@@ -32,11 +32,15 @@ Detalhes em [docs/estado-atual.md](docs/estado-atual.md).
 | [decisoes-da-conversa.md](docs/decisoes-da-conversa.md) | o caminho até o desenho, incluindo o que mudou de ideia |
 | [pesquisa.md](docs/pesquisa.md) | o que foi verificado na documentação externa, separado de suposição |
 | [estado-atual.md](docs/estado-atual.md) | o que existe, o que falta, e as armadilhas encontradas |
-| [roadmap.md](docs/roadmap.md) | fases, da v1 ao que ficou fora de propósito |
+| [ADR 0002](docs/adr/0002-camada-de-servico-e-servidor-mcp.md) | camada de serviço, servidor MCP próprio, e por que aprovação fica fora dele |
+| [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
+| [backlog.md](docs/backlog.md) | tarefas atômicas com critério de pronto e comando de verificação |
+| [diario.md](docs/diario.md) | uma linha por iteração de execução |
 
 ## Estrutura
 
 ```
+PROMPT.md       prompt do loop de execução autônoma
 app/            núcleo em TypeScript, o produto daqui para a frente
 docs/           decisões, pesquisa, estado e roadmap
 app.py          versão anterior em Python, mantida só como referência
