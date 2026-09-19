@@ -49,6 +49,7 @@ de fallback redireciona os passos afetados para provedores por chave.
 | [pesquisa.md](docs/pesquisa.md) | o que foi verificado na documentação externa, separado de suposição |
 | [estado-atual.md](docs/estado-atual.md) | o que existe, o que falta, e as armadilhas encontradas |
 | [ADR 0002](docs/adr/0002-camada-de-servico-e-servidor-mcp.md) | camada de serviço, servidor MCP próprio, e por que aprovação fica fora dele |
+| [ADR 0003](docs/adr/0003-interface-sobre-ai-elements.md) | interface sobre AI Elements, chat como console, e a regra contra injeção de prompt |
 | [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
 | [backlog.md](docs/backlog.md) | tarefas atômicas com critério de pronto e comando de verificação |
 | [diario.md](docs/diario.md) | uma linha por iteração de execução |

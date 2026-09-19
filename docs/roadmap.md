@@ -44,12 +44,22 @@ Estimativa: um a dois fins de semana.
 
 ## M4, interface
 
-Quatro telas: inbox, execuções, agents, configuração. Visualização somente
-leitura da execução. Exportação para pasta versionada em git.
+Construída sobre AI Elements, por decisão do ADR 0003. Quatro telas: inbox,
+execuções, agents, configuração. Mais o chat interno, que opera o produto pela
+mesma camada de serviço que o servidor MCP usa.
 
-Pronto quando der para aprovar um achado sem abrir o terminal.
+A tela de execuções aproveita as famílias de código e raciocínio: chamada de
+ferramenta com entrada e saída, destaque de sintaxe, stack trace, streaming. O
+grafo da execução, somente leitura, sai barato porque o passo já declara `needs`.
 
-Estimativa: dois a três fins de semana.
+Aprovação aparece como botão renderizado, nunca como ferramenta invocável pelo
+modelo, porque o assistente lê conteúdo não confiável.
+
+Pronto quando der para aprovar um achado sem abrir o terminal, e pedir ao chat
+que crie um agent novo.
+
+Estimativa: dois a três fins de semana, possivelmente menos com os componentes
+prontos.
 
 ## M5, empacotamento
 
@@ -81,7 +91,9 @@ configuração mais uma fonte, não código novo.
 
 ## Fora de escopo, de propósito
 
-- editor visual de nós, enquanto os pipelines forem cadeias curtas
+- editor visual de nós, enquanto os pipelines forem cadeias curtas. O canvas
+  do AI Elements torna isso viável depois do M4, mas a lista continua sendo o
+  editor principal
 - agent agindo sozinho em escrita externa sem destravamento medido
 - modelo vigiando log continuamente
 - multiusuário, nuvem, time
