@@ -10,7 +10,7 @@
       "description": "Criar app/src/services/agent-service.ts com list(), get(agentId), getLatestVersion(agentId), upsert(spec, note) criando versao imutavel, e listVersions(agentId). Mover para la a logica que hoje esta em seed() no cli.ts.",
       "done_when": "cli.ts nao monta mais linha de agent_versions diretamente.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts seed",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

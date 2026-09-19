@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
 import { Executor } from "./executor/executor.js";
 import { McpRegistry, type McpServerConfig } from "./mcp/registry.js";
 import { claudeCodeAvailable } from "./providers/registry.js";
 import { ClaudeCodeRuntime } from "./runtimes/claude-code.js";
+import { agentService } from "./services/agent-service.js";
 import { NativeRuntime } from "./runtimes/native.js";
 import type { Runtime } from "./runtimes/types.js";
 import { fetchPr, githubReviewHandler, pollOpenPullRequests, type Finding } from "./sources/github.js";
@@ -26,29 +27,9 @@ function buildExecutor(): Executor {
   return new Executor({ mcp: McpRegistry.fromList(mcpServers), runtimes, gate, machineId });
 }
 
+/** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
-  const [existing] = await db
-    .select()
-    .from(schema.agentVersions)
-    .where(eq(schema.agentVersions.agentId, prReviewSpec.id))
-    .orderBy(desc(schema.agentVersions.version))
-    .limit(1);
-
-  if (existing && JSON.stringify(existing.spec) === JSON.stringify(prReviewSpec)) return existing.id;
-
-  await db
-    .insert(schema.agents)
-    .values({ id: prReviewSpec.id, name: prReviewSpec.name })
-    .onConflictDoNothing();
-
-  const id = randomUUID();
-  await db.insert(schema.agentVersions).values({
-    id,
-    agentId: prReviewSpec.id,
-    version: (existing?.version ?? 0) + 1,
-    spec: prReviewSpec as unknown as object,
-    note: "seed",
-  });
+  const version = await agentService.upsert(prReviewSpec, "seed");
 
   if (machineId !== "minha-maquina") {
     for (const f of fallbacksSemAssinatura) {
@@ -58,7 +39,7 @@ async function seed(): Promise<string> {
         .onConflictDoNothing();
     }
   }
-  return id;
+  return version.id;
 }
 
 async function review(target: string): Promise<void> {
