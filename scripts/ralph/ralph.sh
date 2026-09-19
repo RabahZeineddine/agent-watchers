@@ -10,18 +10,15 @@
 #     branch diferente de main, branch ausente do remoto;
 #   - conclusão é ESTADO, lido do prd.json, não texto que o agente promete.
 #
-# Uso: ./ralph.sh <marco> [max_iteracoes]
-#   ./ralph.sh M1 12
+# Uso:
+#   ./ralph.sh M1 12        um marco
+#   ./ralph.sh all 30       M1, depois M2, depois N, no mesmo worktree
+#   ./ralph.sh status       só imprime o estado do backlog
 
 set -e
 
-MARCO="${1:-}"
+ALVO="${1:-}"
 MAX_ITERATIONS="${2:-12}"
-
-if [ -z "$MARCO" ]; then
-  echo "uso: ./ralph.sh <marco> [max_iteracoes]   ex: ./ralph.sh M1 12"
-  exit 64
-fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRD_FILE="$SCRIPT_DIR/prd.json"
@@ -30,9 +27,43 @@ PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 ORIGEM="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WORKTREE="$(dirname "$ORIGEM")/locum-loop"
 TRONCO="main"
-BRANCH="loop/$(echo "$MARCO" | tr '[:upper:]' '[:lower:]')"
 
 command -v jq >/dev/null || { echo "ABORTADO: jq nao instalado."; exit 64; }
+
+pendentes() {
+  jq --arg m "$1" \
+    '[.userStories[] | select(.milestone == $m and .passes != true and .blocked != true)] | length' \
+    "$PRD_FILE" 2>/dev/null || echo "-1"
+}
+bloqueadas() {
+  jq --arg m "$1" \
+    '[.userStories[] | select(.milestone == $m and .blocked == true)] | length' \
+    "$PRD_FILE" 2>/dev/null || echo "0"
+}
+
+estado() {
+  echo ""
+  jq -r '.userStories[]
+    | "\(if .passes then "[x]" elif .blocked then "[!]" else "[ ]" end)  \(.milestone)  \(.id)  \(.title)\(if .blocked then "  <- " + (.blocked_reason // "bloqueada") else "" end)"' \
+    "$PRD_FILE"
+  echo ""
+  for m in M1 M2 N; do
+    echo "  $m: $(pendentes "$m") pendente(s), $(bloqueadas "$m") bloqueada(s)"
+  done
+  echo ""
+}
+
+if [ "$ALVO" = "status" ]; then
+  estado
+  exit 0
+fi
+
+if [ -z "$ALVO" ]; then
+  echo "uso: ./ralph.sh <marco|all|status> [max_iteracoes]"
+  echo "     ./ralph.sh M1 12"
+  echo "     ./ralph.sh all 30"
+  exit 64
+fi
 
 # ── Worktree próprio, obrigatório ────────────────────────────────────────────
 #
@@ -41,7 +72,7 @@ command -v jq >/dev/null || { echo "ABORTADO: jq nao instalado."; exit 64; }
 # só aparece depois.
 if [ ! -d "$WORKTREE" ]; then
   echo "Criando worktree em $WORKTREE (a partir de $TRONCO)"
-  git -C "$ORIGEM" worktree add "$WORKTREE" -b "$BRANCH" "$TRONCO"
+  git -C "$ORIGEM" worktree add "$WORKTREE" -b "loop/backlog" "$TRONCO"
 
   echo "Instalando dependencias"
   (cd "$WORKTREE/app" && npm install --silent)
@@ -64,92 +95,112 @@ if [ ! -f "$PROGRESS_FILE" ]; then
   } > "$PROGRESS_FILE"
 fi
 
-pendentes() {
-  jq --arg m "$MARCO" \
-    '[.userStories[] | select(.milestone == $m and .passes != true and .blocked != true)] | length' \
-    "$PRD_FILE" 2>/dev/null || echo "-1"
-}
-bloqueadas() {
-  jq --arg m "$MARCO" \
-    '[.userStories[] | select(.milestone == $m and .blocked == true)] | length' \
-    "$PRD_FILE" 2>/dev/null || echo "0"
-}
+# ── Uma rodada de marco ──────────────────────────────────────────────────────
+# Devolve 0 quando o marco fecha, 1 quando estoura o teto, e aborta o processo
+# inteiro nas condições que não devem continuar.
+roda_marco() {
+  local marco="$1" teto="$2" i
 
-echo "Locum, marco $MARCO, worktree $WORKTREE, ate $MAX_ITERATIONS iteracoes"
-echo "Pendentes agora: $(pendentes)"
-
-for i in $(seq 1 "$MAX_ITERATIONS"); do
   echo ""
-  echo "==============================================================="
-  echo "  Iteracao $i de $MAX_ITERATIONS   (marco $MARCO)"
-  echo "==============================================================="
+  echo "###############################################################"
+  echo "  Marco $marco, ate $teto iteracoes, $(pendentes "$marco") pendente(s)"
+  echo "###############################################################"
 
-  OUTPUT=$(cd "$WORKTREE" && claude --dangerously-skip-permissions \
-    --add-dir "$SCRIPT_DIR" \
-    --print < "$SCRIPT_DIR/AGENT.md" 2>&1 | tee /dev/stderr) || true
-
-  # Hook que bloqueia o prompt faz a iteração não rodar. Seguir em frente aqui
-  # queima o teto inteiro sem produzir nada.
-  if echo "$OUTPUT" | grep -q "operation blocked by hook"; then
-    echo ""
-    echo "ABORTADO: hook bloqueou o prompt; a iteracao $i nao rodou."
-    exit 2
+  if [ "$(pendentes "$marco")" = "0" ]; then
+    echo "Marco $marco ja esta fechado."
+    return 0
   fi
 
-  BRANCH_ATUAL=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
-  if [ "$BRANCH_ATUAL" = "$TRONCO" ] || [ -z "$BRANCH_ATUAL" ]; then
+  for i in $(seq 1 "$teto"); do
     echo ""
-    echo "ABORTADO: worktree em '$BRANCH_ATUAL' na iteracao $i."
-    exit 6
-  fi
+    echo "==============================================================="
+    echo "  $marco, iteracao $i de $teto   $(date '+%H:%M:%S')"
+    echo "==============================================================="
 
-  # Push é decisão do dono do repositório, nunca do loop.
-  if git -C "$WORKTREE" ls-remote --exit-code --heads origin "$BRANCH_ATUAL" >/dev/null 2>&1; then
-    echo ""
-    echo "ABORTADO: a branch $BRANCH_ATUAL apareceu no remoto. O loop nao empurra."
-    exit 8
-  fi
+    local saida
+    saida=$(cd "$WORKTREE" && claude --dangerously-skip-permissions \
+      --add-dir "$SCRIPT_DIR" \
+      --print < "$SCRIPT_DIR/AGENT.md" 2>&1 | tee /dev/stderr) || true
 
-  if ! (cd "$WORKTREE/app" && npx tsc --noEmit >/dev/null 2>&1); then
-    echo ""
-    echo "ABORTADO: tsc com erro no fim da iteracao $i."
-    (cd "$WORKTREE/app" && npx tsc --noEmit) || true
-    exit 4
-  fi
+    # Hook que bloqueia o prompt faz a iteração não rodar. Seguir em frente aqui
+    # queima o teto inteiro sem produzir nada.
+    if echo "$saida" | grep -q "operation blocked by hook"; then
+      echo ""
+      echo "ABORTADO: hook bloqueou o prompt; a iteracao nao rodou."
+      exit 2
+    fi
 
-  # Árvore suja significa trabalho não commitado, e a iteração seguinte é uma
-  # instância nova que não sabe o que ficou pela metade.
-  if [ -n "$(git -C "$WORKTREE" status --porcelain)" ]; then
-    echo ""
-    echo "ABORTADO: worktree suja no fim da iteracao $i:"
-    git -C "$WORKTREE" status --short
-    exit 7
-  fi
+    local branch_atual
+    branch_atual=$(git -C "$WORKTREE" branch --show-current 2>/dev/null || echo "")
+    if [ "$branch_atual" = "$TRONCO" ] || [ -z "$branch_atual" ]; then
+      echo ""
+      echo "ABORTADO: worktree em '$branch_atual'."
+      exit 6
+    fi
 
-  # Conclusão é ESTADO. O prd.json é a fonte da verdade.
-  PENDING=$(pendentes)
-  BLOCKED=$(bloqueadas)
-  if [ "$PENDING" = "-1" ]; then
-    echo ""
-    echo "ABORTADO: nao consegui ler o prd.json."
-    exit 3
-  fi
-  if [ "$PENDING" = "0" ]; then
-    echo ""
-    echo "Marco $MARCO fechado: 0 pendente ($BLOCKED bloqueada(s))."
-    echo "Concluido na iteracao $i de $MAX_ITERATIONS."
-    git -C "$WORKTREE" log --oneline "$TRONCO"..HEAD | head -30
-    echo ""
-    echo "Para trazer para a main:"
-    echo "  git -C \"$ORIGEM\" merge --no-ff $BRANCH_ATUAL"
-    exit 0
-  fi
-  echo "prd.json: $PENDING pendente(s), $BLOCKED bloqueada(s) no marco $MARCO."
+    # Push é decisão do dono do repositório, nunca do loop.
+    if git -C "$WORKTREE" ls-remote --exit-code --heads origin "$branch_atual" >/dev/null 2>&1; then
+      echo ""
+      echo "ABORTADO: a branch $branch_atual apareceu no remoto. O loop nao empurra."
+      exit 8
+    fi
 
-  sleep 2
+    if ! (cd "$WORKTREE/app" && npx tsc --noEmit >/dev/null 2>&1); then
+      echo ""
+      echo "ABORTADO: tsc com erro no fim da iteracao."
+      (cd "$WORKTREE/app" && npx tsc --noEmit) || true
+      exit 4
+    fi
+
+    # Árvore suja significa trabalho não commitado, e a iteração seguinte é uma
+    # instância nova que não sabe o que ficou pela metade.
+    if [ -n "$(git -C "$WORKTREE" status --porcelain)" ]; then
+      echo ""
+      echo "ABORTADO: worktree suja no fim da iteracao:"
+      git -C "$WORKTREE" status --short
+      exit 7
+    fi
+
+    # Conclusão é ESTADO. O prd.json é a fonte da verdade.
+    local pend blo
+    pend=$(pendentes "$marco")
+    blo=$(bloqueadas "$marco")
+    if [ "$pend" = "-1" ]; then
+      echo ""
+      echo "ABORTADO: nao consegui ler o prd.json."
+      exit 3
+    fi
+    if [ "$pend" = "0" ]; then
+      echo ""
+      echo "Marco $marco fechado na iteracao $i ($blo bloqueada(s))."
+      return 0
+    fi
+    echo "$marco: $pend pendente(s), $blo bloqueada(s)."
+
+    sleep 2
+  done
+
+  echo ""
+  echo "Teto de $teto iteracoes sem fechar o marco $marco."
+  return 1
+}
+
+MARCOS="$ALVO"
+[ "$ALVO" = "all" ] && MARCOS="M1 M2 N"
+
+FALHOU=0
+for m in $MARCOS; do
+  roda_marco "$m" "$MAX_ITERATIONS" || FALHOU=1
 done
 
 echo ""
-echo "Teto de iteracoes ($MAX_ITERATIONS) sem fechar o marco $MARCO."
-echo "Veja $PROGRESS_FILE."
-exit 1
+echo "==============================================================="
+echo "  Fim  $(date '+%Y-%m-%d %H:%M:%S')"
+echo "==============================================================="
+estado
+git -C "$WORKTREE" log --oneline "$TRONCO"..HEAD | head -40
+echo ""
+echo "Para trazer para a main:"
+echo "  git -C \"$ORIGEM\" merge --no-ff loop/backlog"
+
+exit "$FALHOU"

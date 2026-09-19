@@ -28,3 +28,4 @@ Thumbs.db
 
 # dados do loop de execucao
 .locum-loop-data/
+scripts/ralph/logs/
