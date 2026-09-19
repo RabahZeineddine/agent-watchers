@@ -57,6 +57,8 @@ npm run dev demo                      # não precisa de credencial
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
+npm run dev runs
+npm run dev rerun <run-id> audit
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'

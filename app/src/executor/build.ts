@@ -1,0 +1,28 @@
+import { ApprovalGate } from "../approval/gate.js";
+import { Executor } from "./executor.js";
+import { McpRegistry } from "../mcp/registry.js";
+import { ClaudeCodeRuntime } from "../runtimes/claude-code.js";
+import { NativeRuntime } from "../runtimes/native.js";
+import type { Runtime } from "../runtimes/types.js";
+import { mcpService } from "../services/mcp-service.js";
+import { providerService } from "../services/provider-service.js";
+import { githubReviewHandler } from "../sources/github.js";
+
+/** Identidade local: a tabela de substituicao e o que roda aqui dependem dela. */
+export const machineId = process.env.MACHINE_ID ?? "default";
+
+/**
+ * Montagem do executor a partir do que esta cadastrado nesta maquina.
+ *
+ * Mora fora da linha de comando porque o servico de runs tambem precisa dela
+ * para reexecutar um passo, e o servidor MCP vai precisar da mesma montagem.
+ */
+export async function buildExecutor(): Promise<Executor> {
+  const servers = await mcpService.enabledConfigs();
+  const configs = new Map(servers.map((c) => [c.name, c]));
+  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
+  if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
+
+  const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
+  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
+}

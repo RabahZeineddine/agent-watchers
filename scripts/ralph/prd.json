@@ -54,7 +54,7 @@
       "description": "Criar app/src/services/run-service.ts com list(filtro), get(runId) trazendo os passos, findings(runId), e rerunStep(runId, stepKey) que zera o passo e os que dependem dele antes de reexecutar.",
       "done_when": "printRun no cli.ts consome o servico.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts runs",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

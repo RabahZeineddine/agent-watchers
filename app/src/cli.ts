@@ -3,29 +3,14 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
-import { Executor } from "./executor/executor.js";
-import { McpRegistry } from "./mcp/registry.js";
-import { ClaudeCodeRuntime } from "./runtimes/claude-code.js";
+import { buildExecutor, machineId } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
-import { NativeRuntime } from "./runtimes/native.js";
-import type { Runtime } from "./runtimes/types.js";
-import { fetchPr, githubReviewHandler, pollOpenPullRequests, type Finding } from "./sources/github.js";
+import { runService, type RunSummary } from "./services/run-service.js";
+import { githubReviewHandler, fetchPr, pollOpenPullRequests } from "./sources/github.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
 import { demoPr } from "./seed/demo-event.js";
-
-const machineId = process.env.MACHINE_ID ?? "default";
-
-async function buildExecutor(): Promise<Executor> {
-  const servers = await mcpService.enabledConfigs();
-  const configs = new Map(servers.map((c) => [c.name, c]));
-  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
-  if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
-
-  const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
-}
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
@@ -90,11 +75,11 @@ async function demo(): Promise<void> {
 }
 
 async function printRun(runId: string): Promise<void> {
-  const rows = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
-  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  const run = await runService.get(runId);
+  if (!run) throw new Error(`run ${runId} nao encontrado`);
 
   console.log("");
-  for (const s of rows.sort((a, b) => a.idx - b.idx)) {
+  for (const s of run.steps) {
     const model = s.modelUsed ?? "acao";
     const sub = s.substitutionReason ? ` (substituido)` : "";
     const secs = s.startedAt && s.endedAt ? `${s.endedAt - s.startedAt}s` : "-";
@@ -104,19 +89,34 @@ async function printRun(runId: string): Promise<void> {
     if (s.error) console.log(`     erro: ${s.error}`);
   }
   console.log(
-    `\ncusto do run: ${(run?.costUsd ?? 0).toFixed(3)} USD cobrado` +
-      ` · ${(run?.estimateUsd ?? 0).toFixed(3)} USD equivalente (assinatura nao cobra)`,
+    `\ncusto do run: ${run.costUsd.toFixed(3)} USD cobrado` +
+      ` \u00b7 ${run.estimateUsd.toFixed(3)} USD equivalente (assinatura nao cobra)`,
   );
-  if (run?.error) console.log(`motivo da parada: ${run.error}`);
+  if (run.error) console.log(`motivo da parada: ${run.error}`);
 
-  const audit = rows.find((s) => s.stepKey === "audit");
-  const findings = (audit?.output as { findings?: Finding[] } | null)?.findings ?? [];
+  const findings = await runService.findings(runId);
   if (findings.length > 0) {
     console.log(`\nachados (${findings.length}):`);
     for (const f of findings) {
       console.log(` [${f.severity}] ${f.file ?? "geral"}${f.line ? `:${f.line}` : ""}  ${f.problem}`);
     }
   }
+}
+
+/** Ultimas execucoes, opcionalmente so as de um status. */
+async function runs(status?: string): Promise<void> {
+  const rows = await runService.list(status ? { status } : {});
+  if (rows.length === 0) {
+    console.log(status ? `nenhum run com status ${status}` : "nenhum run registrado");
+    return;
+  }
+  for (const r of rows) console.log(formatRun(r));
+}
+
+function formatRun(run: RunSummary): string {
+  const quando = new Date(run.createdAt * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const agent = `${run.agentId} v${run.agentVersion}`;
+  return `${run.id}  ${quando}  ${agent.padEnd(20)} ${run.status.padEnd(10)} ${run.costUsd.toFixed(3)} USD`;
 }
 
 /**
@@ -233,6 +233,9 @@ async function main(): Promise<void> {
     case "inbox":
       await inbox();
       break;
+    case "runs":
+      await runs(arg);
+      break;
     case "providers":
       await providers();
       break;
@@ -293,6 +296,13 @@ async function main(): Promise<void> {
       console.log(await (await executor()).execute(arg));
       await printRun(arg);
       break;
+    case "rerun": {
+      const [runId, stepKey] = args;
+      if (!runId || !stepKey) throw new Error("uso: rerun <run-id> <chave-do-passo>");
+      console.log(await runService.rerunStep(runId, stepKey));
+      await printRun(runId);
+      break;
+    }
     default:
       console.log(
         [
@@ -303,6 +313,7 @@ async function main(): Promise<void> {
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",
+          "  runs [status]            lista as ultimas execucoes",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
@@ -315,6 +326,7 @@ async function main(): Promise<void> {
           "  reject <id>              descarta",
           "  resume                   retoma runs interrompidos",
           "  run <run-id>             continua um run especifico",
+          "  rerun <run-id> <passo>   zera o passo e os que dependem dele, e roda de novo",
         ].join("\n"),
       );
   }
