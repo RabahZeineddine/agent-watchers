@@ -1,4 +1,4 @@
-# Agent Watchers, núcleo da v1
+# Locum, núcleo da v1
 
 Núcleo headless do aplicativo. A casca Electron entra na fase 5; por enquanto
 tudo roda pela linha de comando, com o mesmo executor que a interface vai usar.

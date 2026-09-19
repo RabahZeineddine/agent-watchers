@@ -4,11 +4,11 @@ import { mkdirSync } from "node:fs";
 
 /** Pasta de dados do app. Fora do repo, porque banco nao e codigo. */
 export function appHome(): string {
-  const custom = process.env.AGENT_WATCHERS_HOME;
+  const custom = process.env.LOCUM_HOME;
   const dir =
     custom && custom.length > 0
       ? custom
-      : join(homedir(), "Library", "Application Support", "agent-watchers");
+      : join(homedir(), "Library", "Application Support", "locum");
   mkdirSync(dir, { recursive: true });
   return dir;
 }

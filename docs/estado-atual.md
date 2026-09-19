@@ -1,5 +1,7 @@
 # Estado atual
 
+Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
+
 Atualizado em 19 de setembro de 2026.
 
 ## O que existe e roda

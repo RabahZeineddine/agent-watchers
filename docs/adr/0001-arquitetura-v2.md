@@ -1,4 +1,4 @@
-# ADR 0001: Arquitetura v2 do Agent Watchers
+# ADR 0001: Arquitetura v2 do Locum
 
 Data: 2026-09-19
 Status: aceito

@@ -1,8 +1,11 @@
-# Agent Watchers
+# Locum
 
-Aplicativo pessoal para macOS que roda agents em segundo plano, prepara trabalho
-enquanto você não está olhando e entrega o resultado numa fila de aprovação.
-Nada que escreve fora sai sem um clique seu.
+*Locum: quem assume o seu posto enquanto você não está.*
+
+Aplicativo para macOS que roda os seus agents em segundo plano e faz o trabalho
+no seu lugar. Ele revisa, investiga, correlaciona e escreve, e quanto do
+resultado sai sozinho é decisão sua: cada ação tem modo de aprovação, rascunho
+ou automático, destravado por categoria conforme a medição sustenta.
 
 Primeiro caso de uso: revisão dos pull requests do time, com triagem e auditoria
 em modelos diferentes, contexto de deploy cruzado do ArgoCD, e convenções da
@@ -24,6 +27,19 @@ npm run dev demo     # pipeline completo num PR sintético, sem credencial
 
 Detalhes em [docs/estado-atual.md](docs/estado-atual.md).
 
+## Provedores e assinatura
+
+O Locum roda com dois runtimes atrás da mesma interface. O nativo usa o AI SDK e
+fala com qualquer provedor por chave de API: Anthropic, OpenAI, Google, GLM,
+Groq, OpenRouter, Ollama e qualquer endpoint compatível com OpenAI.
+
+O segundo runtime executa o binário do Claude Code já instalado e autenticado na
+máquina de quem usa, o que permite aproveitar a própria assinatura em vez de
+gastar chave de API. O Locum não embute login, não intermedeia credencial e não
+redistribui acesso: quem usa autentica a própria ferramenta, na própria máquina.
+Sem o binário instalado, esse runtime simplesmente não é oferecido, e a tabela
+de fallback redireciona os passos afetados para provedores por chave.
+
 ## Documentação
 
 | documento | conteúdo |
@@ -36,6 +52,16 @@ Detalhes em [docs/estado-atual.md](docs/estado-atual.md).
 | [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
 | [backlog.md](docs/backlog.md) | tarefas atômicas com critério de pronto e comando de verificação |
 | [diario.md](docs/diario.md) | uma linha por iteração de execução |
+
+## Idioma
+
+O código usa identificadores em inglês. Comentários e documentação estão em
+português enquanto o projeto é privado, e serão traduzidos antes da abertura do
+repositório, junto com o guia de contribuição. A tarefa está no backlog.
+
+## Licença
+
+MIT. Veja [LICENSE](LICENSE).
 
 ## Estrutura
 

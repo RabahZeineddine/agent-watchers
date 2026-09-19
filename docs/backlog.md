@@ -113,6 +113,31 @@ exceto os que começam com `docs/`.
   fixa, preparado para receber o evento de acordar da máquina no M3.
   Pronto quando: duas execuções seguidas não reprocessarem o mesmo evento.
 
+## P, publicação do código aberto
+
+Fazer no marco de publicação, não antes: documentação ainda muda muito e
+traduzir duas vezes é desperdício.
+
+- [ ] **P.1 Traduzir a documentação para inglês**
+  README, ADRs, roadmap e backlog. O registro da conversa pode ficar em
+  português como documento histórico, com um resumo em inglês no topo.
+
+- [ ] **P.2 Traduzir os comentários de código**
+  Identificadores já estão em inglês. Os comentários explicam decisão e
+  armadilha, e são a parte que quem contribui mais lê.
+
+- [ ] **P.3 CONTRIBUTING, código de conduta e modelos de issue**
+  Incluir a regra de que aprovação e publicação nunca são expostas a agent,
+  porque é a invariante que não se negocia em contribuição externa.
+
+- [ ] **P.4 Varredura de segredo no histórico**
+  Conferir que nenhuma chave, token ou caminho pessoal entrou em commit desde o
+  início. Antes de tornar o repositório público, não depois.
+
+- [ ] **P.5 Seção de provedores e assinatura no README em inglês**
+  Deixar explícito que quem usa autentica a própria ferramenta na própria
+  máquina, e que o projeto não embute login nem intermedeia credencial.
+
 ## M3 em diante
 
 Não quebrados em tarefas ainda. Quebrar ao chegar, com o mesmo formato.

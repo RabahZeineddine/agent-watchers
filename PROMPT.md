@@ -1,6 +1,6 @@
 # Prompt do loop
 
-Você está construindo o Agent Watchers, um aplicativo pessoal para macOS
+Você está construindo o Locum, um aplicativo pessoal para macOS
 descrito em `docs/adr/0001-arquitetura-v2.md` e `docs/adr/0002-camada-de-servico-e-servidor-mcp.md`.
 
 Todos os comandos de verificação rodam a partir de `app/`. A documentação fica
