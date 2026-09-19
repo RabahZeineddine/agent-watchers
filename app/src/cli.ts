@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
+import { McpTransport } from "./config/types.js";
 import { Executor } from "./executor/executor.js";
-import { McpRegistry, type McpServerConfig } from "./mcp/registry.js";
+import { McpRegistry } from "./mcp/registry.js";
 import { claudeCodeAvailable } from "./providers/registry.js";
 import { ClaudeCodeRuntime } from "./runtimes/claude-code.js";
 import { agentService } from "./services/agent-service.js";
+import { mcpService } from "./services/mcp-service.js";
 import { NativeRuntime } from "./runtimes/native.js";
 import type { Runtime } from "./runtimes/types.js";
 import { fetchPr, githubReviewHandler, pollOpenPullRequests, type Finding } from "./sources/github.js";
@@ -15,16 +17,14 @@ import { demoPr } from "./seed/demo-event.js";
 
 const machineId = process.env.MACHINE_ID ?? "default";
 
-/** v1 sem UI: cadastro de MCP vem daqui. Na v3 vem da tela de configuracao. */
-const mcpServers: McpServerConfig[] = [];
-
-function buildExecutor(): Executor {
-  const configs = new Map(mcpServers.map((c) => [c.name, c]));
+async function buildExecutor(): Promise<Executor> {
+  const servers = await mcpService.enabledConfigs();
+  const configs = new Map(servers.map((c) => [c.name, c]));
   const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
   if (claudeCodeAvailable()) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
   const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-  return new Executor({ mcp: McpRegistry.fromList(mcpServers), runtimes, gate, machineId });
+  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
 }
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
@@ -61,7 +61,7 @@ async function review(target: string): Promise<void> {
     })
     .onConflictDoNothing();
 
-  const executor = buildExecutor();
+  const executor = await buildExecutor();
   const runId = await executor.createRun(versionId, eventId);
   console.log(`run ${runId} iniciado para ${ctx.repo}#${ctx.pull}`);
 
@@ -84,7 +84,7 @@ async function demo(): Promise<void> {
     })
     .onConflictDoNothing();
 
-  const executor = buildExecutor();
+  const executor = await buildExecutor();
   const runId = await executor.createRun(versionId, eventId);
   console.log(`run ${runId} (evento sintetico ${demoPr.repo}#${demoPr.pull})`);
   const status = await executor.execute(runId);
@@ -138,8 +138,24 @@ async function inbox(): Promise<void> {
   }
 }
 
+/** Lista os servidores cadastrados, marcando os que estao desligados. */
+async function mcpList(): Promise<void> {
+  const entries = await mcpService.list();
+  if (entries.length === 0) {
+    console.log("nenhum servidor MCP cadastrado");
+    return;
+  }
+  for (const { config, enabled } of entries) {
+    const alvo = config.transport === "stdio" ? config.command!.join(" ") : config.url!;
+    console.log(
+      `${enabled ? " " : "-"} ${config.name.padEnd(20)} ${config.transport.padEnd(6)} ${config.scope.padEnd(5)} ${alvo}`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
-  const [cmd, arg] = process.argv.slice(2);
+  const [cmd, ...args] = process.argv.slice(2);
+  const arg = args[0];
   const executor = () => buildExecutor();
 
   switch (cmd) {
@@ -163,6 +179,37 @@ async function main(): Promise<void> {
     case "inbox":
       await inbox();
       break;
+    case "mcp":
+      await mcpList();
+      break;
+    case "mcp:register": {
+      const [name, rawTransport, alvo] = args;
+      if (!name || !rawTransport || !alvo) {
+        throw new Error("uso: mcp:register <nome> <stdio|http|sse> <comando-ou-url>");
+      }
+      const transport = McpTransport.safeParse(rawTransport);
+      if (!transport.success) throw new Error("transporte invalido, use stdio, http ou sse");
+
+      // O comando chega como uma string so para caber em um argumento de shell.
+      const { config } = await mcpService.register({
+        name,
+        transport: transport.data,
+        ...(transport.data === "stdio" ? { command: alvo.split(/\s+/) } : { url: alvo }),
+      });
+      console.log(`${config.name} cadastrado (${config.transport})`);
+      break;
+    }
+    case "mcp:remove":
+      if (!arg) throw new Error("uso: mcp:remove <nome>");
+      console.log((await mcpService.remove(arg)) ? `${arg} removido` : `${arg} nao estava cadastrado`);
+      break;
+    case "mcp:enable":
+    case "mcp:disable": {
+      if (!arg) throw new Error(`uso: ${cmd} <nome>`);
+      await mcpService.setEnabled(arg, cmd === "mcp:enable");
+      console.log(`${arg} ${cmd === "mcp:enable" ? "habilitado" : "desabilitado"}`);
+      break;
+    }
     case "approve":
     case "reject": {
       if (!arg) throw new Error(`uso: ${cmd} <approval-id>`);
@@ -172,13 +219,13 @@ async function main(): Promise<void> {
       break;
     }
     case "resume": {
-      const ids = await executor().resumeAll();
+      const ids = await (await executor()).resumeAll();
       console.log(`${ids.length} run(s) retomado(s)`);
       break;
     }
     case "run":
       if (!arg) throw new Error("uso: run <run-id>");
-      console.log(await executor().execute(arg));
+      console.log(await (await executor()).execute(arg));
       await printRun(arg);
       break;
     default:
@@ -191,6 +238,11 @@ async function main(): Promise<void> {
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",
+          "  mcp                      lista os servidores MCP cadastrados",
+          "  mcp:register <nome> <transporte> <comando-ou-url>",
+          "  mcp:remove <nome>        tira o servidor do cadastro",
+          "  mcp:enable <nome>        volta a expor o servidor ao executor",
+          "  mcp:disable <nome>       tira o servidor do executor sem apagar",
           "  approve <id>             publica a acao",
           "  reject <id>              descarta",
           "  resume                   retoma runs interrompidos",

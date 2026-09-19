@@ -1,1 +1,2 @@
 2026-09-19  M1.1  feito      AgentService criado, seed do cli consome upsert, tsc limpo e seed idempotente
+2026-09-19  M1.2  feito      McpService le e grava mcp_servers, cli ganhou mcp:register, executor sem constante

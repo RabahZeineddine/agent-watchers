@@ -15,7 +15,7 @@ executor que a interface vai usar.
 | esquema SQLite com 17 tabelas | pronto |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto |
-| registro MCP com spawn sob demanda e encerramento por ocioso | pronto, sem servidor cadastrado |
+| registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
 | executor durável com retomada | pronto e verificado |
@@ -57,6 +57,8 @@ npm run dev demo                      # não precisa de credencial
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
+npm run dev mcp
+npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
 npm run dev approve <id>
 npm run dev resume
 ```
@@ -81,8 +83,8 @@ com `alter table add column` manual.
 
 Quebrados em tarefas atômicas em `scripts/ralph/prd.json`, na ordem revisada pelo
 ADR 0002: camada de serviço, servidor MCP próprio, casca Electron, interface,
-empacotamento. O cadastro de MCP vindo do banco é a tarefa M1.2 e destrava o
-passo de contexto de deploy.
+empacotamento. O cadastro de MCP já vem do banco, e o passo de contexto de
+deploy passa a depender só de cadastrar o servidor certo.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as

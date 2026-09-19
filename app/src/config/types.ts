@@ -107,3 +107,40 @@ export function topoSort(steps: Step[]): Step[] {
   for (const s of steps) visit(s.key, []);
   return out;
 }
+
+/** Transporte do servidor MCP. `stdio` sobe processo, os outros falam por rede. */
+export const McpTransport = z.enum(["stdio", "http", "sse"]);
+export type McpTransport = z.infer<typeof McpTransport>;
+
+/**
+ * Cadastro de um servidor MCP. Mora aqui, e nao no registro, porque a mesma
+ * validacao vale para a linha de comando, para o servidor MCP proprio e para a
+ * tela de configuracao.
+ */
+export const McpServerConfig = z
+  .object({
+    name: z.string().min(1),
+    transport: McpTransport,
+    /** Executavel e argumentos, ja separados. So para `stdio`. */
+    command: z.array(z.string().min(1)).min(1).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    url: z.url().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    /**
+     * `write` nao libera escrita externa sem aprovacao: a fila continua valendo.
+     * Serve para separar o que so le do que muda estado em algum lugar.
+     */
+    scope: z.enum(["read", "write"]).default("read"),
+    idleTimeoutMs: z.number().int().positive().default(300_000),
+  })
+  .superRefine((cfg, ctx) => {
+    if (cfg.transport === "stdio" && !cfg.command) {
+      ctx.addIssue({ code: "custom", message: "transporte stdio exige command", path: ["command"] });
+    }
+    if (cfg.transport !== "stdio" && !cfg.url) {
+      ctx.addIssue({ code: "custom", message: `transporte ${cfg.transport} exige url`, path: ["url"] });
+    }
+  });
+export type McpServerConfig = z.infer<typeof McpServerConfig>;
+/** O que se passa para cadastrar, antes dos defaults do zod. */
+export type McpServerInput = z.input<typeof McpServerConfig>;

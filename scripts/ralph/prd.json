@@ -21,7 +21,7 @@
       "description": "Criar app/src/services/mcp-service.ts com list(), register(config), remove(name), setEnabled(name, bool). buildExecutor() passa a ler a tabela mcp_servers em vez da constante vazia mcpServers no cli.ts. Incluir comando de cadastro na linha de comando.",
       "done_when": "A constante mcpServers sumiu do cli.ts e um servidor cadastrado no banco aparece no executor.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts demo",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

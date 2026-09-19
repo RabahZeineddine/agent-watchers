@@ -1,18 +1,7 @@
 import { createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { ToolSet } from "ai";
-import type { ToolRef } from "../config/types.js";
-
-export type McpServerConfig = {
-  name: string;
-  transport: "stdio" | "http" | "sse";
-  command?: string[];
-  env?: Record<string, string>;
-  url?: string;
-  headers?: Record<string, string>;
-  scope: "read" | "write";
-  idleTimeoutMs: number;
-};
+import type { McpServerConfig, ToolRef } from "../config/types.js";
 
 type Entry = {
   client: Awaited<ReturnType<typeof createMCPClient>>;
