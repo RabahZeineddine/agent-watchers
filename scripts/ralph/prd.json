@@ -32,7 +32,7 @@
       "description": "Acrescentar testConnection(name) devolvendo status e erro, e listTools(name) devolvendo nome, descricao e estimativa de tokens do schema de cada ferramenta. Usar o servidor de brinquedo em app/src/fixtures/mcp-fixture-server.ts como alvo, que expoe echo, sum, slow e fail e nao depende de nada externo.",
       "done_when": "Existe comando mcp:tools <nome> e ele lista as quatro ferramentas do fixture.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts' && npx tsx src/cli.ts mcp:tools locum-fixture",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

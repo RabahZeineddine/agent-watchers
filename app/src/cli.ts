@@ -153,6 +153,29 @@ async function mcpList(): Promise<void> {
   }
 }
 
+/** Catalogo do servidor, com o peso de cada ferramenta no contexto. */
+async function mcpTools(name: string): Promise<void> {
+  const tools = await mcpService.listTools(name);
+  if (tools.length === 0) {
+    console.log(`${name} nao expoe nenhuma ferramenta`);
+    return;
+  }
+  for (const tool of tools) {
+    console.log(`${tool.name.padEnd(20)} ~${String(tool.estimatedTokens).padStart(5)} tok  ${tool.description}`);
+  }
+  console.log(`${tools.length} ferramenta(s)`);
+}
+
+async function mcpTest(name: string): Promise<void> {
+  const check = await mcpService.testConnection(name);
+  if (check.ok) {
+    console.log(`${name} ok em ${check.elapsedMs}ms, ${check.toolCount} ferramenta(s)`);
+    return;
+  }
+  console.log(`${name} falhou em ${check.elapsedMs}ms: ${check.error}`);
+  process.exitCode = 1;
+}
+
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
   const arg = args[0];
@@ -199,6 +222,14 @@ async function main(): Promise<void> {
       console.log(`${config.name} cadastrado (${config.transport})`);
       break;
     }
+    case "mcp:tools":
+      if (!arg) throw new Error("uso: mcp:tools <nome>");
+      await mcpTools(arg);
+      break;
+    case "mcp:test":
+      if (!arg) throw new Error("uso: mcp:test <nome>");
+      await mcpTest(arg);
+      break;
     case "mcp:remove":
       if (!arg) throw new Error("uso: mcp:remove <nome>");
       console.log((await mcpService.remove(arg)) ? `${arg} removido` : `${arg} nao estava cadastrado`);
@@ -240,6 +271,8 @@ async function main(): Promise<void> {
           "  inbox                    lista aprovacoes pendentes",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
+          "  mcp:tools <nome>         lista as ferramentas que o servidor expoe",
+          "  mcp:test <nome>          conecta no servidor e informa o resultado",
           "  mcp:remove <nome>        tira o servidor do cadastro",
           "  mcp:enable <nome>        volta a expor o servidor ao executor",
           "  mcp:disable <nome>       tira o servidor do executor sem apagar",
