@@ -25,3 +25,6 @@ data/*.log
 # System files
 .DS_Store
 Thumbs.db
+
+# dados do loop de execucao
+.locum-loop-data/

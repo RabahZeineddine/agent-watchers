@@ -79,7 +79,11 @@ com `alter table add column` manual.
 
 ## Próximos passos
 
-Quebrados em tarefas atômicas em `docs/backlog.md`, na ordem revisada pelo
+Quebrados em tarefas atômicas em `scripts/ralph/prd.json`, na ordem revisada pelo
 ADR 0002: camada de serviço, servidor MCP próprio, casca Electron, interface,
 empacotamento. O cadastro de MCP vindo do banco é a tarefa M1.2 e destrava o
 passo de contexto de deploy.
+
+Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
+`app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as
+ferramentas `echo`, `sum`, `slow` e `fail`.

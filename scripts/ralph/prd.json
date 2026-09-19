@@ -1,0 +1,171 @@
+{
+  "project": "Locum",
+  "note": "Fonte da verdade do backlog. O loop lê daqui e marca passes. Para ler no terminal: jq -r '.userStories[] | \"\\(.passes|if . then \"[x]\" else \"[ ]\" end) \\(.id) \\(.title)\"' scripts/ralph/prd.json",
+  "userStories": [
+    {
+      "id": "M1.1",
+      "milestone": "M1",
+      "priority": 11,
+      "title": "AgentService",
+      "description": "Criar app/src/services/agent-service.ts com list(), get(agentId), getLatestVersion(agentId), upsert(spec, note) criando versao imutavel, e listVersions(agentId). Mover para la a logica que hoje esta em seed() no cli.ts.",
+      "done_when": "cli.ts nao monta mais linha de agent_versions diretamente.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts seed",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M1.2",
+      "milestone": "M1",
+      "priority": 12,
+      "title": "McpService e cadastro no banco",
+      "description": "Criar app/src/services/mcp-service.ts com list(), register(config), remove(name), setEnabled(name, bool). buildExecutor() passa a ler a tabela mcp_servers em vez da constante vazia mcpServers no cli.ts. Incluir comando de cadastro na linha de comando.",
+      "done_when": "A constante mcpServers sumiu do cli.ts e um servidor cadastrado no banco aparece no executor.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts demo",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M1.3",
+      "milestone": "M1",
+      "priority": 13,
+      "title": "McpService: testar conexao e listar ferramentas",
+      "description": "Acrescentar testConnection(name) devolvendo status e erro, e listTools(name) devolvendo nome, descricao e estimativa de tokens do schema de cada ferramenta. Usar o servidor de brinquedo em app/src/fixtures/mcp-fixture-server.ts como alvo, que expoe echo, sum, slow e fail e nao depende de nada externo.",
+      "done_when": "Existe comando mcp:tools <nome> e ele lista as quatro ferramentas do fixture.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts' && npx tsx src/cli.ts mcp:tools locum-fixture",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M1.4",
+      "milestone": "M1",
+      "priority": 14,
+      "title": "ProviderService",
+      "description": "Criar app/src/services/provider-service.ts com listProviders() informando disponibilidade nesta maquina, getFallbacks(machineId), setFallback(machineId, from, to, order) com deteccao de ciclo na gravacao, e resolvePreview(model, machineId).",
+      "done_when": "resolveModel nao e mais chamado direto pelo cli.ts.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts providers",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M1.5",
+      "milestone": "M1",
+      "priority": 15,
+      "title": "RunService",
+      "description": "Criar app/src/services/run-service.ts com list(filtro), get(runId) trazendo os passos, findings(runId), e rerunStep(runId, stepKey) que zera o passo e os que dependem dele antes de reexecutar.",
+      "done_when": "printRun no cli.ts consome o servico.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts runs",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M1.6",
+      "milestone": "M1",
+      "priority": 16,
+      "title": "ApprovalService",
+      "description": "Extrair da ApprovalGate a parte de consulta: listPending() e get(approvalId). A decisao continua na ApprovalGate, que permanece o unico caminho de publicacao.",
+      "done_when": "inbox no cli.ts consome o servico.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts inbox",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.1",
+      "milestone": "M2",
+      "priority": 21,
+      "title": "Esqueleto do servidor MCP",
+      "description": "Criar app/src/mcp-server/index.ts usando @modelcontextprotocol/sdk, ja instalado, com transporte stdio, abrindo o mesmo banco. Adicionar script mcp no package.json. Usar app/src/fixtures/mcp-fixture-server.ts como referencia de estrutura.",
+      "done_when": "O servidor sobe e responde a tools/list.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.2",
+      "milestone": "M2",
+      "priority": 22,
+      "title": "Ferramentas de leitura",
+      "description": "list_agents, get_agent, list_runs, get_run, list_findings, get_metrics, list_mcp_servers, list_providers, get_machine_profile. Todas sobre a camada de servico do M1.",
+      "done_when": "tools/list devolve as nove e cada uma responde.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.3",
+      "milestone": "M2",
+      "priority": 23,
+      "title": "Ferramentas de configuracao",
+      "description": "upsert_agent, register_mcp_server, test_mcp_server, list_server_tools, set_model_fallback, set_budget, set_trigger. Toda escrita valida com o zod de src/config/types.ts e devolve erro legivel.",
+      "done_when": "upsert_agent com spec invalido devolve a mensagem do zod e nao grava nada.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.4",
+      "milestone": "M2",
+      "priority": 24,
+      "title": "Ferramentas de execucao",
+      "description": "run_agent aceitando alvo real (owner/repo#numero) ou sintetico, e rerun_step.",
+      "done_when": "run_agent com alvo sintetico produz execucao e devolve o identificador.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.5",
+      "milestone": "M2",
+      "priority": 25,
+      "title": "Registro no repositorio",
+      "description": "Criar .mcp.json na raiz apontando para o servidor, para que um assistente externo o carregue ao abrir o projeto.",
+      "done_when": "O arquivo existe e e JSON valido.",
+      "verify": "node -e \"JSON.parse(require('fs').readFileSync('../.mcp.json','utf8'))\"",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M2.6",
+      "milestone": "M2",
+      "priority": 26,
+      "title": "Documentar a fronteira",
+      "description": "Escrever docs/mcp-server.md listando cada ferramenta e a secao explicando por que aprovacao e publicacao nao estao la, conforme o ADR 0002.",
+      "done_when": "O arquivo existe e cobre todas as ferramentas implementadas.",
+      "verify": "test -f ../docs/mcp-server.md",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "N.1",
+      "milestone": "N",
+      "priority": 31,
+      "title": "Reconciliador de review humano",
+      "description": "app/src/sources/github-reconciler.ts: ao fechar um pull request, puxar reviews humanos, casar por arquivo e linha com os achados, comparar o diff final e preencher finding_outcomes e review_signals.",
+      "done_when": "Roda contra uma execucao existente e grava desfechos.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "N.2",
+      "milestone": "N",
+      "priority": 32,
+      "title": "Metricas por versao",
+      "description": "Agregar agent_metrics a partir de finding_outcomes, guardando o conjunto de skills junto da versao.",
+      "done_when": "cli.ts metrics imprime precisao por versao.",
+      "verify": "npx tsc --noEmit && npx tsx src/cli.ts metrics",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "N.3",
+      "milestone": "N",
+      "priority": 33,
+      "title": "Agendador",
+      "description": "app/src/triggers/scheduler.ts com cursor de tempo, sem setInterval de janela fixa, preparado para receber o evento de acordar da maquina no M3.",
+      "done_when": "Duas execucoes seguidas nao reprocessam o mesmo evento.",
+      "verify": "npx tsc --noEmit",
+      "passes": false,
+      "blocked": false
+    }
+  ]
+}

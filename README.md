@@ -51,14 +51,32 @@ de fallback redireciona os passos afetados para provedores por chave.
 | [ADR 0002](docs/adr/0002-camada-de-servico-e-servidor-mcp.md) | camada de serviço, servidor MCP próprio, e por que aprovação fica fora dele |
 | [ADR 0003](docs/adr/0003-interface-sobre-ai-elements.md) | interface sobre AI Elements, chat como console, e a regra contra injeção de prompt |
 | [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
-| [backlog.md](docs/backlog.md) | tarefas atômicas com critério de pronto e comando de verificação |
-| [diario.md](docs/diario.md) | uma linha por iteração de execução |
+| [prd.json](scripts/ralph/prd.json) | backlog como estado: tarefas atômicas com critério de pronto e comando de verificação |
 
 ## Idioma
 
 O código usa identificadores em inglês. Comentários e documentação estão em
 português enquanto o projeto é privado, e serão traduzidos antes da abertura do
 repositório, junto com o guia de contribuição. A tarefa está no backlog.
+
+## Loop de execução
+
+O backlog vive em `scripts/ralph/prd.json` e é a fonte da verdade do que falta.
+Para ler no terminal:
+
+```bash
+jq -r '.userStories[] | "\(if .passes then "[x]" else "[ ]" end) \(.id)  \(.title)"' scripts/ralph/prd.json
+```
+
+Para rodar o loop, um marco por vez:
+
+```bash
+./scripts/ralph/ralph.sh M1 12
+```
+
+Ele cria um worktree próprio em `../locum-loop`, usa um banco de rascunho
+separado do real, e aborta se o código não compilar, se a árvore ficar suja, se
+a branch for a principal ou se ela aparecer no remoto. O loop nunca faz push.
 
 ## Licença
 
@@ -67,9 +85,9 @@ MIT. Veja [LICENSE](LICENSE).
 ## Estrutura
 
 ```
-PROMPT.md       prompt do loop de execução autônoma
 app/            núcleo em TypeScript, o produto daqui para a frente
 docs/           decisões, pesquisa, estado e roadmap
+scripts/ralph/  loop de execução: script, prompt da iteração, backlog e progresso
 app.py          versão anterior em Python, mantida só como referência
 core/           idem
 watchers/       idem
