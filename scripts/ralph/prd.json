@@ -87,7 +87,7 @@
       "description": "list_agents, get_agent, list_runs, get_run, list_findings, get_metrics, list_mcp_servers, list_providers, get_machine_profile. Todas sobre a camada de servico do M1.",
       "done_when": "tools/list devolve as nove e cada uma responde.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

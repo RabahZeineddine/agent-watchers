@@ -3,7 +3,8 @@ import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { db, schema } from "../db/index.js";
 import { dbPath } from "../db/path.js";
-import { machineId } from "../executor/build.js";
+import { machineId } from "../services/machine-service.js";
+import { registerReadTools } from "./read-tools.js";
 
 export const SERVER_NAME = "locum";
 export const SERVER_VERSION = "0.1.0";
@@ -30,6 +31,7 @@ export function buildMcpServer(): McpServer {
     }),
   );
 
+  registerReadTools(server);
   return server;
 }
 

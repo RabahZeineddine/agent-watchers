@@ -4,12 +4,10 @@ import { McpRegistry } from "../mcp/registry.js";
 import { ClaudeCodeRuntime } from "../runtimes/claude-code.js";
 import { NativeRuntime } from "../runtimes/native.js";
 import type { Runtime } from "../runtimes/types.js";
+import { machineId } from "../services/machine-service.js";
 import { mcpService } from "../services/mcp-service.js";
 import { providerService } from "../services/provider-service.js";
 import { githubReviewHandler } from "../sources/github.js";
-
-/** Identidade local: a tabela de substituicao e o que roda aqui dependem dela. */
-export const machineId = process.env.MACHINE_ID ?? "default";
 
 /**
  * Montagem do executor a partir do que esta cadastrado nesta maquina.
