@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
-import { AgentSpec } from "../config/types.js";
+import { AgentBudgetPatch, AgentSpec } from "../config/types.js";
 
 type Db = typeof defaultDb;
 
@@ -76,6 +76,33 @@ export class AgentService {
       .returning();
 
     return parseVersion(inserted!);
+  }
+
+  /**
+   * Ajusta o teto de gasto gravando versao nova.
+   *
+   * O orcamento mora no spec porque e de la que o executor le antes de cada
+   * passo. Mexer nele e mexer no spec, entao vale a mesma regra de versao
+   * imutavel: run antigo continua apontando para o teto sob o qual ele rodou.
+   */
+  async setBudget(
+    agentId: string,
+    patch: AgentBudgetPatch,
+    note?: string,
+  ): Promise<AgentVersion> {
+    const parsed = AgentBudgetPatch.parse(patch);
+    const latest = await this.getLatestVersion(agentId);
+    if (!latest) throw new Error(`agent "${agentId}" nao cadastrado`);
+
+    const budget = { ...latest.spec.budget };
+    for (const key of ["perRunUsd", "perDayUsd"] as const) {
+      const value = parsed[key];
+      if (value === undefined) continue;
+      if (value === null) delete budget[key];
+      else budget[key] = value;
+    }
+
+    return this.upsert({ ...latest.spec, budget }, note ?? "orcamento ajustado");
   }
 
   private async latestRow(agentId: string): Promise<AgentVersionRow | undefined> {

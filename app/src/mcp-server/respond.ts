@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Resposta de ferramenta no formato do protocolo.
  *
@@ -17,8 +19,18 @@ export async function respond(produce: () => Promise<unknown>) {
     };
   } catch (err) {
     return {
-      content: [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }],
+      content: [{ type: "text" as const, text: describe(err) }],
       isError: true,
     };
   }
+}
+
+/**
+ * Falha de validacao sai com o caminho de cada campo em vez do JSON cru que o
+ * zod poe no `message`. Quem le do outro lado e um modelo tentando consertar a
+ * propria chamada, e o caminho e o que diz onde mexer.
+ */
+function describe(err: unknown): string {
+  if (err instanceof z.ZodError) return `entrada invalida:\n${z.prettifyError(err)}`;
+  return err instanceof Error ? err.message : String(err);
 }

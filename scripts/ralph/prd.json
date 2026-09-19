@@ -98,7 +98,7 @@
       "description": "upsert_agent, register_mcp_server, test_mcp_server, list_server_tools, set_model_fallback, set_budget, set_trigger. Toda escrita valida com o zod de src/config/types.ts e devolve erro legivel.",
       "done_when": "upsert_agent com spec invalido devolve a mensagem do zod e nao grava nada.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

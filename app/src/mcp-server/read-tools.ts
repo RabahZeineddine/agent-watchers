@@ -16,8 +16,8 @@ import { respond } from "./respond.js";
  * maquina enxergam exatamente o mesmo estado, sem uma segunda leitura do banco
  * que pudesse divergir.
  *
- * Nada aqui escreve. Escrita entra no M2.3, e aprovacao e publicacao nao
- * entram nunca, conforme o ADR 0002.
+ * Nada aqui escreve. A escrita mora em `config-tools.ts`, e aprovacao e
+ * publicacao nao entram em nenhum dos dois, conforme o ADR 0002.
  */
 export function registerReadTools(server: McpServer): void {
   server.registerTool(

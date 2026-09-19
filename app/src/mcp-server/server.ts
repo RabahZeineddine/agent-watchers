@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { db, schema } from "../db/index.js";
 import { dbPath } from "../db/path.js";
 import { machineId } from "../services/machine-service.js";
+import { registerConfigTools } from "./config-tools.js";
 import { registerReadTools } from "./read-tools.js";
 
 export const SERVER_NAME = "locum";
@@ -32,6 +33,7 @@ export function buildMcpServer(): McpServer {
   );
 
   registerReadTools(server);
+  registerConfigTools(server);
   return server;
 }
 
