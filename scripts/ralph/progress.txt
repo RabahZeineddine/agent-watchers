@@ -4,3 +4,4 @@
 2026-09-19  M1.4  feito      ProviderService com fallback sem ciclo e resolvePreview, cli ganhou providers
 2026-09-19  M1.5  feito      RunService com list, get, findings e rerunStep, cli ganhou runs e rerun
 2026-09-19  M1.6  feito      ApprovalService com listPending e get, inbox do cli consome o servico, decisao segue na gate
+2026-09-19  M2.1  feito      esqueleto do servidor MCP no ar por stdio, tools/list responde locum_health lendo o mesmo banco

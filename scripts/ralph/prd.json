@@ -76,7 +76,7 @@
       "description": "Criar app/src/mcp-server/index.ts usando @modelcontextprotocol/sdk, ja instalado, com transporte stdio, abrindo o mesmo banco. Adicionar script mcp no package.json. Usar app/src/fixtures/mcp-fixture-server.ts como referencia de estrutura.",
       "done_when": "O servidor sobe e responde a tools/list.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

@@ -9,6 +9,7 @@
   "scripts": {
     "db:push": "drizzle-kit push",
     "dev": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp-server/index.ts",
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit"
   },

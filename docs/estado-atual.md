@@ -24,6 +24,7 @@ executor que a interface vai usar.
 | fonte GitHub com varredura por cursor | escrito, sem teste com token |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
+| servidor MCP próprio | esqueleto no ar, só a ferramenta de saúde |
 | reconciliador de review humano | não começou |
 | métricas por versão de agent | tabela criada, sem coleta |
 | agendador com eventos de energia | não começou |
@@ -62,6 +63,7 @@ npm run dev rerun <run-id> audit
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
+npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
 ```
