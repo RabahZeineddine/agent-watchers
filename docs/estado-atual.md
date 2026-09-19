@@ -24,7 +24,7 @@ executor que a interface vai usar.
 | fonte GitHub com varredura por cursor | escrito, sem teste com token |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
-| servidor MCP próprio | 17 ferramentas de leitura e configuração sobre a camada de serviço |
+| servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | não começou |
 | métricas por versão de agent | tabela criada, sem coleta |

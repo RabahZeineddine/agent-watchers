@@ -1,17 +1,15 @@
-import { randomUUID } from "node:crypto";
-import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
 import { buildExecutor } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
+import { executionService } from "./services/execution-service.js";
 import { machineId } from "./services/machine-service.js";
 import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
-import { githubReviewHandler, fetchPr, pollOpenPullRequests } from "./sources/github.js";
+import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
-import { demoPr } from "./seed/demo-event.js";
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
@@ -25,54 +23,14 @@ async function seed(): Promise<string> {
   return version.id;
 }
 
-async function review(target: string): Promise<void> {
-  const match = target.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-  if (!match) throw new Error('alvo invalido, use "owner/repo#123"');
-  const [, owner, repo, num] = match;
+/** Roda o pipeline num alvo, real ou sintetico, e imprime o resultado. */
+async function start(target: string): Promise<void> {
+  await seed();
+  const started = await executionService.start({ target });
+  console.log(`run ${started.runId} (${started.source} ${started.repo}#${started.pull})`);
 
-  const versionId = await seed();
-  const ctx = await fetchPr(owner!, repo!, Number(num));
-
-  const eventId = randomUUID();
-  await db
-    .insert(schema.events)
-    .values({
-      id: eventId,
-      source: "github",
-      externalId: `pr:${ctx.repo}#${ctx.pull}:sha:${ctx.headSha}`,
-      payload: ctx as object,
-    })
-    .onConflictDoNothing();
-
-  const executor = await buildExecutor();
-  const runId = await executor.createRun(versionId, eventId);
-  console.log(`run ${runId} iniciado para ${ctx.repo}#${ctx.pull}`);
-
-  const status = await executor.execute(runId);
-  await printRun(runId);
-  console.log(`\nstatus: ${status}`);
-}
-
-/** Fumaca sem credencial: evento sintetico com defeito plantado no diff. */
-async function demo(): Promise<void> {
-  const versionId = await seed();
-  const eventId = randomUUID();
-  await db
-    .insert(schema.events)
-    .values({
-      id: eventId,
-      source: "demo",
-      externalId: `demo:${Date.now()}`,
-      payload: demoPr as object,
-    })
-    .onConflictDoNothing();
-
-  const executor = await buildExecutor();
-  const runId = await executor.createRun(versionId, eventId);
-  console.log(`run ${runId} (evento sintetico ${demoPr.repo}#${demoPr.pull})`);
-  const status = await executor.execute(runId);
-  await printRun(runId);
-  console.log(`\nstatus: ${status}`);
+  await printRun(started.runId);
+  console.log(`\nstatus: ${started.status}`);
 }
 
 async function printRun(runId: string): Promise<void> {
@@ -214,11 +172,11 @@ async function main(): Promise<void> {
       console.log(`versao ${await seed()}`);
       break;
     case "demo":
-      await demo();
+      await start("sintetico");
       break;
     case "review":
       if (!arg) throw new Error('uso: review owner/repo#123');
-      await review(arg);
+      await start(arg);
       break;
     case "poll": {
       const owner = process.env.GITHUB_OWNER;

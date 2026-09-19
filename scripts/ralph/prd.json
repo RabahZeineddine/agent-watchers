@@ -109,7 +109,7 @@
       "description": "run_agent aceitando alvo real (owner/repo#numero) ou sintetico, e rerun_step.",
       "done_when": "run_agent com alvo sintetico produz execucao e devolve o identificador.",
       "verify": "npx tsc --noEmit",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

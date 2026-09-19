@@ -6,6 +6,7 @@ import { dbPath } from "../db/path.js";
 import { machineId } from "../services/machine-service.js";
 import { registerConfigTools } from "./config-tools.js";
 import { registerReadTools } from "./read-tools.js";
+import { registerRunTools } from "./run-tools.js";
 
 export const SERVER_NAME = "locum";
 export const SERVER_VERSION = "0.1.0";
@@ -34,6 +35,7 @@ export function buildMcpServer(): McpServer {
 
   registerReadTools(server);
   registerConfigTools(server);
+  registerRunTools(server);
   return server;
 }
 

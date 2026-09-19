@@ -152,8 +152,16 @@ export class RunService {
    * O custo dos passos zerados sai do total do run, senao o valor gasto conta
    * duas vezes. O contador diario nao e mexido: ele registra dinheiro que saiu,
    * e a reexecucao gasta de novo.
+   *
+   * Com `wait` falso a reexecucao fica correndo atras e o retorno e `queued`,
+   * que e o que serve para um cliente MCP: o pipeline leva minutos e o desfecho
+   * fica no banco de qualquer jeito.
    */
-  async rerunStep(runId: string, stepKey: string): Promise<"done" | "paused" | "failed"> {
+  async rerunStep(
+    runId: string,
+    stepKey: string,
+    options: { wait?: boolean } = {},
+  ): Promise<"queued" | "done" | "paused" | "failed"> {
     const detail = await this.get(runId);
     if (!detail) throw new Error(`run ${runId} nao encontrado`);
 
@@ -162,6 +170,10 @@ export class RunService {
     await this.reset(detail, targets);
 
     const runner = await this.makeRunner();
+    if (options.wait === false) {
+      void runner.execute(runId).catch(() => undefined);
+      return "queued";
+    }
     return runner.execute(runId);
   }
 
