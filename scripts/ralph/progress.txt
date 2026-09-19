@@ -1,3 +1,4 @@
 2026-09-19  M1.1  feito      AgentService criado, seed do cli consome upsert, tsc limpo e seed idempotente
 2026-09-19  M1.2  feito      McpService le e grava mcp_servers, cli ganhou mcp:register, executor sem constante
 2026-09-19  M1.3  feito      testConnection e listTools no McpService, cli ganhou mcp:tools e mcp:test, fixture lista as quatro
+2026-09-19  M1.4  feito      ProviderService com fallback sem ciclo e resolvePreview, cli ganhou providers

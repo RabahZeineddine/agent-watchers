@@ -11,6 +11,7 @@ import {
 } from "../config/types.js";
 import { McpRegistry } from "../mcp/registry.js";
 import { resolveModel, type FallbackRow } from "../providers/registry.js";
+import { providerService } from "../services/provider-service.js";
 import type { Runtime } from "../runtimes/types.js";
 import { selectSkills, skillsPreamble, type SkillContext } from "../skills/loader.js";
 import { ApprovalGate } from "../approval/gate.js";
@@ -82,10 +83,7 @@ export class Executor {
       .set({ status: "running", startedAt: run.startedAt ?? nowSec() })
       .where(eq(schema.runs.id, runId));
 
-    const fallbacks = (await db
-      .select()
-      .from(schema.modelFallbacks)
-      .where(eq(schema.modelFallbacks.machineId, this.deps.machineId))) as FallbackRow[];
+    const fallbacks = await providerService.getFallbacks(this.deps.machineId);
 
     const outputs = new Map<string, unknown>();
     let runCost = run.costUsd;

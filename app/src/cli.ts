@@ -5,10 +5,10 @@ import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
 import { Executor } from "./executor/executor.js";
 import { McpRegistry } from "./mcp/registry.js";
-import { claudeCodeAvailable } from "./providers/registry.js";
 import { ClaudeCodeRuntime } from "./runtimes/claude-code.js";
 import { agentService } from "./services/agent-service.js";
 import { mcpService } from "./services/mcp-service.js";
+import { providerService } from "./services/provider-service.js";
 import { NativeRuntime } from "./runtimes/native.js";
 import type { Runtime } from "./runtimes/types.js";
 import { fetchPr, githubReviewHandler, pollOpenPullRequests, type Finding } from "./sources/github.js";
@@ -21,7 +21,7 @@ async function buildExecutor(): Promise<Executor> {
   const servers = await mcpService.enabledConfigs();
   const configs = new Map(servers.map((c) => [c.name, c]));
   const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
-  if (claudeCodeAvailable()) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
+  if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
   const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
   return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
@@ -33,10 +33,7 @@ async function seed(): Promise<string> {
 
   if (machineId !== "minha-maquina") {
     for (const f of fallbacksSemAssinatura) {
-      await db
-        .insert(schema.modelFallbacks)
-        .values({ id: randomUUID(), machineId, ...f })
-        .onConflictDoNothing();
+      await providerService.setFallback(machineId, f.fromModel, f.toModel, f.order);
     }
   }
   return version.id;
@@ -122,6 +119,40 @@ async function printRun(runId: string): Promise<void> {
   }
 }
 
+/**
+ * O que roda nesta maquina, a tabela de substituicao e onde cada passo do
+ * agent semente cairia hoje.
+ */
+async function providers(): Promise<void> {
+  for (const p of providerService.listProviders()) {
+    const via = p.subscription ? "assinatura" : "api";
+    const motivo = p.available
+      ? ""
+      : p.requires.length > 0
+        ? `faltam ${p.requires.join(", ")}`
+        : "binario claude ausente ou sessao expirada";
+    console.log(` ${p.available ? " " : "-"} ${p.name.padEnd(12)} ${via.padEnd(10)} ${motivo}`);
+  }
+
+  const fallbacks = await providerService.getFallbacks(machineId);
+  console.log(`\nsubstituicoes de ${machineId}:`);
+  if (fallbacks.length === 0) console.log("  nenhuma");
+  for (const f of fallbacks) console.log(`  ${f.fromModel} -> ${f.toModel} (ordem ${f.order})`);
+
+  const modelos = [
+    ...new Set(prReviewSpec.steps.filter((s) => s.type === "model").map((s) => s.model)),
+  ];
+  console.log("\npassos do agent semente:");
+  for (const modelo of modelos) {
+    const preview = await providerService.resolvePreview(modelo, machineId);
+    console.log(
+      preview.ok
+        ? `  ${modelo} -> ${preview.resolution.used}${preview.resolution.substitutionReason ? " (substituido)" : ""}`
+        : `  ${modelo} -> sem saida: ${preview.error}`,
+    );
+  }
+}
+
 async function inbox(): Promise<void> {
   const rows = await db
     .select()
@@ -202,6 +233,9 @@ async function main(): Promise<void> {
     case "inbox":
       await inbox();
       break;
+    case "providers":
+      await providers();
+      break;
     case "mcp":
       await mcpList();
       break;
@@ -269,6 +303,7 @@ async function main(): Promise<void> {
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",
+          "  providers                lista provedores, substituicoes e a resolucao de cada passo",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
           "  mcp:tools <nome>         lista as ferramentas que o servidor expoe",

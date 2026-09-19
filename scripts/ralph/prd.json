@@ -43,7 +43,7 @@
       "description": "Criar app/src/services/provider-service.ts com listProviders() informando disponibilidade nesta maquina, getFallbacks(machineId), setFallback(machineId, from, to, order) com deteccao de ciclo na gravacao, e resolvePreview(model, machineId).",
       "done_when": "resolveModel nao e mais chamado direto pelo cli.ts.",
       "verify": "npx tsc --noEmit && npx tsx src/cli.ts providers",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

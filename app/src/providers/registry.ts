@@ -18,9 +18,14 @@ export function splitModelId(id: string): { provider: string; model: string } {
   return { provider: id.slice(0, at), model: id.slice(at + 1) };
 }
 
-type ProviderEntry = {
+export type ProviderEntry = {
   /** Sem credencial, o provider simplesmente nao existe nesta maquina. */
   available: () => boolean;
+  /**
+   * Variaveis de ambiente que precisam estar presentes. Vazio quando a
+   * disponibilidade nao vem do ambiente, como no binario da assinatura.
+   */
+  requires: string[];
   model?: (id: string) => LanguageModel;
 };
 
@@ -49,24 +54,28 @@ export function buildProviders(): Record<string, ProviderEntry> {
     const baseURL = env(urlVar);
     return {
       available: () => Boolean(apiKey && baseURL),
+      requires: [keyVar, urlVar],
       model: (id: string) =>
         createOpenAICompatible({ name, apiKey: apiKey!, baseURL: baseURL! }).chatModel(id),
     } satisfies ProviderEntry;
   };
 
   return {
-    "claude-code": { available: claudeCodeAvailable },
+    "claude-code": { available: claudeCodeAvailable, requires: [] },
 
     anthropic: {
       available: () => Boolean(env("ANTHROPIC_API_KEY")),
+      requires: ["ANTHROPIC_API_KEY"],
       model: (id) => createAnthropic({ apiKey: env("ANTHROPIC_API_KEY")! })(id),
     },
     openai: {
       available: () => Boolean(env("OPENAI_API_KEY")),
+      requires: ["OPENAI_API_KEY"],
       model: (id) => createOpenAI({ apiKey: env("OPENAI_API_KEY")! })(id),
     },
     google: {
       available: () => Boolean(env("GOOGLE_GENERATIVE_AI_API_KEY")),
+      requires: ["GOOGLE_GENERATIVE_AI_API_KEY"],
       model: (id) => createGoogleGenerativeAI({ apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY")! })(id),
     },
 
@@ -75,6 +84,7 @@ export function buildProviders(): Record<string, ProviderEntry> {
 
     ollama: {
       available: () => Boolean(env("OLLAMA_BASE_URL")),
+      requires: ["OLLAMA_BASE_URL"],
       model: (id) =>
         createOpenAICompatible({ name: "ollama", apiKey: "ollama", baseURL: env("OLLAMA_BASE_URL")! }).chatModel(id),
     },

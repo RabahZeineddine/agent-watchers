@@ -14,7 +14,7 @@ executor que a interface vai usar.
 |---|---|
 | esquema SQLite com 17 tabelas | pronto |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
-| registro de provedores e resolução de fallback por máquina | pronto |
+| registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
@@ -57,6 +57,7 @@ npm run dev demo                      # não precisa de credencial
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
+npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
 npm run dev approve <id>
