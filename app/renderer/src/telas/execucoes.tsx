@@ -130,7 +130,7 @@ function LinhaDeExecucao({
       <div className="flex items-baseline gap-2.5">
         {alvo?.pull ? (
           <>
-            <span className="shrink-0 font-mono text-[13px] font-medium">{`PR #${alvo.pull}`}</span>
+            <span className="shrink-0 font-mono text-[13px] font-medium">{t("common.pull", { number: alvo.pull })}</span>
             <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
               {alvo.title ?? alvo.repo}
             </span>

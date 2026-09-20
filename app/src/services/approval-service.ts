@@ -34,6 +34,32 @@ export class ApprovalService {
     return row;
   }
 
+  /**
+   * Grava o que vai sair, antes de sair.
+   *
+   * Editar não é publicar: o texto revisado fica na pendência e continua
+   * esperando. Só a ApprovalGate publica, e só depois do clique.
+   *
+   * Pendência já resolvida não aceita edição. Sem essa trava, alterar o payload
+   * depois do envio mudaria o registro do que foi publicado, e o histórico
+   * passaria a mentir sobre o que saiu.
+   */
+  async updatePayload(approvalId: string, payload: unknown): Promise<ApprovalSummary> {
+    const [atual] = await this.query(eq(schema.approvals.id, approvalId));
+    if (!atual) throw new Error(`aprovacao ${approvalId} nao encontrada`);
+    if (atual.status !== "pending") {
+      throw new Error(`aprovacao ${approvalId} ja resolvida: ${atual.status}`);
+    }
+
+    await this.db
+      .update(schema.approvals)
+      .set({ payload: payload as object })
+      .where(eq(schema.approvals.id, approvalId));
+
+    const [novo] = await this.query(eq(schema.approvals.id, approvalId));
+    return novo!;
+  }
+
   private async query(where: SQL): Promise<ApprovalSummary[]> {
     const rows = await this.db
       .select({

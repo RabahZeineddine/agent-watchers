@@ -91,6 +91,8 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "approvals.listPending": () => approvalService.listPending(),
     "approvals.get": (approvalId) => approvalService.get(approvalId),
+    "approvals.update": (approvalId, payload) => approvalService.updatePayload(approvalId, payload),
+
     "approvals.decide": async (approvalId, decision) => {
       if (decision !== "approved" && decision !== "rejected") {
         throw new Error(`decisao "${String(decision)}" nao existe`);

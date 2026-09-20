@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { TelaProps } from "../rotas";
+import { Revisao } from "./revisao";
 
 type Pendencia = ReadResult<"approvals.listPending">[number];
 type Execucao = ReadResult<"runs.list">[number];
@@ -62,7 +63,19 @@ interface Item {
   severidade: Severidade;
 }
 
-export function Inbox({ navegar }: TelaProps) {
+/**
+ * A fila, ou o que vai sair de um item dela.
+ *
+ * O botão Editar levava ao detalhe da execução, que é rastro de auditoria e não
+ * edita nada: prometia uma coisa e entregava outra. Agora ele abre a revisão do
+ * que vai ser publicado, e a auditoria continua a um link de distância.
+ */
+export function Inbox(props: TelaProps) {
+  if (props.detalhe) return <Revisao {...props} />;
+  return <Fila {...props} />;
+}
+
+function Fila({ navegar }: TelaProps) {
   const pendentes = useRead("approvals.listPending");
   const execucoes = useRead("runs.list", { status: "failed", limit: 20 });
   const [itens, setItens] = useState<Item[] | null>(null);
@@ -145,7 +158,7 @@ export function Inbox({ navegar }: TelaProps) {
         void resolver(item, "rejected");
       } else if (e.key === "e" && item) {
         e.preventDefault();
-        navegar("execucoes", item.pendencia.runId);
+        navegar("inbox", item.pendencia.id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -187,7 +200,7 @@ export function Inbox({ navegar }: TelaProps) {
               }
               aoAprovar={() => void resolver(item, "approved")}
               aoDescartar={() => void resolver(item, "rejected")}
-              aoEditar={() => navegar("execucoes", item.pendencia.runId)}
+              aoEditar={() => navegar("inbox", item.pendencia.id)}
             />
           ))}
         </ul>

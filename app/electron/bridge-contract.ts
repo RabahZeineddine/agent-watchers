@@ -69,6 +69,16 @@ interface ServiceApi {
    * e nao alcanca o handler de publicacao: quem publica continua sendo a
    * ApprovalGate, do outro lado da ponte, que e a porta unica do ADR 0002.
    */
+  /**
+   * O texto revisado, gravado antes de sair.
+   *
+   * Editar não publica: a pendência continua esperando o clique. Fica fora do
+   * catálogo que a janela expõe a modelo, pela mesma razão de `decide`, porque
+   * alterar o que vai sair e depois pedir aprovação é o mesmo caminho por dois
+   * passos.
+   */
+  "approvals.update": ApprovalService["updatePayload"];
+
   "approvals.decide": (
     approvalId: string,
     decision: "approved" | "rejected",
@@ -153,6 +163,7 @@ export const BRIDGE_CHANNELS = [
   "runs.rerunStep",
   "approvals.listPending",
   "approvals.get",
+  "approvals.update",
   "approvals.decide",
   "mcp.list",
   "mcp.test",

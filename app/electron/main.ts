@@ -2111,8 +2111,12 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
   const { runService } = await import("../src/services/run-service.js");
   const primeiroRun = (await runService.list({ limit: 1 }))[0]?.id;
 
+  const { approvalService } = await import("../src/services/approval-service.js");
+  const primeiraPendencia = (await approvalService.listPending())[0]?.id;
+
   const destinos: [string, string | undefined][] = [
     ["inbox", undefined],
+    ["inbox", primeiraPendencia],
     ["execucoes", undefined],
     ["execucoes", primeiroRun],
     ["agents", undefined],

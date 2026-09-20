@@ -14,11 +14,28 @@ import { BRIDGE_GLOBAL } from "../../electron/bridge-contract.js";
 type Decisao = "approved" | "rejected";
 
 interface PonteDeDecisao {
-  approvals: { decide: (id: string, decisao: Decisao) => Promise<unknown> };
+  approvals: {
+    decide: (id: string, decisao: Decisao) => Promise<unknown>;
+    update: (id: string, payload: unknown) => Promise<unknown>;
+  };
+}
+
+function ponte(): PonteDeDecisao {
+  const achada = (globalThis as Record<string, unknown>)[BRIDGE_GLOBAL] as
+    | PonteDeDecisao
+    | undefined;
+  if (!achada?.approvals?.decide) throw new Error("ponte indisponivel");
+  return achada;
 }
 
 export async function decidir(approvalId: string, decisao: Decisao): Promise<void> {
-  const ponte = (globalThis as Record<string, unknown>)[BRIDGE_GLOBAL] as PonteDeDecisao | undefined;
-  if (!ponte?.approvals?.decide) throw new Error("ponte indisponivel");
-  await ponte.approvals.decide(approvalId, decisao);
+  await ponte().approvals.decide(approvalId, decisao);
+}
+
+/**
+ * Grava o texto revisado. Continua sendo edição de uma pessoa, e não
+ * publicação: a pendência segue esperando o clique.
+ */
+export async function gravarRevisao(approvalId: string, payload: unknown): Promise<void> {
+  await ponte().approvals.update(approvalId, payload);
 }

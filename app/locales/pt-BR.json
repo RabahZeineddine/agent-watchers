@@ -101,7 +101,9 @@
     "runs_other": "{{count}} execuções"
   },
   "common": {
-    "version": "v{{version}}"
+    "version": "v{{version}}",
+    "pull": "PR #{{number}}",
+    "open_github": "abrir no GitHub"
   },
   "findings": {
     "count_one": "{{count}} achado",
@@ -339,5 +341,22 @@
     "pause": "Pausar tudo",
     "resume": "Retomar tudo",
     "quit": "Sair"
+  },
+  "review": {
+    "title": "Revisar antes de publicar",
+    "back": "Inbox",
+    "will_post_one": "{{count}} achado vai sair",
+    "will_post_other": "{{count}} achados vão sair",
+    "none_selected": "nenhum achado marcado, nada seria publicado",
+    "approve": "Aprovar e publicar",
+    "discard": "Descartar tudo",
+    "include": "publicar este",
+    "excluded": "fora da publicação",
+    "severity": "severidade",
+    "saving": "gravando...",
+    "saved": "revisão gravada",
+    "see_run": "ver execução",
+    "not_found": "essa pendência não está mais esperando decisão",
+    "body_label": "texto do comentário"
   }
 }

@@ -101,7 +101,9 @@
     "runs_other": "{{count}} runs"
   },
   "common": {
-    "version": "v{{version}}"
+    "version": "v{{version}}",
+    "pull": "PR #{{number}}",
+    "open_github": "open on GitHub"
   },
   "findings": {
     "count_one": "{{count}} finding",
@@ -339,5 +341,22 @@
     "pause": "Pause everything",
     "resume": "Resume everything",
     "quit": "Quit"
+  },
+  "review": {
+    "title": "Review before publishing",
+    "back": "Inbox",
+    "will_post_one": "{{count}} finding will be posted",
+    "will_post_other": "{{count}} findings will be posted",
+    "none_selected": "nothing selected, nothing would be posted",
+    "approve": "Approve and publish",
+    "discard": "Discard all",
+    "include": "post this one",
+    "excluded": "excluded",
+    "severity": "severity",
+    "saving": "saving...",
+    "saved": "review saved",
+    "see_run": "see run",
+    "not_found": "this item is no longer waiting for a decision",
+    "body_label": "comment text"
   }
 }
