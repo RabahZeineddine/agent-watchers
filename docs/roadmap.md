@@ -88,11 +88,19 @@ assinatura Claude.
 
 **Credencial de sessão web e extensão de navegador.** Há uma classe de MCP que
 não usa aplicativo aprovado e sim a sessão do navegador, porque o registro de
-aplicativo não sai. O `sistema-interno-mcp` e o `outro-sistema-mcp` são desse tipo, e ambos
-já são processos stdio locais, então já rodam no Locum sem trabalho novo: basta
-cadastrar e marcar as ferramentas no passo.
+aplicativo não sai. O `sistema-interno-mcp` e o `outro-sistema-mcp` são desse tipo.
 
-O que falta neles não é integração, é ciclo de vida. Sessão web expira, e o
+Tecnicamente eles rodariam hoje, porque são processos stdio. Mas não é assim que
+entram, e por dois motivos.
+
+O primeiro é portabilidade. Cadastrar um servidor como caminho absoluto para uma
+pasta de desenvolvimento de uma máquina não é configuração de aplicativo, é
+gambiarra que só funciona em um computador. Servidor entra por referência
+portátil, resolvida na instalação: pacote publicado executado por `uvx` ou `npx`,
+ou instalação gerenciada pelo próprio Locum. Qual das duas fica para quando esta
+frente for construída.
+
+O segundo é ciclo de vida. Sessão web expira, e o
 servidor passa a falhar em silêncio no meio de uma execução. Três coisas
 resolvem, em ordem de valor:
 
