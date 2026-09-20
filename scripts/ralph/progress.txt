@@ -37,3 +37,4 @@
 2026-09-20  M4c.6 feito      seleção de idioma na configuração, troca sem recarregar a janela, bandeja e notificação junto
 2026-09-20  M5.1  feito      migrações em app/drizzle aplicadas na subida do processo principal, banco de push adotado sem recriar tabela, smoke em banco vazio e em banco com dado
 2026-09-20  M5.2  feito      ícone da régua de severidade, SVG versionado e .icns por sips e iconutil
+2026-09-20  M5.3  feito      empacotamento por electron-builder, native fora do asar com arquitetura no nome, npmRebuild desligado, .app abrindo em banco limpo

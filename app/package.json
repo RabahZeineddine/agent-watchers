@@ -19,6 +19,8 @@
     "build:icon": "node scripts/build-icon.mjs",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron dist/main.cjs",
+    "dist:dir": "electron-builder --dir",
+    "dist": "electron-builder",
     "smoke": "npm run build && electron dist/main.cjs --smoke",
     "verify": "npm run typecheck && npm run check:i18n && npm run build && npm run smoke"
   },
@@ -62,6 +64,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "drizzle-kit": "^0.31.0",
     "electron": "^40.10.6",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.20.0",
@@ -81,5 +84,7 @@
     "better-sqlite3@12.11.1": true,
     "electron@40.10.6": true
   },
-  "main": "dist/main.cjs"
+  "main": "dist/main.cjs",
+  "description": "Locum, revisor de pull request que roda na sua máquina.",
+  "author": "Rabah Zeineddine"
 }

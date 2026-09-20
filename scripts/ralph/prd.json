@@ -439,7 +439,7 @@
       "description": "Configurar electron-builder: appId com.rabah.locum, nome do produto Locum, alvo dmg e zip para arm64 e x64, saída em app/release, categoria de produtividade. O módulo nativo better-sqlite3 precisa ser reconstruído para o Electron empacotado e ficar fora do asar, senão o aplicativo instalado não abre. Incluir as pastas de dicionário e de migração no pacote.",
       "done_when": "npm run dist:dir produz um .app que abre, e o conteúdo traz locales, drizzle e o módulo nativo fora do asar.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && test -d release/mac-arm64/Locum.app",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

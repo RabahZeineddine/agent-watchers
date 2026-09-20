@@ -13,7 +13,17 @@ const bindingSource = join(
   "Release",
   "better_sqlite3.node",
 );
-const bindingTarget = join(appDir, "native", "better_sqlite3-electron.node");
+/**
+ * Para qual arquitetura reconstruir o binario nativo.
+ *
+ * O pacote sai para arm64 e x64, e um `.node` so serve para a arquitetura em
+ * que foi compilado. O nome carrega a arquitetura para que as duas copias
+ * caibam lado a lado, e para que empacotar x64 sem ter gerado a copia falhe na
+ * subida em vez de instalar um aplicativo que nao abre.
+ */
+const archFlag = process.argv.indexOf("--arch");
+const arch = archFlag < 0 ? process.arch : process.argv[archFlag + 1];
+const bindingTarget = join(appDir, "native", `better_sqlite3-electron-${arch}.node`);
 
 function run(command, args) {
   execFileSync(command, args, { cwd: appDir, stdio: "inherit" });
@@ -30,7 +40,7 @@ function ensureElectronBinding() {
   if (existsSync(bindingTarget)) return;
 
   mkdirSync(dirname(bindingTarget), { recursive: true });
-  run("npx", ["electron-rebuild", "-f", "-w", "better-sqlite3"]);
+  run("npx", ["electron-rebuild", "-f", "-w", "better-sqlite3", "--arch", arch]);
   copyFileSync(bindingSource, bindingTarget);
   run("npm", ["rebuild", "better-sqlite3"]);
 }

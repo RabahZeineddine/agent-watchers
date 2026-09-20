@@ -1,0 +1,63 @@
+appId: com.rabah.locum
+productName: Locum
+
+directories:
+  # O padrão do electron-builder é `dist`, que aqui já é a saída do esbuild e
+  # do Vite. Sem mudar isto, o pacote sobrescreveria o que ele está embrulhando.
+  output: release
+  # `build/` também é onde o `icon.icns` mora, e é dali que ele é encontrado
+  # sozinho, sem precisar de `mac.icon`.
+  buildResources: build
+
+# O que o pacote leva além do que o electron-builder já traz de node_modules.
+# `src/`, `electron/`, `renderer/` e `scripts/` ficam de fora: o esbuild e o
+# Vite já embutiram o que roda, e código-fonte dentro do `.app` só engorda o
+# download.
+files:
+  - dist/**
+  - native/**
+  - locales/**
+  - drizzle/**
+  - package.json
+  # Mapa de origem so serve para quem tem o codigo, e quem tem o codigo roda
+  # por `npm run start`. No pacote sao mais de cinco mil arquivos que ninguem
+  # abre, e o download dobra de tamanho por causa deles.
+  - "!dist/**/*.map"
+
+# O binário do better-sqlite3 precisa sair do asar. O asar é um arquivo só, e
+# `require` de módulo nativo passa pelo `dlopen` do sistema, que não enxerga
+# caminho lá dentro. O Electron desempacota o que está aqui para
+# `app.asar.unpacked`, e o processo principal aponta para lá.
+asar: true
+asarUnpack:
+  - native/**
+
+# O electron-builder reconstruiria o better-sqlite3 de `node_modules` para o
+# ABI do Electron, e é justamente o que não se quer: a linha de comando roda
+# por tsx, no Node do sistema, e ficaria sem banco. O build do processo
+# principal já resolve isso guardando uma segunda cópia em `native/`.
+npmRebuild: false
+
+mac:
+  category: public.app-category.productivity
+  # Sem certificado da Apple: assinatura e notarização dependem de conta de
+  # desenvolvedor, que é decisão do dono do repositório. Sem isto o
+  # electron-builder procuraria identidade no keychain e falharia por engano.
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
+# O `setAsDefaultProtocolClient` do M3.7 basta rodando do código, mas o
+# aplicativo instalado é registrado pelo Info.plist: sem esta entrada o
+# `locum://` do retorno de OAuth não chegaria ao app já fechado.
+protocols:
+  - name: Locum
+    schemes:
+      - locum

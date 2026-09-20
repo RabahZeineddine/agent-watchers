@@ -56,6 +56,7 @@ que a interface vai usar.
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
+| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
 
 ## Execução verificada
 
@@ -111,6 +112,9 @@ npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npm run check:i18n                    # acusa texto cravado fora do dicionário
 npm run verify                        # tipos, guarda de i18n, build e smoke
+npm run build:icon                    # regera build/icon.icns a partir do SVG
+npm run dist:dir                      # empacota sem instalador, em release/mac-<arch>/Locum.app
+npm run dist                          # gera o .dmg e o .zip
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
@@ -554,6 +558,39 @@ processo principal aponta para lá pelo caminho do próprio bundle.
 nenhum registro de migração, e a primeira migração estouraria em `table agents
 already exists`. Na primeira subida com migração, o Locum reconhece o esquema
 já existente e marca as migrações da pasta como aplicadas, sem tocar em dado.
+
+**O módulo nativo precisa sair do asar.** O asar é um arquivo só, e o Electron
+remenda o `fs` para ler de dentro dele: JSON, HTML e os `.sql` da migração
+saem de lá sem ninguém notar. `dlopen` não passa por esse remendo, então um
+`.node` dentro do asar simplesmente não carrega. O `asarUnpack` manda `native/`
+para `app.asar.unpacked`, e o processo principal troca um segmento do caminho
+pelo outro antes de apontar o binding.
+
+**O binário nativo carrega a arquitetura no nome.** O pacote sai para arm64 e
+x64, e um `.node` só serve para a arquitetura em que foi compilado. Com nome
+genérico, empacotar x64 numa máquina arm64 produziria um `.app` que instala e
+não abre. Com a arquitetura no nome, falta a cópia e a subida estoura dizendo
+qual arquivo não existe. Quem for gerar o pacote x64 precisa rodar
+`node scripts/build-main.mjs --arch x64` antes.
+
+**O electron-builder não reconstrói o `node_modules`.** O padrão dele é
+recompilar as dependências nativas para o ABI do Electron, que é justamente o
+que quebraria a linha de comando: ela roda por `tsx`, no Node do sistema, e
+ficaria sem banco. Por isso `npmRebuild: false`, e o ABI do Electron vem da
+segunda cópia que o `build:main` guarda em `native/`.
+
+**Sem certificado da Apple, `identity` vai explícito como nulo.** Deixando o
+padrão, o electron-builder procura identidade no keychain e falha o
+empacotamento por não achar. Assinatura e notarização dependem de conta de
+desenvolvedor, que é decisão do dono do repositório.
+
+**A saída do empacotamento não pode ser `dist`.** É o padrão do
+electron-builder e é onde o esbuild e o Vite já escrevem: sem mudar para
+`release`, o pacote sobrescreveria o que está embrulhando.
+
+**O mapa de origem fica fora do pacote.** São mais de cinco mil arquivos que só
+servem a quem tem o código, e quem tem o código roda por `npm start`. Dentro do
+`.app` eles dobravam o tamanho do asar sem ninguém para abrir.
 
 ## Próximos passos
 

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
 import en from "../locales/en.json";
 import ptBR from "../locales/pt-BR.json";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 // So tipo: o `import type` e apagado no build, e um import de valor vindo de
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
 // apontar o binario do Electron.
@@ -20,14 +20,26 @@ function flagValue(name: string): string | undefined {
   return at < 0 ? undefined : process.argv[at + 1];
 }
 
+/**
+ * Tira um caminho de dentro do asar.
+ *
+ * Empacotado, `__dirname` cai dentro de `app.asar`, que e um arquivo so. Isso
+ * basta para ler JSON e HTML, porque o Electron remenda o `fs`, mas nao para
+ * modulo nativo: `dlopen` e do sistema e nao enxerga caminho la dentro. O que
+ * o `asarUnpack` do empacotamento deixa em `app.asar.unpacked` sai por aqui.
+ */
+function foraDoAsar(caminho: string): string {
+  return caminho.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
 // O nucleo abre o banco no import do modulo, entao o caminho do binding nativo
 // precisa estar no ambiente antes de qualquer import dele. Por isso o acesso ao
 // banco mora num import dinamico la embaixo, e nao no topo do arquivo.
-process.env.LOCUM_SQLITE_BINDING = join(
-  __dirname,
-  "..",
-  "native",
-  "better_sqlite3-electron.node",
+//
+// O nome carrega a arquitetura porque o pacote sai para arm64 e x64, e um
+// `.node` compilado para uma nao carrega na outra.
+process.env.LOCUM_SQLITE_BINDING = foraDoAsar(
+  join(__dirname, "..", "native", `better_sqlite3-electron-${process.arch}.node`),
 );
 
 // Antes de qualquer espera: com o app fechado, o macOS sobe o processo para
