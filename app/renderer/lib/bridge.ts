@@ -38,6 +38,7 @@ export const READ_CHANNELS = [
   "agents.get",
   "agents.versions",
   "agents.budgets",
+  "agents.overview",
   "runs.list",
   "runs.get",
   "runs.findings",

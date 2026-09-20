@@ -30,6 +30,22 @@ export type PrContext = EventPayload & {
   description: string;
   diff: string;
   headSha: string;
+  /**
+   * Quem abriu, para onde vai e o tamanho da mudança.
+   *
+   * Nada disso entra no prompt: serve para a fila e para a lista de execuções
+   * dizerem de que trabalho se trata sem obrigar a abrir o pull request. Uma
+   * linha que diz só "PR #482" obriga a sair do aplicativo para saber se vale
+   * olhar agora.
+   */
+  author: string;
+  baseBranch: string;
+  headBranch: string;
+  url: string;
+  additions: number;
+  deletions: number;
+  fileCount: number;
+  draft: boolean;
 };
 
 /** Ingestao deterministica: sem LLM, sem token gasto. */
@@ -53,6 +69,14 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
     headSha: pr.head.sha,
     changedFiles: files.map((f) => f.filename),
     diff,
+    author: pr.user?.login ?? "desconhecido",
+    baseBranch: pr.base.ref,
+    headBranch: pr.head.ref,
+    url: pr.html_url,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    fileCount: files.length,
+    draft: pr.draft ?? false,
   };
 }
 

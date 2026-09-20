@@ -306,11 +306,14 @@ function Linha({
       />
 
       <div className="py-3 pr-4 pl-5">
-        <div className="flex items-baseline gap-3">
-          <span className="truncate font-medium text-[15px] tracking-tight">{alvo.principal}</span>
-          {alvo.secundario && (
-            <span className="text-muted-foreground truncate font-mono text-xs">
-              {alvo.secundario}
+        <div className="flex items-baseline gap-2.5">
+          <span className="shrink-0 font-mono text-[13px] font-medium">{alvo.principal}</span>
+          {alvo.repo && (
+            <span className="text-muted-foreground truncate font-mono text-xs">{alvo.repo}</span>
+          )}
+          {alvo.rascunho && (
+            <span className="text-muted-foreground border-border shrink-0 rounded border px-1 text-[10px]">
+              {t("inbox.draft")}
             </span>
           )}
           <span
@@ -323,7 +326,19 @@ function Linha({
           </span>
         </div>
 
-        <div className="mt-1 flex items-baseline gap-2 text-sm">
+        {alvo.titulo && (
+          <p className="mt-0.5 max-w-[68ch] truncate text-[15px] font-medium tracking-tight">
+            {alvo.titulo}
+          </p>
+        )}
+
+        <div className="text-muted-foreground mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
+          {alvo.autor && <span>{alvo.autor}</span>}
+          {alvo.ramos && <span className="font-mono">{alvo.ramos}</span>}
+          {alvo.tamanho && <span className="font-mono tabular-nums">{alvo.tamanho}</span>}
+        </div>
+
+        <div className="mt-1.5 flex items-baseline gap-2 text-sm">
           <span className={cn("shrink-0 font-medium", TINTA[severidade])}>
             {rotuloDeSeveridade(t, severidade)}
           </span>
@@ -409,15 +424,55 @@ function Linha({
  * junção por ponto empilha tudo no mesmo tom e obriga a ler a linha inteira
  * para achar o que importa.
  */
-function alvoDaPendencia(p: Pendencia, t: TFunction): { principal: string; secundario?: string } {
-  const carga = p.payload as { owner?: string; repo?: string; pull?: number } | null;
-  if (carga?.pull) {
-    const dono = carga.owner ? `${carga.owner}/` : "";
-    return { principal: `PR #${carga.pull}`, secundario: `${dono}${carga.repo ?? ""}` };
+interface Alvo {
+  principal: string;
+  repo?: string;
+  titulo?: string;
+  autor?: string;
+  ramos?: string;
+  tamanho?: string;
+  rascunho?: boolean;
+}
+
+function alvoDaPendencia(p: Pendencia, t: TFunction): Alvo {
+  const c = p.payload as Partial<CargaDePr> | null;
+  if (!c?.pull) {
+    return { principal: t("inbox.target_unknown", { agent: p.agentName, step: p.stepName }) };
   }
+
   return {
-    principal: t("inbox.target_unknown", { agent: p.agentName, step: p.stepName }),
+    principal: `PR #${c.pull}`,
+    repo: `${c.owner ? `${c.owner}/` : ""}${c.repo ?? ""}`,
+    titulo: c.title,
+    autor: c.author ? t("inbox.by", { author: c.author }) : undefined,
+    ramos:
+      c.headBranch && c.baseBranch
+        ? t("inbox.branch", { head: c.headBranch, base: c.baseBranch })
+        : undefined,
+    tamanho:
+      c.fileCount === undefined
+        ? undefined
+        : t("inbox.diff", {
+            files: c.fileCount,
+            additions: c.additions ?? 0,
+            deletions: c.deletions ?? 0,
+          }),
+    rascunho: c.draft,
   };
+}
+
+interface CargaDePr {
+  owner: string;
+  repo: string;
+  pull: number;
+  title: string;
+  author: string;
+  baseBranch: string;
+  headBranch: string;
+  additions: number;
+  deletions: number;
+  fileCount: number;
+  draft: boolean;
 }
 
 /**

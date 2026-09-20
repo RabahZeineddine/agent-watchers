@@ -313,7 +313,22 @@ export class Executor {
  * aprovação, gravado em cada pendência.
  */
 function alvoDoEvento(payload: EventPayload): Record<string, unknown> {
-  const campos = ["owner", "repo", "repoName", "pull", "title", "headSha"] as const;
+  const campos = [
+    "owner",
+    "repo",
+    "repoName",
+    "pull",
+    "title",
+    "headSha",
+    "author",
+    "baseBranch",
+    "headBranch",
+    "url",
+    "additions",
+    "deletions",
+    "fileCount",
+    "draft",
+  ] as const;
   const alvo: Record<string, unknown> = {};
   for (const campo of campos) {
     const valor = (payload as Record<string, unknown>)[campo];

@@ -9,6 +9,26 @@ type Db = typeof defaultDb;
 export type AgentRow = typeof schema.agents.$inferSelect;
 export type AgentVersionRow = typeof schema.agentVersions.$inferSelect;
 
+/** Resumo de um agent para a lista, já com o que ele usa e como acorda. */
+export interface AgentOverview extends AgentRow {
+  version: number;
+  stepCount: number;
+  actionCount: number;
+  models: string[];
+  toolCount: number;
+  skillCount: number;
+  budget: { perRunUsd?: number; perDayUsd?: number };
+  triggers: { kind: string; enabled: boolean; config: unknown }[];
+  lastRun: {
+    id: string;
+    status: string;
+    endedAt: number | null;
+    createdAt: number;
+    costUsd: number;
+    estimateUsd: number;
+  } | null;
+}
+
 /** Quem esta gravando. Agent nao sobe modo de passo de acao; pessoa sobe. */
 export type Actor = "human" | "agent";
 
@@ -205,6 +225,72 @@ export class AgentService {
 
     // Mexer no orcamento nao mexe em passo de acao, entao nao ha o que rebaixar.
     return this.upsert({ ...latest.spec, budget }, note ?? "orcamento ajustado", "human");
+  }
+
+  /**
+   * O que a lista de agents precisa mostrar sem abrir nenhum deles.
+   *
+   * Uma linha com nome e "habilitado" não responde nenhuma pergunta real: em
+   * que modelo ele roda, de quanto em quanto tempo acorda, quanto gastou, se a
+   * última execução deu certo. Montado aqui e não na janela porque seriam
+   * quatro leituras por agent, e a regra de qual versão conta é desta camada.
+   */
+  async overview(): Promise<AgentOverview[]> {
+    const linhas = await this.list();
+    const gatilhos = await this.db.select().from(schema.triggers);
+
+    return Promise.all(
+      linhas.map(async (agent) => {
+        const versao = await this.getLatestVersion(agent.id);
+        const spec = versao?.spec;
+
+        const modelos = [
+          ...new Set(
+            (spec?.steps ?? [])
+              .filter((step): step is Extract<typeof step, { type: "model" }> => step.type === "model")
+              .map((step) => step.model),
+          ),
+        ];
+
+        const ferramentas = new Set<string>();
+        for (const step of spec?.steps ?? []) {
+          if (step.type !== "model") continue;
+          for (const ref of step.tools ?? spec?.defaultTools ?? []) {
+            ferramentas.add(`${ref.server}.${ref.tool}`);
+          }
+        }
+
+        const [ultima] = await this.db
+          .select({
+            id: schema.runs.id,
+            status: schema.runs.status,
+            endedAt: schema.runs.endedAt,
+            createdAt: schema.runs.createdAt,
+            costUsd: schema.runs.costUsd,
+            estimateUsd: schema.runs.estimateUsd,
+          })
+          .from(schema.runs)
+          .innerJoin(schema.agentVersions, eq(schema.runs.agentVersionId, schema.agentVersions.id))
+          .where(eq(schema.agentVersions.agentId, agent.id))
+          .orderBy(desc(schema.runs.createdAt))
+          .limit(1);
+
+        return {
+          ...agent,
+          version: versao?.version ?? 0,
+          stepCount: spec?.steps.length ?? 0,
+          actionCount: (spec?.steps ?? []).filter((s) => s.type === "action").length,
+          models: modelos,
+          toolCount: ferramentas.size,
+          skillCount: spec?.skills.length ?? 0,
+          budget: spec?.budget ?? {},
+          triggers: gatilhos
+            .filter((g) => g.agentId === agent.id)
+            .map((g) => ({ kind: g.kind, enabled: g.enabled, config: g.config })),
+          lastRun: ultima ?? null,
+        };
+      }),
+    );
   }
 
   private async latestRow(agentId: string): Promise<AgentVersionRow | undefined> {

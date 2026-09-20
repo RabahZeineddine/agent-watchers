@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { CodeBlock, CodeBlockCopyButton } from "@/components/ai-elements/code-block";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ export function Agents({ detalhe, navegar }: TelaProps) {
 
 function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
   const { t } = useTranslation();
-  const agents = useRead("agents.list");
+  const agents = useRead("agents.overview");
   const linhas = agents.data ?? [];
 
   return (
@@ -59,28 +60,114 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
           <Trans components={{ code: <code /> }} i18nKey="agents.empty" />
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-lg border">
           {linhas.map((agent) => (
-            <button
-              className="flex w-full items-center gap-3 border-border border-b px-4 py-3 text-left text-sm last:border-b-0 hover:bg-accent/50"
-              data-locum-agent={agent.id}
-              key={agent.id}
-              onClick={() => navegar("agents", agent.id)}
-              type="button"
-            >
-              <span className="w-48 shrink-0 truncate font-medium">{agent.id}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
-                {agent.name}
-              </span>
-              <Badge variant={agent.enabled ? "secondary" : "outline"}>
-                {t(agent.enabled ? "agents.enabled" : "agents.disabled")}
-              </Badge>
-            </button>
+            <LinhaDoAgent agent={agent} key={agent.id} navegar={navegar} />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
+}
+
+type Resumo = ReadResult<"agents.overview">[number];
+
+/**
+ * A linha responde, sem abrir nada: em que modelo roda, de quanto em quanto
+ * tempo acorda, quanto custa por execução, e como terminou a última.
+ *
+ * A versão anterior mostrava identificador, nome e "habilitado", que não
+ * responde nenhuma pergunta que alguém tenha de verdade ao olhar uma lista de
+ * agents.
+ */
+function LinhaDoAgent({
+  agent,
+  navegar,
+}: {
+  agent: Resumo;
+  navegar: TelaProps["navegar"];
+}) {
+  const { t } = useTranslation();
+  const gatilho = agent.triggers[0];
+
+  return (
+    <li>
+      <button
+        className="hover:bg-accent/40 focus-visible:ring-ring w-full cursor-pointer px-4 py-3 text-left transition-colors duration-200 focus-visible:ring-2 focus-visible:-outline-offset-2"
+        data-locum-agent={agent.id}
+        onClick={() => navegar("agents", agent.id)}
+        type="button"
+      >
+        <div className="flex items-baseline gap-2.5">
+          <span className="font-medium text-[15px] tracking-tight">{agent.name}</span>
+          <span className="text-muted-foreground font-mono text-xs">{agent.id}</span>
+          <span className="text-muted-foreground font-mono text-xs">
+            {t("agents.version", { version: agent.version })}
+          </span>
+          <span className="ml-auto shrink-0">
+            <Badge variant={agent.enabled ? "secondary" : "outline"}>
+              {t(agent.enabled ? "agents.enabled" : "agents.disabled")}
+            </Badge>
+          </span>
+        </div>
+
+        {agent.models.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {agent.models.map((modelo) => (
+              <span
+                className="border-border text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-[11px]"
+                key={modelo}
+              >
+                {modelo}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="text-muted-foreground mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs">
+          <span>{t("agents.steps", { count: agent.stepCount })}</span>
+          {agent.toolCount > 0 && <span>{t("agents.tools", { count: agent.toolCount })}</span>}
+          {agent.skillCount > 0 && <span>{t("agents.skills", { count: agent.skillCount })}</span>}
+          <span>{cadencia(t, gatilho)}</span>
+          {agent.budget.perRunUsd !== undefined && (
+            <span className="font-mono tabular-nums">
+              {t("agents.budget", { perRun: agent.budget.perRunUsd.toFixed(2) })}
+            </span>
+          )}
+          <span className="ml-auto">{ultima(t, agent.lastRun)}</span>
+        </div>
+      </button>
+    </li>
+  );
+}
+
+/** De quanto em quanto tempo o agent acorda, em palavra e não em milissegundo. */
+function cadencia(t: TFunction, gatilho: Resumo["triggers"][number] | undefined): string {
+  if (!gatilho) return t("agents.no_trigger");
+  if (!gatilho.enabled) return t("agents.trigger_off");
+
+  const config = gatilho.config as { intervalMinutes?: number; minutes?: number } | null;
+  const minutos = config?.intervalMinutes ?? config?.minutes;
+  if (minutos === undefined) return t("agents.on_event");
+  return minutos >= 120
+    ? t("agents.cadence_hours", { hours: Math.round(minutos / 60) })
+    : t("agents.cadence", { minutes: minutos });
+}
+
+/** Como terminou a última execução, que é o que diz se o agent está vivo. */
+function ultima(t: TFunction, run: Resumo["lastRun"]): string {
+  if (!run) return t("agents.never_ran");
+  const quando = new Date((run.endedAt ?? run.createdAt) * 1000).toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const gasto =
+    run.costUsd > 0
+      ? t("agents.spend", { amount: run.costUsd.toFixed(2) })
+      : run.estimateUsd > 0
+        ? t("agents.subscription_spend", { amount: run.estimateUsd.toFixed(2) })
+        : "";
+  return `${t("agents.last_run", { when: quando, status: run.status })}${gasto ? `, ${gasto}` : ""}`;
 }
 
 /* ----------------------------------------------------------------- detalhe */

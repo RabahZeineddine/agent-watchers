@@ -81,6 +81,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "agents.list": () => agentService.list(),
     "agents.get": (agentId) => agentService.get(agentId),
     "agents.versions": (agentId) => agentService.listVersions(agentId),
+    "agents.overview": () => agentService.overview(),
     "agents.budgets": () => agentService.budgets(),
 
     "runs.list": (filter) => runService.list(filter),

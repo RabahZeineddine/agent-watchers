@@ -41,7 +41,24 @@
       "summary_one": "v{{from}} contra v{{to}}: {{count}} linha diferente",
       "summary_other": "v{{from}} contra v{{to}}: {{count}} linhas diferentes",
       "identical": "Os dois specs são idênticos."
-    }
+    },
+    "steps_one": "{{count}} passo",
+    "steps_other": "{{count}} passos",
+    "tools_one": "{{count}} ferramenta",
+    "tools_other": "{{count}} ferramentas",
+    "skills_one": "{{count}} skill",
+    "skills_other": "{{count}} skills",
+    "version": "v{{version}}",
+    "cadence": "a cada {{minutes}} min",
+    "cadence_hours": "a cada {{hours}}h",
+    "on_event": "por evento",
+    "no_trigger": "sem gatilho",
+    "trigger_off": "gatilho desligado",
+    "budget": "teto {{perRun}} por execução",
+    "never_ran": "nunca executou",
+    "last_run": "última {{when}}, {{status}}",
+    "spend": "{{amount}} USD",
+    "subscription_spend": "{{amount}} USD equivalente"
   },
   "assistant": {
     "title": "Assistente",
@@ -126,7 +143,11 @@
     },
     "findings_one": "{{count}} achado",
     "findings_other": "{{count}} achados",
-    "target_unknown": "{{agent}}, passo {{step}}"
+    "target_unknown": "{{agent}}, passo {{step}}",
+    "by": "por {{author}}",
+    "diff": "{{files}} arq · +{{additions}} −{{deletions}}",
+    "draft": "rascunho",
+    "branch": "{{head}} → {{base}}"
   },
   "loginItem": {
     "applied": "início no login: preferência {{preference}}, sistema {{status}}"

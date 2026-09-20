@@ -51,6 +51,8 @@ interface ServiceApi {
   "agents.get": AgentService["get"];
   "agents.versions": AgentService["listVersions"];
   "agents.budgets": AgentService["budgets"];
+  /** O que a lista mostra sem abrir agent nenhum: modelo, cadência, gasto. */
+  "agents.overview": AgentService["overview"];
 
   "runs.list": RunService["list"];
   "runs.get": RunService["get"];
@@ -144,6 +146,7 @@ export const BRIDGE_CHANNELS = [
   "agents.get",
   "agents.versions",
   "agents.budgets",
+  "agents.overview",
   "runs.list",
   "runs.get",
   "runs.findings",
