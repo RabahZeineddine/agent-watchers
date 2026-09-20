@@ -102,6 +102,9 @@ if [ ! -d "$WORKTREE" ]; then
   (cd "$WORKTREE/app" && npm rebuild better-sqlite3 esbuild >/dev/null 2>&1 || true)
 fi
 
+# O worktree pode ter acabado de nascer, entao o estado e reescolhido aqui.
+escolhe_estado
+
 # Banco de rascunho: o loop roda `demo`, e o banco real tem histórico que vale.
 export LOCUM_HOME="$WORKTREE/.locum-loop-data"
 mkdir -p "$LOCUM_HOME"
