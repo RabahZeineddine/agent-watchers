@@ -64,6 +64,24 @@ lista, com diff legível entre versões.
 
 Isto revisa a estimativa anterior, que assumia construir canvas do zero.
 
+### 5. A ponte leva o clique, e o chat não pode alcançá-la
+
+Emenda de 19 de setembro de 2026, escrita na revisão da casca Electron.
+
+A ponte entre janela e serviços expõe `approvals.decide`, e isso está certo: é o
+transporte do clique de uma pessoa no botão da inbox. O preload não tem canal
+genérico, cada canal é declarado no contrato, e a decisão continua passando pela
+ApprovalGate.
+
+O risco não é a ponte, é o chat do M4 rodar no mesmo renderer. Se o catálogo de
+ferramentas do assistente for montado a partir dos canais da ponte, ele ganha
+`approvals.decide` de graça, e uma instrução plantada num diff volta a poder
+publicar.
+
+Regra para o M4: o catálogo do chat é lista explícita, nunca derivada dos canais
+da ponte, e `approvals.decide` não entra nela. O componente de aprovação chama a
+ponte direto, fora do alcance do modelo.
+
 ## Consequências
 
 O renderer passa a depender de shadcn/ui e do registry do AI Elements. Como os

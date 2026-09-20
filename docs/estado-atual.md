@@ -191,6 +191,16 @@ pendência inexistente é recusado. A linha de erro que aparece depois do aviso
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
+**Dois ABI do `better-sqlite3`.** O módulo compilado para o Node do sistema não
+carrega no Electron, e o `electron-rebuild` sobrescreve o mesmo caminho, o que
+quebraria a linha de comando. O build guarda a cópia de Electron em `app/native/`
+e devolve o `node_modules` ao estado de Node; o processo principal aponta
+`LOCUM_SQLITE_BINDING` antes de importar o núcleo.
+
+**Depois de um merge que traz dependência nova**, rode `npm install` e
+`npx drizzle-kit push --force` na árvore principal: o worktree do loop tem
+`node_modules` e banco próprios, então nada disso vem junto.
+
 **Tipagem das ferramentas.** Tipar o conjunto de ferramentas como
 `Record<string, unknown>` faz a inferência do `stopWhen` cair para `never`. Use
 `ToolSet` do pacote `ai`.
