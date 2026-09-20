@@ -22,6 +22,7 @@
     "dist:dir": "electron-builder --dir",
     "dist": "electron-builder",
     "smoke": "npm run build && electron dist/main.cjs --smoke",
+    "smoke:dist": "node scripts/smoke-dist.mjs",
     "verify": "npm run typecheck && npm run check:i18n && npm run build && npm run smoke"
   },
   "dependencies": {

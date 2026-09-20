@@ -57,6 +57,7 @@ que a interface vai usar.
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
 | empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
+| fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 
 ## Execução verificada
 
@@ -115,6 +116,7 @@ npm run verify                        # tipos, guarda de i18n, build e smoke
 npm run build:icon                    # regera build/icon.icns a partir do SVG
 npm run dist:dir                      # empacota sem instalador, em release/mac-<arch>/Locum.app
 npm run dist                          # gera o .dmg e o .zip
+npm run smoke:dist                    # roda o binário de dentro do .app e sai 0
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
@@ -591,6 +593,20 @@ electron-builder e é onde o esbuild e o Vite já escrevem: sem mudar para
 **O mapa de origem fica fora do pacote.** São mais de cinco mil arquivos que só
 servem a quem tem o código, e quem tem o código roda por `npm start`. Dentro do
 `.app` eles dobravam o tamanho do asar sem ninguém para abrir.
+
+**O `--smoke` de desenvolvimento passava e o do pacote não.** As duas coisas que
+quebraram são exatamente as que só aparecem depois de empacotar. O servidor de
+brinquedo era alcançado por `tsx` lendo `src/`, e nenhum dos dois entra no
+`.app`: agora ele sai empacotado em `dist/mcp-fixture-server.mjs`, desempacotado
+do asar porque quem o lê é um processo filho, sem o `fs` remendado do Electron.
+E a conferência do i18n exigia a guarda de chave ausente sempre ligada, quando
+ela segue `isPackaged` de propósito: em desenvolvimento estoura para o buraco
+aparecer, e no pacote fica desligada para quem instalou não levar tela quebrada
+por uma tradução faltando.
+
+**O servidor de brinquedo sobe pelo próprio binário do Electron.** Com
+`ELECTRON_RUN_AS_NODE`, e não pelo `node` do sistema: o pacote não pode supor
+Node instalado na máquina de quem abre o `.app`.
 
 ## Próximos passos
 

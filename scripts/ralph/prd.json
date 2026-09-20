@@ -450,7 +450,7 @@
       "description": "Um script que roda o binário de dentro do .app com --smoke, porque o que passa em desenvolvimento não prova nada sobre o pacote: caminho de recurso, asar e módulo nativo só quebram depois de empacotar.",
       "done_when": "npm run smoke:dist executa o binário empacotado e sai 0.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && npm run smoke:dist",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

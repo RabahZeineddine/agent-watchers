@@ -97,3 +97,27 @@ await build({
   sourcemap: true,
   external: ["electron"],
 });
+
+/**
+ * O servidor de brinquedo tambem sai empacotado.
+ *
+ * Ele e alvo do smoke, e ate aqui era alcancado por `tsx` lendo `src/`. Nenhum
+ * dos dois entra no `.app`: `tsx` e dependencia de desenvolvimento e `src/`
+ * fica de fora do pacote de proposito. Empacotado junto, o mesmo caminho serve
+ * rodando do repositorio e de dentro do `.app`.
+ *
+ * Aqui `packages: "external"` nao vale, pelo mesmo motivo do preload: o
+ * processo sobe fora do `node_modules` do projeto, entao o que ele importa
+ * precisa estar dentro do arquivo.
+ */
+await build({
+  entryPoints: [join(appDir, "src", "fixtures", "mcp-fixture-server.ts")],
+  outfile: join(appDir, "dist", "mcp-fixture-server.mjs"),
+  bundle: true,
+  platform: "node",
+  // Ao contrario do main e do preload, este sai como modulo ES: o servidor tem
+  // `await` no topo para abrir o transporte, e `cjs` nao aceita.
+  format: "esm",
+  target: "node22",
+  sourcemap: true,
+});

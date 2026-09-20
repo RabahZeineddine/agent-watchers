@@ -616,7 +616,14 @@ async function checkRenderer(): Promise<string> {
   // A tela de configuracao precisa de um servidor MCP para o botao de testar
   // ter alvo. O de brinquedo nao depende de rede nem de nada instalado, entao
   // conectar nele custa segundos e nao expoe o loop a servidor de terceiro.
-  await ensureFixtureServer(join(__dirname, ".."));
+  // O binario do Electron em modo Node, e nao o `node` do sistema: o pacote
+  // nao pode supor Node instalado na maquina de quem abre o `.app`. O bundle
+  // sai do asar porque quem o le e um processo filho, que nao tem o `fs`
+  // remendado do Electron e nao enxerga caminho la dentro.
+  await ensureFixtureServer({
+    command: [process.execPath, foraDoAsar(join(__dirname, "mcp-fixture-server.mjs"))],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  });
 
   setupBridge({ inboxTarget: pendingInboxTarget });
 
@@ -1672,8 +1679,16 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
         `a preferencia pt-BR deixou a janela em ${portugues.idioma} e o documento em ${portugues.documento}`,
       );
     }
-    if (portugues.estrito !== "true") {
-      throw new Error("fora de app empacotado a guarda de chave ausente devia estar ligada");
+    // A guarda de chave ausente segue `isPackaged`: em desenvolvimento ela
+    // estoura para o buraco aparecer, e no pacote fica desligada para quem
+    // instalou nao levar uma tela quebrada por causa de uma traducao faltando.
+    // Conferir os dois lados importa porque o smoke roda das duas formas, e
+    // exigir sempre ligada reprovaria o `.app` por estar certo.
+    const estritoEsperado = String(!app.isPackaged);
+    if (portugues.estrito !== estritoEsperado) {
+      throw new Error(
+        `a guarda de chave ausente esta ${portugues.estrito} e neste modo devia estar ${estritoEsperado}`,
+      );
     }
     const esperadoPt = doDicionario(ptBR, "pt-BR", "bridge.runs", { count: portugues.runs });
     if (!portugues.rodape.includes(esperadoPt)) {

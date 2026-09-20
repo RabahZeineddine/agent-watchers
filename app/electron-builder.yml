@@ -31,6 +31,9 @@ files:
 asar: true
 asarUnpack:
   - native/**
+  # O servidor de brinquedo sobe como processo filho, fora do Electron, e o
+  # `fs` remendado que enxerga dentro do asar nao vale para ele.
+  - dist/mcp-fixture-server.mjs
 
 # O electron-builder reconstruiria o better-sqlite3 de `node_modules` para o
 # ABI do Electron, e é justamente o que não se quer: a linha de comando roda
