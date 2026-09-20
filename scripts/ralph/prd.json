@@ -263,7 +263,7 @@
       "description": "Vite com React e Tailwind em app/renderer, saida em app/dist/renderer, e o processo principal carregando o arquivo construido em vez de pagina em branco. Script build que faz main e renderer. Sob --smoke, carregar a pagina e conferir pelo executeJavaScript que a raiz montou.",
       "done_when": "npm run build produz dist/renderer/index.html e o smoke confirma a raiz montada.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

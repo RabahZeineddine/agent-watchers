@@ -32,6 +32,16 @@ let mainWindow: BrowserWindow | null = null;
 /** O preload sai do mesmo build que o main e fica ao lado dele em dist/. */
 const PRELOAD = join(__dirname, "preload.cjs");
 
+/**
+ * A pagina que o Vite constroi, carregada do disco por `file://`.
+ *
+ * Nao existe servidor por tras da janela, e nem precisa: o Electron deixa o
+ * modulo ES da pagina carregar em `file://`, ao contrario do Chrome de mesa,
+ * que recusaria por origem opaca. Por isso o `base` do Vite e relativo, e por
+ * isso nenhum recurso da pagina pode vir da rede.
+ */
+const RENDERER = join(__dirname, "renderer", "index.html");
+
 function createWindow(options: { show?: boolean } = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1100,
@@ -55,11 +65,44 @@ function createWindow(options: { show?: boolean } = {}): BrowserWindow {
   return window;
 }
 
+/**
+ * Cria a janela do Locum: ponte confiada e pagina construida carregada.
+ *
+ * O `trustWindow` vem antes do `loadFile` de proposito. O preload roda assim
+ * que o documento carrega, e um canal chamado por janela ainda nao confiada
+ * volta como recusa para o renderer.
+ */
+async function openMainWindow(): Promise<BrowserWindow> {
+  const { trustWindow } = await import("./bridge.js");
+
+  const window = createWindow();
+  trustWindow(window);
+  await window.loadFile(RENDERER);
+  mainWindow = window;
+  return window;
+}
+
+/**
+ * Abrir a janela leva alguns passos assincronos, e nesse meio tempo
+ * `mainWindow` continua nulo. Sem guardar a abertura em curso, um clique na
+ * bandeja junto de um clique numa notificacao abriria duas janelas.
+ */
+let opening: Promise<BrowserWindow> | null = null;
+
+function ensureWindow(): Promise<BrowserWindow> {
+  if (mainWindow !== null) return Promise.resolve(mainWindow);
+  opening ??= openMainWindow().finally(() => {
+    opening = null;
+  });
+  return opening;
+}
+
 /** Traz a janela para frente, criando uma se nao houver. */
 function showWindow(): void {
-  if (mainWindow === null) mainWindow = createWindow();
-  mainWindow.show();
-  mainWindow.focus();
+  void ensureWindow().then((window) => {
+    window.show();
+    window.focus();
+  });
 }
 
 /**
@@ -499,6 +542,55 @@ async function checkBridge(): Promise<string> {
   return `${canais} canais no ar, janela sem Node, valores batendo com os servicos`;
 }
 
+/**
+ * Prova que a pagina construida sobe dentro da janela.
+ *
+ * A janela nasce com `show: false` e nada aparece na tela: o smoke roda no
+ * loop de verificacao, sem ninguem olhando. Quem responde e o proprio
+ * renderer, por `executeJavaScript`, que e a unica forma de saber se o React
+ * montou de verdade. Conferir o `index.html` no disco nao provaria nada.
+ *
+ * Alem da raiz, a folha do Tailwind e conferida pelo marcador `hidden` da
+ * pagina: raiz montada prova o React, nao prova que o CSS chegou. E o console
+ * do renderer entra no exame porque modulo que falha ao carregar deixa a raiz
+ * vazia sem estourar deste lado.
+ */
+async function checkRenderer(): Promise<string> {
+  if (!existsSync(RENDERER)) throw new Error(`renderer nao foi construido em ${RENDERER}`);
+
+  const window = createWindow({ show: false });
+  const erros: string[] = [];
+  window.webContents.on("console-message", (event) => {
+    if (event.level === "error") erros.push(event.message);
+  });
+
+  try {
+    await window.loadFile(RENDERER);
+
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=tailwind]");
+        return {
+          raiz: document.getElementById("root")?.childElementCount ?? 0,
+          titulo: document.querySelector("h1")?.textContent ?? "",
+          folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
+        };
+      })()`,
+    )) as { raiz: number; titulo: string; folha: string };
+
+    if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
+    if (visto.raiz === 0) throw new Error("a raiz #root ficou vazia, o React nao montou");
+    if (visto.titulo !== "Locum") throw new Error(`a pagina montou com o titulo ${visto.titulo}`);
+    if (visto.folha !== "none") {
+      throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
+    }
+  } finally {
+    window.destroy();
+  }
+
+  return "pagina construida carregada, raiz montada e folha do Tailwind valendo";
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -573,12 +665,13 @@ async function main(): Promise<void> {
     const avisos = await checkNotifications();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
+    const renderer = await checkRenderer();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
         `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
-        `deep link com ${deepLink}, ponte com ${ponte}`,
+        `deep link com ${deepLink}, ponte com ${ponte}, interface com ${renderer}`,
     );
     app.exit(0);
     return;
@@ -618,18 +711,12 @@ async function main(): Promise<void> {
 
   // Antes da janela: o preload chama os canais assim que o documento carrega, e
   // canal ainda nao registrado volta como erro de IPC para o renderer.
-  const { setupBridge, trustWindow } = await import("./bridge.js");
+  const { setupBridge } = await import("./bridge.js");
   setupBridge({ inboxTarget: pendingInboxTarget });
 
-  mainWindow = createWindow();
-  trustWindow(mainWindow);
+  await ensureWindow();
 
-  app.on("activate", () => {
-    if (mainWindow === null) {
-      mainWindow = createWindow();
-      trustWindow(mainWindow);
-    }
-  });
+  app.on("activate", showWindow);
 }
 
 app.on("window-all-closed", () => {

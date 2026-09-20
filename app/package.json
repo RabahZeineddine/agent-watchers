@@ -13,8 +13,10 @@
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit",
     "build:main": "node scripts/build-main.mjs",
-    "start": "npm run build:main && electron dist/main.cjs",
-    "smoke": "npm run build:main && electron dist/main.cjs --smoke"
+    "build:renderer": "tsc -p renderer/tsconfig.json --noEmit && vite build --config renderer/vite.config.ts renderer",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "npm run build && electron dist/main.cjs",
+    "smoke": "npm run build && electron dist/main.cjs --smoke"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.0",
@@ -27,17 +29,25 @@
     "better-sqlite3": "^12.0.0",
     "drizzle-orm": "^0.44.0",
     "octokit": "^5.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "drizzle-kit": "^0.31.0",
     "electron": "^40.10.6",
     "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vite": "^8.3.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

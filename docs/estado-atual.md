@@ -6,9 +6,10 @@ Atualizado em 19 de setembro de 2026.
 
 ## O que existe e roda
 
-Núcleo headless em `app/`, 20 arquivos TypeScript, verificação de tipos limpa.
-A casca Electron ainda não existe; tudo passa pela linha de comando, com o mesmo
-executor que a interface vai usar.
+Núcleo headless em `app/`, verificação de tipos limpa. A casca Electron já sobe
+e carrega a página construída em `app/renderer`, ainda sem tela de verdade.
+Tudo que existe continua alcançável pela linha de comando, com o mesmo executor
+que a interface vai usar.
 
 | área | estado |
 |---|---|
@@ -34,12 +35,12 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
-| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth, sem interface ainda |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
 | ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
-| interface | a janela ainda não carrega nada |
+| interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela |
 
 ## Execução verificada
 
@@ -88,6 +89,8 @@ npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
 npm run build:main                    # empacota o processo principal em dist/main.cjs
+npm run build:renderer                # constrói a página em dist/renderer
+npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
@@ -188,6 +191,26 @@ núcleo e o `better-sqlite3` para dentro do preload.
 rejeição de `ipcMain.handle`, e o smoke prova de propósito que decidir sobre uma
 pendência inexistente é recusado. A linha de erro que aparece depois do aviso
 `ponte: a proxima linha de erro e a recusa esperada da gate` é o teste passando.
+
+**Módulo ES em `file://`.** A página construída pelo Vite sai com
+`<script type="module">`, e num Chrome de mesa isso não carrega de `file://`,
+porque a origem é opaca e o import bate em CORS. O Electron não aplica essa
+recusa, então a janela carrega o `dist/renderer/index.html` do disco direto,
+sem servidor e sem esquema próprio registrado. O que a página precisa em troca
+é `base` relativa no Vite: caminho absoluto viraria a raiz do volume.
+
+**Raiz montada não prova folha de estilo.** O smoke pergunta ao renderer se o
+`#root` tem filho, o que só diz que o React rodou. A página carrega um marcador
+com a classe `hidden`, e o smoke confere que ele está com `display: none`: se o
+CSS construído não tivesse chegado, a raiz montaria igual e o teste passaria
+sem interface nenhuma. O console de erro do renderer entra no mesmo exame,
+porque módulo que falha ao carregar deixa a raiz vazia sem estourar do lado do
+processo principal.
+
+**`vite build` recebe a raiz por posição.** No Vite 8 não existe `--root` na
+linha de comando: a opção é o argumento posicional, e passar a flag aborta com
+`Unknown option`. O `build:renderer` chama
+`vite build --config renderer/vite.config.ts renderer`.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
