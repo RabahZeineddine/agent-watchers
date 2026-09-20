@@ -193,6 +193,13 @@
   },
   "settings": {
     "refused": "the bridge refused {{channel}}: {{message}}",
+    "language": {
+      "title": "Language",
+      "description": "Which language the window, the tray and the notifications speak. The choice applies right away, with no restart.",
+      "system": "Follow the system",
+      "active": "Now in {{language}}, from the {{tag}} dictionary",
+      "refused": "The language did not change: {{message}}"
+    },
     "assistantModel": {
       "title": "Assistant model",
       "description": "Which model answers in the console. The catalog comes from each provider, not from a list in the code."
@@ -273,9 +280,10 @@
     "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}",
     "runs": "list with runs: {{runs}} and drawn rows: {{rows}}, detail with steps: {{steps}} and findings: {{findings}} and a rerun button on each, {{graph}}",
     "graph": "graph with nodes: {{nodes}} and edges: {{edges}}, states {{states}}",
-    "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}, screens with {{screens}}",
+    "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}, screens with {{screens}}, {{picker}}",
     "mainText": "tray, notification and assistant prompt following the language: \"{{tray}}\", \"{{notification}}\" and \"{{assistant}}\"",
-    "screens": "inbox reading \"{{inbox}}\", runs reading \"{{runs}}\", agents reading \"{{agents}}\" and settings reading \"{{budget}}\", all matching the dictionary in both languages"
+    "screens": "inbox reading \"{{inbox}}\", runs reading \"{{runs}}\", agents reading \"{{agents}}\" and settings reading \"{{budget}}\", all matching the dictionary in both languages",
+    "picker": "settings switching the language by click, \"{{pt}}\" and \"{{en}}\" with no reload, and the tray following in the same beat: \"{{tray}}\""
   },
   "status": {
     "done": "done",

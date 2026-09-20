@@ -53,6 +53,7 @@ que a interface vai usar.
 | texto da inbox e das execuções | as duas telas pelo dicionário, com plural de achado, execução e pendência, e os rótulos de severidade e de estado num módulo só |
 | texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
+| seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 
 ## Execução verificada
 
@@ -191,6 +192,20 @@ dois fica com uma cópia do texto para envelhecer sozinha.
 **O marcador do Tailwind ficou sem texto dentro.** O que o smoke mede ali é o
 estilo calculado, e frase nenhuma precisa existir para isso. A que existia era
 texto fora do dicionário sem ninguém para ler.
+
+**Trocar de idioma pela tela avisa o processo principal.** O canal
+`i18n.setPreference` grava em `settings`, devolve o estado novo para a janela e,
+na mesma chamada, aplica o idioma na instância do processo principal e remonta o
+menu da bandeja. Sem isso a janela viraria de idioma sozinha e a barra do sistema
+continuaria na língua da subida até alguém reiniciar o app, que é justamente o
+tipo de desencontro que ninguém repara num menu que quase ninguém abre.
+
+**O nome de cada idioma não sai do dicionário.** Ele vem do `Intl.DisplayNames`
+no próprio idioma, e não de uma chave traduzida para o idioma corrente: quem
+abre essa seção é quem está com a janela numa língua que não lê, e "Portuguese"
+escrito em inglês não ajuda a achar o português na lista. Seguir o sistema é
+botão à parte, e não o mesmo que escolher o idioma que a máquina fala hoje: quem
+segue o sistema vira junto quando a máquina virar.
 
 **A guarda de i18n olha a posição, não o formato da string.** Procurar "texto
 que parece prosa" acusaria nome de evento, consulta SQL e caminho de arquivo, e

@@ -406,7 +406,7 @@
       "description": "Uma seção com os idiomas disponíveis e a opção de seguir o sistema. Gravada em settings, aplicada sem reiniciar a janela, e valendo também para bandeja e notificação.",
       "done_when": "Trocar o idioma muda a janela e a bandeja na hora.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

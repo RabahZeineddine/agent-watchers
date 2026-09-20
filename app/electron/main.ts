@@ -1593,8 +1593,9 @@ async function recarregar(window: BrowserWindow): Promise<void> {
  * A troca é pedida de dentro da página, pelo mesmo canal que a tela de
  * configuração vai usar, e não por chamada direta ao serviço deste lado: o que
  * interessa saber é que o caminho inteiro funciona, da janela até `settings` e
- * de volta. A página recarrega entre uma e outra porque quem aplica sem
- * recarregar é a tela de escolha, que ainda não existe.
+ * de volta. A página recarrega entre uma e outra de propósito: este exame prova
+ * que a preferência sobrevive a uma subida, e não que a tela troca no lugar,
+ * que é o que o `checkLanguagePicker` prova logo em seguida.
  *
  * O retorno padrão é conferido no serviço, com uma etiqueta de sistema que o
  * Locum não fala: a máquina do loop está num idioma só, e esperar que ela
@@ -1607,6 +1608,9 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
   );
 
   const original = await i18nService.getPreference();
+  // O canal de trocar idioma agora mexe também na instância do processo
+  // principal, que é a que escreve a linha final do smoke.
+  const idiomaDoPrincipal = idiomaAtual();
 
   async function preferir(idioma: string | null): Promise<IdiomaVisto> {
     const argumento = idioma === null ? "null" : JSON.stringify(idioma);
@@ -1689,6 +1693,8 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
       throw new Error(`maquina em de-DE caiu em ${desconhecido.language} e nao no idioma base`);
     }
 
+    const escolha = await checkLanguagePicker(window);
+
     return t("smoke.language", {
       pt: portugues.rodape,
       en: ingles.rodape,
@@ -1700,12 +1706,177 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
         inbox: telasPt.inbox,
         runs: telasPt.execucoes,
       }),
+      picker: escolha,
     });
   } finally {
     // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima
     // subida do Locum nesta maquina abriria no idioma da ultima verificacao.
     await i18nService.setPreference(original);
+    await aplicarIdioma(idiomaDoPrincipal);
   }
+}
+
+/** O botão de devolver a escolha ao sistema, que não é código de idioma. */
+const SEGUIR_O_SISTEMA = "sistema";
+
+/**
+ * Prova que a seção de idioma da configuração troca tudo com um clique.
+ *
+ * O clique é no botão da tela, e não numa chamada ao canal: entre os dois está
+ * justamente o que esta story entrega, que é a seção existir e estar ligada ao
+ * provedor de idioma. Nada recarrega entre uma escolha e outra, e a prova
+ * disso é uma marca deixada no `globalThis` da página, que uma recarga apagaria.
+ *
+ * A bandeja entra pelos rótulos montados em memória, como no `checkMainText`:
+ * o que precisa ficar provado é que o processo principal virou de idioma na
+ * mesma batida, e não que existe um ícone pendurado na barra do sistema.
+ */
+async function checkLanguagePicker(window: BrowserWindow): Promise<string> {
+  const { trayMenuLabels } = await import("./tray.js");
+  const { FALLBACK_LANGUAGE, matchLanguage } = await import("../src/services/i18n-service.js");
+
+  const dicionarios: Record<string, Dicionario> = { en, "pt-BR": ptBR };
+
+  await irPara(window, "configuracao");
+
+  const rotulos: string[] = [];
+  const daBandeja: string[] = [];
+
+  for (const idioma of ["pt-BR", "en"]) {
+    const visto = await escolherIdioma(window, idioma, idioma, dicionarios);
+
+    if (visto.preferencia !== idioma) {
+      throw new Error(
+        `o clique em ${idioma} gravou a preferencia como "${visto.preferencia}"`,
+      );
+    }
+    if (idiomaAtual() !== idioma) {
+      throw new Error(
+        `a janela foi para ${idioma} e o processo principal ficou em ${idiomaAtual()}`,
+      );
+    }
+
+    // O item de abrir, que é frase curta e sem contagem: o que está sendo
+    // provado aqui é o idioma da bandeja, e a contagem já tem exame próprio.
+    const abrir = trayMenuLabels()[2] ?? "";
+    const esperado = doDicionario(dicionarios[idioma] as Dicionario, idioma, "tray.open");
+    if (abrir !== esperado) {
+      throw new Error(
+        `depois do clique em ${idioma} a bandeja ficou com "${abrir}" e o dicionario pede "${esperado}"`,
+      );
+    }
+
+    rotulos.push(visto.rotulo);
+    daBandeja.push(abrir);
+  }
+
+  if (rotulos[0] === rotulos[1] || daBandeja[0] === daBandeja[1]) {
+    throw new Error(`o clique nao mudou o texto, ficou "${rotulos.join('" e "')}"`);
+  }
+
+  // Seguir o sistema não é escolher o idioma que o sistema fala agora: a
+  // preferência sai de `settings`, e a máquina volta a mandar no dia em que
+  // ela mudar de idioma.
+  const daMaquina = matchLanguage(app.getLocale()) ?? FALLBACK_LANGUAGE;
+  const sistema = await escolherIdioma(window, SEGUIR_O_SISTEMA, daMaquina, dicionarios);
+  if (sistema.preferencia !== "" || sistema.ativo !== daMaquina) {
+    throw new Error(
+      `seguir o sistema deixou a tela em ${sistema.ativo} com a preferencia "${sistema.preferencia}"`,
+    );
+  }
+  if (idiomaAtual() !== daMaquina) {
+    throw new Error(`seguir o sistema deixou o processo principal em ${idiomaAtual()}`);
+  }
+
+  return t("smoke.picker", {
+    pt: rotulos[0] ?? "",
+    en: rotulos[1] ?? "",
+    tray: daBandeja.join(" / "),
+  });
+}
+
+interface EscolhaVista {
+  ativo: string;
+  preferencia: string;
+  documento: string;
+  rotulo: string;
+  semRecarregar: boolean;
+}
+
+/**
+ * Clica num botão da seção de idioma e espera a tela assentar no novo idioma.
+ *
+ * A espera é pelo texto, e não pelo atributo do marcador: o estado do React
+ * chega um quadro antes do `changeLanguage` terminar, e conferir o atributo
+ * aprovaria uma tela que mudou de idioma por dentro sem reescrever uma palavra.
+ * O rótulo de seguir o sistema serve de amostra porque é o único da seção que
+ * sai do dicionário: os outros são o nome de cada idioma nele mesmo.
+ *
+ * A preferência gravada entra na espera junto do texto, e não numa conferência
+ * depois: numa máquina que já está no idioma escolhido nada no texto muda, e o
+ * exame leria o estado anterior antes de o clique chegar a `settings`.
+ */
+async function escolherIdioma(
+  window: BrowserWindow,
+  alvo: string,
+  idioma: string,
+  dicionarios: Record<string, Dicionario>,
+): Promise<EscolhaVista> {
+  const esperado = doDicionario(
+    dicionarios[idioma] as Dicionario,
+    idioma,
+    "settings.language.system",
+  );
+  // Seguir o sistema apaga a preferência, e o marcador escreve string vazia
+  // onde ela não existe: atributo de dado não guarda nulo.
+  const preferencia = alvo === SEGUIR_O_SISTEMA ? "" : alvo;
+
+  const seletor = `[data-locum-idioma=${JSON.stringify(alvo)}]`;
+
+  const clicou = (await window.webContents.executeJavaScript(
+    `(() => {
+      // Marca que uma recarga apagaria: a troca tem que acontecer na mesma
+      // página, e não numa que subiu de novo por baixo do exame.
+      globalThis.__locumSemRecarregar = true;
+      const botao = document.querySelector(${JSON.stringify(seletor)});
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  )) as boolean;
+  if (!clicou) throw new Error(`a secao de idioma nao tem botao para ${alvo}`);
+
+  const visto = await esperarProbe<EscolhaVista>(
+    window,
+    "idioma-escolha",
+    `(() => {
+      const secao = document.querySelector("[data-locum-probe=idioma-escolha]");
+      if (secao === null) return null;
+      if (secao.dataset.locumIdiomaAtivo !== ${JSON.stringify(idioma)}) return null;
+      if (secao.dataset.locumIdiomaPreferencia !== ${JSON.stringify(preferencia)}) return null;
+      const sistema = secao.querySelector(${JSON.stringify(
+        `[data-locum-idioma=${JSON.stringify(SEGUIR_O_SISTEMA)}]`,
+      )});
+      const rotulo = (sistema?.textContent ?? "").trim();
+      if (rotulo !== ${JSON.stringify(esperado)}) return null;
+      return {
+        ativo: secao.dataset.locumIdiomaAtivo,
+        preferencia: secao.dataset.locumIdiomaPreferencia,
+        documento: document.documentElement.lang,
+        rotulo,
+        semRecarregar: globalThis.__locumSemRecarregar === true,
+      };
+    })()`,
+  );
+
+  if (!visto.semRecarregar) {
+    throw new Error(`a troca para ${idioma} recarregou a janela em vez de trocar no lugar`);
+  }
+  if (visto.documento !== idioma) {
+    throw new Error(`a tela foi para ${idioma} e o documento ficou marcado como ${visto.documento}`);
+  }
+
+  return visto;
 }
 
 /**

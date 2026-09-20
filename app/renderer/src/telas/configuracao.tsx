@@ -2,8 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
 import { EscolhaDoModelo } from "../assistente-modelo";
+import { useIdioma } from "../idioma";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Language } from "../../../src/services/i18n-service.js";
 
 type Provedor = ReadResult<"providers.list">[number];
 type Fallback = ReadResult<"providers.fallbacks">[number];
@@ -73,6 +75,13 @@ export function Configuracao() {
           {t("settings.refused", { channel: erro.channel, message: erro.message })}
         </p>
       )}
+
+      <Secao
+        descricao={t("settings.language.description")}
+        titulo={t("settings.language.title")}
+      >
+        <EscolhaDoIdioma />
+      </Secao>
 
       <Secao
         descricao={t("settings.assistantModel.description")}
@@ -158,6 +167,89 @@ function Secao({
 
 function Vazio({ children }: { children: React.ReactNode }) {
   return <p className="px-4 py-3 text-muted-foreground text-sm">{children}</p>;
+}
+
+/* ------------------------------------------------------------------- idioma */
+
+/**
+ * O nome de um idioma escrito nele mesmo.
+ *
+ * Não sai do dicionário de propósito: quem abre esta seção é justamente quem
+ * está com a janela num idioma que não lê, e "Portuguese" traduzido para o
+ * idioma corrente não ajuda nessa hora. O nome no próprio idioma é o que a
+ * pessoa reconhece na lista.
+ */
+function autonimo(codigo: string): string {
+  return new Intl.DisplayNames([codigo], { type: "language" }).of(codigo) ?? codigo;
+}
+
+/**
+ * Em que idioma o Locum fala, escolhido aqui.
+ *
+ * Seguir o sistema não é o mesmo que escolher o idioma que o sistema está
+ * falando agora: quem segue o sistema vira de idioma junto com a máquina, e
+ * por isso a opção é botão à parte e não fica marcada quando alguém escolhe
+ * `en` numa máquina em inglês.
+ *
+ * A troca não recarrega a janela nem remonta a árvore: o provedor de idioma
+ * muda a instância do i18next que já está no ar, e o mesmo canal avisa o
+ * processo principal, que reescreve bandeja e notificação na mesma batida.
+ */
+function EscolhaDoIdioma() {
+  const { t } = useTranslation();
+  const { available, language, preference, system, trocar } = useIdioma();
+  const [erro, setErro] = useState<string | null>(null);
+
+  const escolher = (escolha: Language | null): void => {
+    trocar(escolha).then(
+      () => setErro(null),
+      (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+  };
+
+  return (
+    <div
+      className="flex flex-col gap-2 px-4 py-3"
+      data-locum-idioma-ativo={language}
+      data-locum-idioma-preferencia={preference ?? ""}
+      data-locum-idioma-sistema={system}
+      data-locum-probe="idioma-escolha"
+    >
+      <div className="flex flex-wrap gap-2">
+        <Button
+          data-locum-escolhido={preference === null ? "sim" : "nao"}
+          data-locum-idioma="sistema"
+          onClick={() => escolher(null)}
+          size="sm"
+          variant={preference === null ? "secondary" : "ghost"}
+        >
+          {t("settings.language.system")}
+        </Button>
+        {available.map((codigo) => (
+          <Button
+            data-locum-escolhido={preference === codigo ? "sim" : "nao"}
+            data-locum-idioma={codigo}
+            key={codigo}
+            onClick={() => escolher(codigo)}
+            size="sm"
+            variant={preference === codigo ? "secondary" : "ghost"}
+          >
+            {autonimo(codigo)}
+          </Button>
+        ))}
+      </div>
+
+      <p className="text-muted-foreground text-xs">
+        {t("settings.language.active", { language: autonimo(language), tag: language })}
+      </p>
+
+      {erro === null ? null : (
+        <p className="text-destructive text-xs">
+          {t("settings.language.refused", { message: erro })}
+        </p>
+      )}
+    </div>
+  );
 }
 
 /* --------------------------------------------------------------- provedores */

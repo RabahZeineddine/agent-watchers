@@ -193,6 +193,13 @@
   },
   "settings": {
     "refused": "a ponte recusou {{channel}}: {{message}}",
+    "language": {
+      "title": "Idioma",
+      "description": "Em que idioma a janela, a bandeja e as notificações falam. A escolha vale na hora, sem reiniciar.",
+      "system": "Seguir o sistema",
+      "active": "Agora em {{language}}, pelo dicionário {{tag}}",
+      "refused": "O idioma não trocou: {{message}}"
+    },
     "assistantModel": {
       "title": "Modelo do assistente",
       "description": "Qual modelo responde no console. O catálogo vem de cada provedor, não de lista no código."
@@ -273,9 +280,10 @@
     "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}",
     "runs": "lista com execuções: {{runs}} e linhas desenhadas: {{rows}}, detalhe com passos: {{steps}} e achados: {{findings}} e botão de reexecutar em cada, {{graph}}",
     "graph": "grafo com nós: {{nodes}} e arestas: {{edges}}, estados {{states}}",
-    "language": "troca de idioma pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}, telas com {{screens}}",
+    "language": "troca de idioma pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}, telas com {{screens}}, {{picker}}",
     "mainText": "bandeja, notificação e prompt do assistente seguindo o idioma: \"{{tray}}\", \"{{notification}}\" e \"{{assistant}}\"",
-    "screens": "inbox escrevendo \"{{inbox}}\", execuções escrevendo \"{{runs}}\", agents escrevendo \"{{agents}}\" e configuração escrevendo \"{{budget}}\", todas batendo com o dicionário nos dois idiomas"
+    "screens": "inbox escrevendo \"{{inbox}}\", execuções escrevendo \"{{runs}}\", agents escrevendo \"{{agents}}\" e configuração escrevendo \"{{budget}}\", todas batendo com o dicionário nos dois idiomas",
+    "picker": "configuração trocando o idioma por clique, \"{{pt}}\" e \"{{en}}\" sem recarregar, e a bandeja indo junto na mesma batida: \"{{tray}}\""
   },
   "status": {
     "done": "concluído",

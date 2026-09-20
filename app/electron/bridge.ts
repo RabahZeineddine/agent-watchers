@@ -7,6 +7,7 @@ import {
   type WindowLanguage,
 } from "./bridge-contract.js";
 import { buildGate } from "../src/executor/build.js";
+import { aplicarIdioma } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
 import { credentialService } from "../src/services/credential-service.js";
@@ -135,7 +136,14 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "i18n.state": () => idiomaDaJanela(),
     "i18n.setPreference": async (language) => {
       await i18nService.setPreference(language);
-      return idiomaDaJanela();
+      const estado = await idiomaDaJanela();
+      // A janela troca de idioma sozinha com o que volta daqui, e o processo
+      // principal não tem quem o avise: bandeja e notificação continuariam no
+      // idioma da subida até alguém reiniciar o app. O menu é remontado na
+      // sequência porque os rótulos dele já estão escritos na barra do sistema.
+      await aplicarIdioma(estado.language);
+      await refreshTray();
+      return estado;
     },
 
     "window.inboxTarget": async () => bridgeHandlers.inboxTarget(),
