@@ -55,6 +55,7 @@ que a interface vai usar.
 | texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
+| ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
 
 ## Execução verificada
 

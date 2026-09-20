@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Locum</title>
+  <!--
+    A régua de severidade do registro, a mesma da lista de achados: barra de cor
+    na borda esquerda e linhas de log à direita. As cores saem dos tokens do
+    tema escuro em renderer/src/index.css, convertidas de oklch para hex porque
+    o sips não lê oklch. Sem letra, sem gradiente, sem brilho: o que precisa
+    sobreviver é a leitura a 16 pixels.
+  -->
+  <defs>
+    <clipPath id="folha">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#folha)">
+    <rect x="100" y="100" width="824" height="824" fill="#1e2024"/>
+    <rect x="100" y="100" width="86" height="824" fill="#ed4952"/>
+  </g>
+  <g fill="#949ba6">
+    <rect x="290" y="350" width="440" height="44" rx="22"/>
+    <rect x="290" y="490" width="340" height="44" rx="22"/>
+    <rect x="290" y="630" width="250" height="44" rx="22"/>
+  </g>
+</svg>

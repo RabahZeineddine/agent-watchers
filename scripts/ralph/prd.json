@@ -428,7 +428,7 @@
       "description": "Desenhar o ícone em SVG e gerar o .icns. O desenho segue a identidade já escolhida: a régua de severidade do registro. Um retângulo de cantos arredondados no tom ardósia da janela, com uma barra vertical à esquerda em vermelho de severidade ocupando a altura inteira, e duas ou três linhas horizontais curtas representando o registro. Sem letra, sem gradiente, sem brilho. Gerar o iconset pelas ferramentas do próprio sistema, sips e iconutil, e apontar no empacotamento.",
       "done_when": "Existe app/build/icon.icns gerado a partir do SVG versionado, e o script que gera roda de novo sem intervenção.",
       "verify": "npx tsc --noEmit && test -f build/icon.icns && npm run build",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

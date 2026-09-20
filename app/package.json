@@ -16,6 +16,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "build:main": "node scripts/build-main.mjs",
     "build:renderer": "tsc -p renderer/tsconfig.json --noEmit && vite build --config renderer/vite.config.ts renderer",
+    "build:icon": "node scripts/build-icon.mjs",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron dist/main.cjs",
     "smoke": "npm run build && electron dist/main.cjs --smoke",
