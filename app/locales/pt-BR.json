@@ -102,8 +102,6 @@
     "waiting_other": "{{count}} esperando você",
     "failures_one": "{{count}} execução falhou",
     "failures_other": "{{count}} execuções falharam",
-    "summary_one": "{{count}} achado · {{problem}}",
-    "summary_other": "{{count}} achados · {{problem}}",
     "approve": "Aprovar",
     "edit": "Editar",
     "discard": "Descartar",
@@ -125,7 +123,10 @@
       "approve": "aprovar",
       "edit": "editar",
       "discard": "descartar"
-    }
+    },
+    "findings_one": "{{count}} achado",
+    "findings_other": "{{count}} achados",
+    "target_unknown": "{{agent}}, passo {{step}}"
   },
   "loginItem": {
     "applied": "início no login: preferência {{preference}}, sistema {{status}}"

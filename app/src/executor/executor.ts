@@ -120,7 +120,7 @@ export class Executor {
         const outcome =
           step.type === "model"
             ? await this.runModelStep({ runId, stepId, step, spec, payload, outputs, fallbacks, runCost })
-            : await this.runActionStep({ runId, stepId, step, outputs });
+            : await this.runActionStep({ runId, stepId, step, outputs, payload });
 
         if (outcome.kind === "paused") return this.pause(runId);
         if (outcome.kind === "skipped") {
@@ -270,10 +270,19 @@ export class Executor {
     stepId: string;
     step: ActionStep;
     outputs: Map<string, unknown>;
+    payload: EventPayload;
   }): Promise<{ kind: "ok"; output: unknown; costUsd: number; billable: boolean } | { kind: "paused" }> {
     const { runId, stepId, step, outputs } = args;
     const source = step.input ?? step.needs[0];
-    const payload = source ? outputs.get(source) : undefined;
+    const saida = source ? outputs.get(source) : undefined;
+
+    // A saída do passo diz o que publicar; o evento diz onde. Sem juntar os
+    // dois, a ação chega ao handler sem destino: a fila mostra "agent · passo"
+    // em vez do pull request, e publicar falharia por falta de owner e repo.
+    const payload =
+      saida !== null && typeof saida === "object"
+        ? { ...alvoDoEvento(args.payload), ...(saida as object) }
+        : saida;
 
     const state = await this.deps.gate.submit(
       { runId, stepId, kind: step.action, payload },
@@ -294,6 +303,26 @@ export class Executor {
       .where(eq(schema.steps.id, stepId));
     return { kind: "ok", output: { state }, costUsd: 0, billable: false };
   }
+}
+
+/**
+ * Os campos do evento que identificam o destino de uma ação.
+ *
+ * Só o que nomeia o alvo, e não o evento inteiro: o diff de um pull request
+ * tem dezenas de milhares de caracteres, e ele iria parar dentro da fila de
+ * aprovação, gravado em cada pendência.
+ */
+function alvoDoEvento(payload: EventPayload): Record<string, unknown> {
+  const campos = ["owner", "repo", "repoName", "pull", "title", "headSha"] as const;
+  const alvo: Record<string, unknown> = {};
+  for (const campo of campos) {
+    const valor = (payload as Record<string, unknown>)[campo];
+    if (valor !== undefined) alvo[campo] = valor;
+  }
+  // O handler do GitHub espera `repo` como nome curto, e o evento guarda o
+  // caminho completo em `repo` e o nome curto em `repoName`.
+  if (typeof alvo.repoName === "string") alvo.repo = alvo.repoName;
+  return alvo;
 }
 
 /** Interpolacao simples: {{event.x}} e {{steps.chave}}. */

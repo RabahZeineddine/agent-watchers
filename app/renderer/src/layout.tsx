@@ -83,9 +83,9 @@ export function Layout() {
 
   return (
     <div className="flex h-screen text-foreground">
-      <nav className="regiao-de-arrasto flex w-56 shrink-0 flex-col border-sidebar-border border-r">
+      <nav className="regiao-de-arrasto bg-sidebar border-sidebar-border flex w-56 shrink-0 flex-col border-r">
         <div
-          className="px-4 pt-8 pb-4 font-semibold text-sm tracking-tight"
+          className="text-sidebar-foreground px-4 pt-8 pb-5 font-semibold text-[13px] tracking-[0.01em]"
           data-locum-probe="marca"
         >
           Locum
@@ -127,12 +127,11 @@ export function Layout() {
         />
       </nav>
 
+      {/* A faixa de arrasto vive no conteúdo porque o cabeçalho saiu: sem ela
+          a janela só se moveria pela barra lateral. */}
       <div className="bg-background flex min-w-0 flex-1 flex-col">
-        <header className="regiao-de-arrasto flex items-center border-border border-b px-6 py-4">
-          <h1 className="font-semibold text-lg">{t(rota.rotulo)}</h1>
-        </header>
         <main
-          className="min-h-0 flex-1 overflow-auto px-6 py-6"
+          className="regiao-de-arrasto min-h-0 flex-1 overflow-auto px-8 pt-9 pb-10"
           data-ativo={ativa}
           data-detalhe={detalhe ?? ""}
           data-locum-probe="rota"

@@ -102,8 +102,6 @@
     "waiting_other": "{{count}} waiting for you",
     "failures_one": "{{count}} run failed",
     "failures_other": "{{count}} runs failed",
-    "summary_one": "{{count}} finding · {{problem}}",
-    "summary_other": "{{count}} findings · {{problem}}",
     "approve": "Approve",
     "edit": "Edit",
     "discard": "Discard",
@@ -125,7 +123,10 @@
       "approve": "approve",
       "edit": "edit",
       "discard": "discard"
-    }
+    },
+    "findings_one": "{{count}} finding",
+    "findings_other": "{{count}} findings",
+    "target_unknown": "{{agent}}, step {{step}}"
   },
   "loginItem": {
     "applied": "start at login: preference {{preference}}, system {{status}}"

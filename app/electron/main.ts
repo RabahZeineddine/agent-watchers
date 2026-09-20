@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
 import en from "../locales/en.json";
 import ptBR from "../locales/pt-BR.json";
@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { RunService } from "../src/services/run-service.js";
 
 const smoke = process.argv.includes("--smoke");
+const capturas = process.argv.includes("--capturas");
 
 /** `--set-secret <ref>` e `--remove-secret <ref>`, com o valor vindo do stdin. */
 function flagValue(name: string): string | undefined {
@@ -56,11 +57,11 @@ function createWindow(options: { show?: boolean } = {}): BrowserWindow {
     show: false,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 16 },
-    // Material do sistema atras da janela. Sem isto o fundo escuro vira um
-    // retangulo chapado, que e o que denuncia interface web dentro de janela.
-    vibrancy: "under-window",
-    visualEffectState: "active",
-    backgroundColor: "#00000000",
+    // Sem material do sistema: a janela pinta as próprias superfícies. A
+    // vibrancy deixava a barra lateral transparente, e onde ela não aparece o
+    // texto some. Profundidade aqui vem de luminância, que não depende de
+    // suporte de composição.
+    backgroundColor: "#35383F",
     webPreferences: {
       preload: PRELOAD,
       // A janela nao tem Node nenhum. Tudo que ela alcanca do sistema passa
@@ -687,6 +688,9 @@ async function checkRenderer(): Promise<string> {
       language: idioma,
     });
   } finally {
+    // As capturas usam esta mesma janela, com a ponte ainda de pé: derrubar
+    // antes deixaria a página sem quem responder e ela nem monta.
+    if (capturas) await capturarTelas(window);
     window.destroy();
     teardownBridge();
   }
@@ -2077,6 +2081,31 @@ async function setupI18n(): Promise<string> {
   const { language } = await i18nService.resolve(app.getLocale());
   iniciarI18n({ idioma: language, estrito: !app.isPackaged });
   return language;
+}
+
+/**
+ * Fotografa cada destino, para que a interface possa ser olhada e não só
+ * descrita por linha de log.
+ *
+ * Nasceu de uma pergunta constrangedora: as telas foram construídas por
+ * verificação automática, e ninguém tinha visto nenhuma delas. Critério
+ * funcional não enxerga hierarquia, ritmo nem estado vazio.
+ */
+async function capturarTelas(janela: BrowserWindow): Promise<void> {
+  const destino = flagValue("--capturas-em") ?? join(process.cwd(), "capturas");
+  mkdirSync(destino, { recursive: true });
+  janela.setSize(1280, 860);
+
+  for (const id of ["inbox", "execucoes", "agents", "configuracao"]) {
+    await irPara(janela, id);
+    // A tela pede dado pela ponte ao montar, e fotografar antes da resposta
+    // registraria o esqueleto em vez do conteúdo.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const imagem = await janela.webContents.capturePage();
+    writeFileSync(join(destino, `${id}.png`), imagem.toPNG());
+  }
+
+  console.log(`capturas em ${destino}`);
 }
 
 async function main(): Promise<void> {

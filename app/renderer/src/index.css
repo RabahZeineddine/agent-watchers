@@ -1,3 +1,8 @@
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -66,42 +71,71 @@
  * foco e no destaque.
  */
 .dark {
-  --background: oklch(0.223 0.004 286);
-  --foreground: oklch(0.96 0.002 286);
-  --card: oklch(0.262 0.004 286);
-  --card-foreground: oklch(0.96 0.002 286);
-  --popover: oklch(0.285 0.005 286);
-  --popover-foreground: oklch(0.96 0.002 286);
-  --primary: oklch(0.62 0.17 258);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.31 0.005 286);
-  --secondary-foreground: oklch(0.96 0.002 286);
-  --muted: oklch(0.3 0.005 286);
-  --muted-foreground: oklch(0.72 0.012 286);
-  --accent: oklch(0.33 0.006 286);
-  --accent-foreground: oklch(0.97 0.002 286);
-  --destructive: oklch(0.63 0.2 25);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
-  --ring: oklch(0.62 0.17 258);
-  --chart-1: oklch(0.871 0.006 286.286);
-  --chart-2: oklch(0.552 0.016 285.938);
-  --chart-3: oklch(0.442 0.017 285.786);
-  --chart-4: oklch(0.37 0.013 285.805);
-  --chart-5: oklch(0.274 0.006 286.033);
-  /* A barra lateral nao pinta fundo: quem aparece atras dela e o material da
-     janela, que o processo principal liga com `vibrancy`. */
-  --sidebar: transparent;
-  --sidebar-foreground: oklch(0.93 0.002 286);
-  --sidebar-primary: oklch(0.62 0.17 258);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(1 0 0 / 8%);
-  --sidebar-accent-foreground: oklch(0.98 0.002 286);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.62 0.17 258);
+  /*
+   * Livro de plantão, não painel.
+   *
+   * Um locum é quem cobre o seu turno, e a tela é o registro do que aconteceu
+   * enquanto você não estava. A base é ardósia levemente azulada, e não preto:
+   * preto com um azul de realce é a cara mais comum de interface gerada, e
+   * some a profundidade que separa a folha do fundo.
+   *
+   * A cor de estado não decora, ela informa. Fora dela, a tela é tinta sobre
+   * papel.
+   */
+  --background: oklch(0.243 0.008 258);
+  --foreground: oklch(0.928 0.004 258);
+  --card: oklch(0.283 0.009 258);
+  --card-foreground: oklch(0.928 0.004 258);
+  --popover: oklch(0.305 0.01 258);
+  --popover-foreground: oklch(0.94 0.004 258);
+  --primary: oklch(0.68 0.105 250);
+  --primary-foreground: oklch(0.17 0.01 258);
+  --secondary: oklch(0.33 0.01 258);
+  --secondary-foreground: oklch(0.928 0.004 258);
+  --muted: oklch(0.32 0.009 258);
+  --muted-foreground: oklch(0.688 0.018 258);
+  --accent: oklch(0.35 0.012 258);
+  --accent-foreground: oklch(0.95 0.004 258);
+  --destructive: oklch(0.63 0.19 24);
+  --border: oklch(0.362 0.012 258);
+  --input: oklch(0.4 0.014 258);
+  --ring: oklch(0.68 0.105 250);
+  --chart-1: oklch(0.68 0.105 250);
+  --chart-2: oklch(0.72 0.11 170);
+  --chart-3: oklch(0.78 0.12 85);
+  --chart-4: oklch(0.7 0.14 40);
+  --chart-5: oklch(0.66 0.13 300);
+  /*
+   * Cor de verdade, e não material do sistema.
+   *
+   * A barra lateral era transparente à espera da vibrancy. Quando ela não
+   * aparece, e ela não aparece em captura nem em tela sem suporte, sobra um
+   * buraco onde o texto some. Duas superfícies deliberadas leem certo sempre,
+   * e o efeito que não dá para conferir não vale a fragilidade.
+   */
+  --sidebar: oklch(0.208 0.008 258);
+  --sidebar-foreground: oklch(0.86 0.006 258);
+  --sidebar-primary: oklch(0.68 0.105 250);
+  --sidebar-primary-foreground: oklch(0.17 0.01 258);
+  --sidebar-accent: oklch(1 0 0 / 7%);
+  --sidebar-accent-foreground: oklch(0.96 0.004 258);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.68 0.105 250);
+
+  /* Severidade: régua na borda do registro, nunca só bolinha. */
+  --sev-critical: oklch(0.64 0.2 22);
+  --sev-high: oklch(0.72 0.16 55);
+  --sev-medium: oklch(0.79 0.13 92);
+  --sev-low: oklch(0.6 0.02 258);
 }
 
 @theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-high: var(--sev-high);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-low: var(--sev-low);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -146,6 +180,7 @@
 
   body {
     @apply text-foreground;
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
     /* Transparente para o material da janela aparecer. A area de conteudo
        pinta o proprio fundo; a barra lateral deixa o material passar. */
     background: transparent;
