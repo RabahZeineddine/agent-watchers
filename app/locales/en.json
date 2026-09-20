@@ -211,7 +211,20 @@
         "attempt_one": "Attempt {{attempt}}, {{count}} input token and {{completion}} output.",
         "attempt_other": "Attempt {{attempt}}, {{count}} input tokens and {{completion}} output."
       }
-    }
+    },
+    "progress": "{{done}}/{{total}} steps",
+    "waiting_steps": "{{count}} waiting",
+    "failed_steps": "{{count}} failed",
+    "findings_one": "{{count}} finding",
+    "findings_other": "{{count}} findings",
+    "no_target": "synthetic event",
+    "money_billed": "{{amount}}",
+    "money_equivalent": "~{{amount}}",
+    "money_free": "—",
+    "when_now": "now",
+    "when_hours": "{{hours}}h",
+    "when_days": "{{days}}d",
+    "when_date": "{{date}}"
   },
   "settings": {
     "refused": "the bridge refused {{channel}}: {{message}}",

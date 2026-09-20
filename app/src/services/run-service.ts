@@ -24,9 +24,22 @@ export interface RunSummary extends RunRow {
   agentId: string;
   agentName: string;
   agentVersion: number;
+  /**
+   * Sobre o que a execução foi, e como ela andou.
+   *
+   * Uma lista que mostra só nome do agent e horário obriga a abrir cada linha
+   * para saber de que trabalho se trata. O alvo vem do evento e a contagem de
+   * passos vem da própria execução.
+   */
+  target: { pull?: number; repo?: string; title?: string; author?: string } | null;
+  stepTotal: number;
+  stepDone: number;
+  stepPending: number;
+  stepFailed: number;
+  findingCount: number;
 }
 
-export interface RunDetail extends RunSummary {
+export interface RunDetail extends Omit<RunSummary, "target" | "stepTotal" | "stepDone" | "stepPending" | "stepFailed" | "findingCount"> {
   /** A versao exata que executou, nao a mais recente do agent. */
   spec: AgentSpec;
   steps: StepRow[];
@@ -74,15 +87,36 @@ export class RunService {
         agentId: schema.agents.id,
         agentName: schema.agents.name,
         agentVersion: schema.agentVersions.version,
+        evento: schema.events.payload,
       })
       .from(schema.runs)
       .innerJoin(schema.agentVersions, eq(schema.runs.agentVersionId, schema.agentVersions.id))
       .innerJoin(schema.agents, eq(schema.agentVersions.agentId, schema.agents.id))
+      .leftJoin(schema.events, eq(schema.runs.eventId, schema.events.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(schema.runs.createdAt))
       .limit(filter.limit ?? 20);
 
-    return rows.map((r) => ({ ...r.run, agentId: r.agentId, agentName: r.agentName, agentVersion: r.agentVersion }));
+    return Promise.all(
+      rows.map(async (r) => {
+        const passos = await this.steps(r.run.id);
+        const achados = passos.flatMap((p) => fromStepOutput(p.output));
+        return {
+          ...r.run,
+          agentId: r.agentId,
+          agentName: r.agentName,
+          agentVersion: r.agentVersion,
+          target: alvo(r.evento),
+          stepTotal: passos.length,
+          stepDone: passos.filter((p) => p.status === "done").length,
+          stepPending: passos.filter((p) =>
+            ["pending", "running", "awaiting_approval"].includes(p.status),
+          ).length,
+          stepFailed: passos.filter((p) => p.status === "failed").length,
+          findingCount: achados.length,
+        };
+      }),
+    );
   }
 
   async get(runId: string): Promise<RunDetail | undefined> {
@@ -243,6 +277,19 @@ function dependents(spec: AgentSpec, stepKey: string): Set<string> {
     }
   }
   return out;
+}
+
+/** Só o que nomeia o trabalho. O diff inteiro não cabe numa linha de lista. */
+function alvo(payload: unknown): RunSummary["target"] {
+  if (payload === null || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (typeof p.pull !== "number") return null;
+  return {
+    pull: p.pull,
+    repo: typeof p.repo === "string" ? p.repo : undefined,
+    title: typeof p.title === "string" ? p.title : undefined,
+    author: typeof p.author === "string" ? p.author : undefined,
+  };
 }
 
 function fromStepOutput(output: unknown): RunFinding[] {

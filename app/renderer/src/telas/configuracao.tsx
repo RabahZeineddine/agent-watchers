@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
+import { cn } from "@/lib/utils";
 import { EscolhaDoModelo } from "../assistente-modelo";
 import { useIdioma } from "../idioma";
 import { useState } from "react";
@@ -156,11 +157,21 @@ function Secao({
   descricao: string;
   titulo: string;
 }) {
+  /*
+   * Uma moldura só por seção.
+   *
+   * Antes a seção tinha borda e cada linha dentro dela também, então duas
+   * molduras disputavam a mesma fronteira e o olho perdia onde um grupo
+   * termina. Agora o fio separa linha de linha, e o grupo é delimitado pelo
+   * espaço acima dele e pelo título.
+   */
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="font-medium text-sm">{titulo}</h2>
-      <p className="text-muted-foreground text-xs">{descricao}</p>
-      <div className="mt-1 overflow-hidden rounded-lg border border-border">{children}</div>
+    <section className="flex flex-col gap-1">
+      <h2 className="font-medium text-[15px] tracking-tight">{titulo}</h2>
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{descricao}</p>
+      <div className="divide-border border-border bg-card mt-2 divide-y overflow-hidden rounded-lg border">
+        {children}
+      </div>
     </section>
   );
 }
@@ -265,16 +276,30 @@ function LinhaDoProvedor({
 
   return (
     <div
-      className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-3 text-sm last:border-b-0"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
       data-locum-disponivel={provedor.available ? "sim" : "nao"}
       data-locum-provider={provedor.name}
     >
-      <span className="w-40 shrink-0 truncate font-medium">{provedor.name}</span>
-      <Badge variant={provedor.available ? "secondary" : "outline"}>
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          provedor.available ? "bg-chart-2" : "bg-muted-foreground/40",
+        )}
+      />
+      <span className="w-36 shrink-0 truncate font-mono text-[13px]">{provedor.name}</span>
+      <span
+        className={cn(
+          "shrink-0 text-xs",
+          provedor.available ? "text-chart-2" : "text-muted-foreground",
+        )}
+      >
         {t(provedor.available ? "settings.providers.available" : "settings.providers.unavailable")}
-      </Badge>
+      </span>
       {provedor.subscription ? (
-        <Badge variant="outline">{t("settings.providers.subscription")}</Badge>
+        <span className="text-muted-foreground border-border shrink-0 rounded border px-1.5 text-[11px]">
+          {t("settings.providers.subscription")}
+        </span>
       ) : null}
       <Credenciais credencial={credencial} />
       {provedor.requires.length > 0 ? (

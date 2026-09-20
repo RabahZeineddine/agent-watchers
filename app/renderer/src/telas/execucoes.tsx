@@ -29,7 +29,7 @@ type Detalhe = NonNullable<ReadResult<"runs.get">>;
 type Passo = Detalhe["steps"][number];
 
 /** Altura de cada linha da lista. Fixa, porque a janela virtual conta com isso. */
-const ALTURA_DA_LINHA = 56;
+const ALTURA_DA_LINHA = 76;
 
 /**
  * A tela de execucoes: a lista, e o detalhe de uma delas.
@@ -58,7 +58,7 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
   const janela = useJanela(linhas.length, ALTURA_DA_LINHA);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col items-stretch">
       <div
         className="mb-3 text-muted-foreground text-xs"
         data-estado={runs.status}
@@ -83,7 +83,10 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
           <Trans components={{ code: <code /> }} i18nKey="runs.empty" />
         </p>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border" ref={janela.ref}>
+        <div
+          className="border-border bg-card max-h-full min-h-0 overflow-auto rounded-lg border"
+          ref={janela.ref}
+        >
           {/*
             Os espacadores sustentam a barra de rolagem no tamanho da lista
             inteira enquanto so as linhas visiveis existem no DOM.
@@ -99,6 +102,13 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
   );
 }
 
+/**
+ * A linha diz sobre o que a execução foi, e não só quando ela aconteceu.
+ *
+ * Nome do agent com horário obriga a abrir cada uma para saber de que trabalho
+ * se trata. O alvo vem do evento; o andamento vem da contagem de passos, que é
+ * o que responde se ela terminou, parou esperando você, ou quebrou.
+ */
 function LinhaDeExecucao({
   navegar,
   run,
@@ -107,27 +117,55 @@ function LinhaDeExecucao({
   run: Execucao;
 }) {
   const { t } = useTranslation();
+  const alvo = run.target;
 
   return (
     <button
-      className="flex w-full items-center gap-3 border-border border-b px-4 text-left text-sm last:border-b-0 hover:bg-accent/50"
+      className="hover:bg-accent/40 focus-visible:ring-ring border-border relative w-full cursor-pointer border-b px-4 py-2.5 text-left transition-colors duration-200 last:border-b-0 focus-visible:ring-2 focus-visible:-outline-offset-2"
       data-locum-run={run.id}
       onClick={() => navegar("execucoes", run.id)}
       style={{ height: ALTURA_DA_LINHA }}
       type="button"
     >
-      <Estado status={run.status} />
-      <span className="w-48 shrink-0 truncate font-medium">
-        {run.agentId}{" "}
-        <span className="text-muted-foreground">
-          {t("common.version", { version: run.agentVersion })}
+      <div className="flex items-baseline gap-2.5">
+        {alvo?.pull ? (
+          <>
+            <span className="shrink-0 font-mono text-[13px] font-medium">{`PR #${alvo.pull}`}</span>
+            <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
+              {alvo.title ?? alvo.repo}
+            </span>
+          </>
+        ) : (
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">
+            {t("runs.no_target")}
+          </span>
+        )}
+        <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+          {quando(t, run.createdAt)}
         </span>
-      </span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
-        {run.agentName}
-      </span>
-      <span className="shrink-0 text-muted-foreground text-xs">{quando(run.createdAt)}</span>
-      <span className="w-28 shrink-0 text-right tabular-nums">{dinheiro(t, run)}</span>
+        <span className="w-24 shrink-0 text-right font-mono text-xs tabular-nums">
+          {dinheiro(t, run)}
+        </span>
+      </div>
+
+      <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+        <Estado status={run.status} />
+        <span className="font-mono">
+          {run.agentId} {t("common.version", { version: run.agentVersion })}
+        </span>
+        <span className="tabular-nums">
+          {t("runs.progress", { done: run.stepDone, total: run.stepTotal })}
+        </span>
+        {run.stepPending > 0 && (
+          <span className="text-sev-medium">{t("runs.waiting_steps", { count: run.stepPending })}</span>
+        )}
+        {run.stepFailed > 0 && (
+          <span className="text-sev-critical">{t("runs.failed_steps", { count: run.stepFailed })}</span>
+        )}
+        {run.findingCount > 0 && (
+          <span>{t("runs.findings", { count: run.findingCount })}</span>
+        )}
+      </div>
     </button>
   );
 }
@@ -402,13 +440,31 @@ const CORES: Record<Estado, "default" | "secondary" | "destructive" | "outline">
  * o serviço devolve, e comparar contra texto de tela faria a verificação
  * depender do idioma da máquina que roda o loop.
  */
+/**
+ * Cor de estado é vocabulário próprio, e não o azul de ação.
+ *
+ * Um selo azul em "pausado" compete com o botão que a pessoa deve clicar, e
+ * pinta de importante um estado que só está esperando.
+ */
+const TINTA_DE_ESTADO: Record<string, string> = {
+  done: "text-chart-2",
+  running: "text-primary",
+  queued: "text-muted-foreground",
+  paused: "text-sev-medium",
+  failed: "text-sev-critical",
+  cancelled: "text-muted-foreground",
+};
+
 function Estado({ status }: { status: string }) {
   const { t } = useTranslation();
 
   return (
-    <Badge data-locum-estado={status} variant={CORES[status as Estado] ?? "outline"}>
+    <span
+      className={cn("shrink-0 font-medium", TINTA_DE_ESTADO[status] ?? "text-muted-foreground")}
+      data-locum-estado={status}
+    >
       {rotuloDeEstado(t, status)}
-    </Badge>
+    </span>
   );
 }
 
@@ -425,8 +481,23 @@ function lista(valor: unknown): unknown[] {
   return Array.isArray(valor) ? valor : [];
 }
 
-function quando(segundos: number): string {
-  return new Date(segundos * 1000).toISOString().slice(0, 16).replace("T", " ");
+/**
+ * Tempo em palavra, e não carimbo de máquina.
+ *
+ * `2026-09-20 02:06` obriga a fazer a conta de cabeça para saber se foi hoje.
+ * Perto do agora, a distância é o que importa; longe, a data.
+ */
+function quando(t: TFunction, segundos: number): string {
+  const horas = Math.floor((Date.now() / 1000 - segundos) / 3600);
+  if (horas < 1) return t("runs.when_now");
+  if (horas < 24) return t("runs.when_hours", { hours: horas });
+  if (horas < 24 * 7) return t("runs.when_days", { days: Math.floor(horas / 24) });
+  return t("runs.when_date", {
+    date: new Date(segundos * 1000).toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "2-digit",
+    }),
+  });
 }
 
 /**
@@ -435,9 +506,15 @@ function quando(segundos: number): string {
  * Passo que roda na assinatura nao cobra dinheiro, e mostrar so o cobrado faria
  * toda execucao parecer gratuita.
  */
+/**
+ * Um número, não um par separado por barra.
+ *
+ * O que interessa de relance é quanto aquela execução custou. Quando o gasto
+ * saiu da assinatura, ele não é dinheiro cobrado, e o til diz isso sem precisar
+ * de uma segunda coluna que nunca cabe na linha.
+ */
 function dinheiro(t: TFunction, run: { costUsd: number; estimateUsd: number }): string {
-  return t("runs.money", {
-    cost: run.costUsd.toFixed(3),
-    estimate: run.estimateUsd.toFixed(3),
-  });
+  if (run.costUsd > 0) return t("runs.money_billed", { amount: run.costUsd.toFixed(2) });
+  if (run.estimateUsd > 0) return t("runs.money_equivalent", { amount: run.estimateUsd.toFixed(2) });
+  return t("runs.money_free");
 }

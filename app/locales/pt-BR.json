@@ -211,7 +211,20 @@
         "attempt_one": "Tentativa {{attempt}}, {{count}} token de entrada e {{completion}} de saída.",
         "attempt_other": "Tentativa {{attempt}}, {{count}} tokens de entrada e {{completion}} de saída."
       }
-    }
+    },
+    "progress": "{{done}}/{{total}} passos",
+    "waiting_steps": "{{count}} aguardando",
+    "failed_steps": "{{count}} falhou",
+    "findings_one": "{{count}} achado",
+    "findings_other": "{{count}} achados",
+    "no_target": "evento sintético",
+    "money_billed": "{{amount}}",
+    "money_equivalent": "~{{amount}}",
+    "money_free": "—",
+    "when_now": "agora",
+    "when_hours": "{{hours}}h",
+    "when_days": "{{days}}d",
+    "when_date": "{{date}}"
   },
   "settings": {
     "refused": "a ponte recusou {{channel}}: {{message}}",
