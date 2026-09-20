@@ -40,8 +40,9 @@ que a interface vai usar.
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
 | ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
-| interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela |
+| interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
+| cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 
 ## Execução verificada
 
@@ -251,6 +252,39 @@ depois que a página montou, e ainda espera a gramática chegar. Conferir logo
 depois do `loadFile` encontraria o `pre` vazio. Por isso o smoke gira até
 aparecer `span` com cor dentro do bloco, e sem gramática o `pre` até existiria,
 só que com o código todo da mesma cor.
+
+**Catálogo de leitura da janela, e o que o compilador vigia.** O
+`READ_CHANNELS` de `app/renderer/lib/bridge.ts` é lista escrita à mão, e a
+emenda 5 do ADR 0003 é o motivo: derivar de `BRIDGE_CHANNELS` seria mais curto
+e entregaria `approvals.decide` junto, mais todo canal de escrita que aparecer
+depois. Revisão humana esquece disso, então existe uma guarda de tipo no mesmo
+arquivo: se o canal de decisão entrar na lista, o `Extract` deixa de ser `never`
+e o `npm run build` para antes de a janela enxergar o canal.
+
+**O contrato da ponte typecheca no renderer.** O `renderer/tsconfig.json` não
+tem `node` em `types`, e mesmo assim o `import type` de
+`electron/bridge-contract.ts` passa: o contrato só tem tipo, e o que ele puxa de
+`src/services/` chega por `import type` também. Import de valor vindo de lá
+quebraria isso na hora.
+
+**Argumento de hook entra por valor, não por referência.** O `useRead` põe
+`JSON.stringify(args)` na lista de dependência do efeito. Quem chama passa
+objeto literal, que muda de referência a cada render, e comparar por identidade
+dispararia a leitura em laço. Os argumentos de verdade viajam numa `ref`, porque
+espalhá-los na lista traria a identidade de volta.
+
+**Banco vazio faz o smoke passar sem provar nada.** A comparação entre o que a
+janela leu e o que o serviço devolve é verdadeira por acidente quando os dois
+lados são zero: uma ponte que respondesse `[]` sempre passaria igual. Por isso o
+banco do worktree precisa do `seed`, e por isso o marcador carrega os
+identificadores dos agents, e não só a contagem.
+
+**A página lê ao montar, então o smoke precisa da ponte no ar.** O
+`checkRenderer` passou a chamar `setupBridge` e `trustWindow` antes do
+`loadFile`, e a esperar o marcador `ponte` sair de "carregando": conferir logo
+depois do `loadFile` pegaria a tela no estado de leitura pendente. O estado vai
+no próprio marcador justamente para a espera saber a hora, em vez de dormir um
+tempo arbitrário.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

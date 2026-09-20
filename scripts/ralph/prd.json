@@ -285,7 +285,7 @@
       "description": "Modulo app/renderer/lib/bridge.ts tipado contra electron/bridge-contract.ts, com hook de leitura e tratamento de erro. O catalogo de canais e lista explicita escrita a mao, nunca derivada por varredura: a emenda 5 do ADR 0003 exige que approvals.decide fique fora de qualquer catalogo que um modelo possa enxergar.",
       "done_when": "O renderer le agents, runs e pendencias pela ponte, e o smoke confere os valores contra os servicos.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

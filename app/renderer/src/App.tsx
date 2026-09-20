@@ -30,12 +30,64 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
+import { useRead } from "@/lib/bridge";
 
 const TRECHO = `public decimal CalcularPremio(Pedido pedido)
 {
     var taxa = _tabela.Buscar(pedido.Cobertura);
     return pedido.ValorDoPedido * taxa;
 }`;
+
+/**
+ * O que a janela consegue ler pela ponte, hoje.
+ *
+ * Tres leituras de canais diferentes, que e o suficiente para provar o caminho
+ * inteiro: hook monta, canal atravessa o IPC, servico responde. As telas de
+ * verdade entram nas proximas stories e trocam esta contagem por lista.
+ *
+ * O marcador existe para o smoke, que roda sem ninguem olhando e precisa
+ * comparar o que a janela enxergou com o que os servicos devolvem deste lado.
+ * Ele carrega os identificadores dos agents, e nao so a contagem, porque
+ * contagem igual por acaso passaria sem a ponte ter trazido nada.
+ */
+function Ponte() {
+  const agents = useRead("agents.list");
+  const runs = useRead("runs.list");
+  const pendencias = useRead("approvals.listPending");
+
+  const erro = agents.error ?? runs.error ?? pendencias.error;
+  const carregando =
+    agents.status === "loading" || runs.status === "loading" || pendencias.status === "loading";
+  const estado = erro !== undefined ? "erro" : carregando ? "carregando" : "pronto";
+
+  const ids = (agents.data ?? []).map((a) => a.id);
+  const execucoes = runs.data?.length ?? -1;
+  const naFila = pendencias.data?.length ?? -1;
+
+  return (
+    <div
+      className="rounded-lg border border-border p-4 text-muted-foreground text-sm"
+      data-agents={ids.join(",")}
+      data-erro={erro?.message ?? ""}
+      data-estado={estado}
+      data-locum-probe="ponte"
+      data-pendencias={naFila}
+      data-runs={execucoes}
+    >
+      {erro !== undefined ? (
+        <span>
+          a ponte recusou {erro.channel}: {erro.message}
+        </span>
+      ) : carregando ? (
+        <span>lendo pela ponte...</span>
+      ) : (
+        <span>
+          {ids.length} agent(s), {execucoes} execucao(oes), {naFila} pendencia(s) na fila
+        </span>
+      )}
+    </div>
+  );
+}
 
 /**
  * Vitrine dos componentes que as telas do M4a vao usar.
@@ -60,6 +112,8 @@ export function App() {
               </MessageResponse>
             </MessageContent>
           </Message>
+
+          <Ponte />
 
           <Reasoning defaultOpen={false} duration={12}>
             <ReasoningTrigger />

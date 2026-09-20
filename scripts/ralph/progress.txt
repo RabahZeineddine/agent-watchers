@@ -23,3 +23,4 @@
 2026-09-19  M3.8  feito      ponte tipada com preload em sandbox, 22 canais sobre os servicos, decisao segue na gate
 2026-09-19  M4a.1 feito      renderer em Vite com React e Tailwind construido para dist/renderer, janela carrega do disco e o smoke confere raiz e folha
 2026-09-19  M4a.2 feito      shadcn e AI Elements vendorizados em renderer/components, tema escuro e bloco de codigo destacado no smoke
+2026-09-19  M4a.3 feito      cliente tipado da ponte no renderer, catalogo de leitura a mao sem approvals.decide, smoke confere agents runs e fila

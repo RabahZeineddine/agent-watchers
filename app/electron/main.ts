@@ -559,11 +559,23 @@ async function checkBridge(): Promise<string> {
  * shiki destaca de forma assincrona e busca a gramatica da linguagem num
  * pedaco separado do pacote. Por isso a espera abaixo, que e o unico jeito de
  * saber que o import dinamico funciona carregando do disco, sem servidor.
+ *
+ * E a ponte sobe junto, porque a pagina agora le pelos canais assim que monta.
+ * O `checkBridge` prova o caminho com `about:blank` e chamada solta; aqui o que
+ * esta sendo provado e a pagina de verdade lendo por conta propria, com o hook
+ * no meio, e os valores que ela exibiu conferidos contra os mesmos servicos.
  */
 async function checkRenderer(): Promise<string> {
   if (!existsSync(RENDERER)) throw new Error(`renderer nao foi construido em ${RENDERER}`);
 
+  const { setupBridge, teardownBridge, trustWindow } = await import("./bridge.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { runService } = await import("../src/services/run-service.js");
+
+  setupBridge({ inboxTarget: pendingInboxTarget });
+
   const window = createWindow({ show: false });
+  trustWindow(window);
   const erros: string[] = [];
   window.webContents.on("console-message", (event) => {
     if (event.level === "error") erros.push(event.message);
@@ -591,15 +603,72 @@ async function checkRenderer(): Promise<string> {
     }
 
     const destacado = await esperarDestaque(window);
+    const ponte = await esperarPonte(window);
+
+    const agentes = (await agentService.list()).map((a) => a.id).join(",");
+    if (ponte.agents !== agentes) {
+      throw new Error(`a janela leu os agents ${ponte.agents} e o servico tem ${agentes}`);
+    }
+    const execucoes = (await runService.list()).length;
+    if (ponte.runs !== execucoes) {
+      throw new Error(`a janela leu ${ponte.runs} execucao(oes) e o servico tem ${execucoes}`);
+    }
+    const pendencias = await countPending();
+    if (ponte.pendencias !== pendencias) {
+      throw new Error(`a janela leu ${ponte.pendencias} pendencia(s) e a fila tem ${pendencias}`);
+    }
+
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
 
     return (
-      "pagina construida carregada, raiz montada, folha do Tailwind valendo " +
-      `e bloco de codigo com ${destacado} trecho(s) destacado(s)`
+      "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
+      `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
+      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
     );
   } finally {
     window.destroy();
+    teardownBridge();
   }
+}
+
+/**
+ * Espera as leituras da pagina terminarem e devolve o que ela exibiu.
+ *
+ * A pagina monta antes de a ponte responder, entao conferir logo depois do
+ * `loadFile` pegaria o estado de carregando. O marcador guarda o estado junto
+ * dos valores justamente para que a espera saiba a hora, em vez de dormir um
+ * tempo arbitrario e torcer.
+ */
+async function esperarPonte(
+  window: BrowserWindow,
+): Promise<{ agents: string; runs: number; pendencias: number }> {
+  const limite = Date.now() + 20_000;
+  let ultimo = "sem marcador";
+
+  while (Date.now() < limite) {
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=ponte]");
+        if (probe === null) return null;
+        return {
+          estado: probe.dataset.estado,
+          erro: probe.dataset.erro,
+          agents: probe.dataset.agents,
+          runs: Number(probe.dataset.runs),
+          pendencias: Number(probe.dataset.pendencias),
+        };
+      })()`,
+    )) as { estado: string; erro: string; agents: string; runs: number; pendencias: number } | null;
+
+    if (visto !== null) {
+      if (visto.estado === "erro") throw new Error(`a janela nao leu pela ponte: ${visto.erro}`);
+      if (visto.estado === "pronto") return visto;
+      ultimo = visto.estado;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`as leituras da janela ficaram em "${ultimo}" por 20s`);
 }
 
 /**
