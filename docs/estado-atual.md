@@ -36,6 +36,7 @@ executor que a interface vai usar.
 | agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
 | casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada e eventos de energia batendo o agendador, sem interface ainda |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
+| notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | interface | não começou |
 
 ## Execução verificada
@@ -137,6 +138,12 @@ não exista listagem por onde um segredo decifrado escape. Sem nada guardado, a
 entrada de `env` cai para a variável de ambiente de mesmo nome, e não havendo
 nem isso a entrada some do mapa: mandar o marcador adiante viraria um token
 literal numa chamada de rede.
+
+**Notificação é sobre o que chegou agora.** A primeira leitura da fila na
+subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de
+uma semana desligado despejaria uma pilha de avisos de coisa velha. O acumulado
+tem lugar próprio, que é a contagem na bandeja. Por isso a memória do que já foi
+avisado é de sessão e não vai para o banco.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

@@ -49,6 +49,26 @@ function showWindow(): void {
   mainWindow.focus();
 }
 
+/**
+ * Clique na notificacao: janela na frente, apontada para o run que a gerou.
+ *
+ * Enquanto a interface nao existe, o destino fica so guardado e no log. A
+ * janela ainda nao carrega nada, entao encaminhar a rota agora seria mandar
+ * recado para ninguem; quando o renderer entrar, ele le daqui na subida.
+ */
+let inboxTarget: string | null = null;
+
+function openInbox(runId: string): void {
+  inboxTarget = runId;
+  console.log(`notificacao: abrir a inbox no run ${runId}`);
+  showWindow();
+}
+
+/** O ultimo run para onde um clique de notificacao mandou. */
+export function pendingInboxTarget(): string | null {
+  return inboxTarget;
+}
+
 /** Confere que o nucleo carrega e que o banco responde a uma consulta. */
 async function checkCore(): Promise<number> {
   const { db, schema } = await import("../src/db/index.js");
@@ -181,6 +201,65 @@ async function checkSecrets(): Promise<string> {
   return "segredo cifrado no disco, referencia no banco, valor so na conexao";
 }
 
+/**
+ * Prova que o aviso nativo monta com o run certo e que ele agrupa por run.
+ *
+ * Nada e mostrado: `show()` nao entra aqui. O smoke roda no loop de
+ * verificacao, sem ninguem olhando, e alerta na tela de quem estiver usando a
+ * maquina nao e coisa que um teste possa fazer. O clique e simulado no proprio
+ * emissor de eventos da notificacao, que e o que prova o destino.
+ */
+async function checkNotifications(): Promise<string> {
+  const { buildNotification, notificationsShown, setupNotifications, teardownNotifications } =
+    await import("./notify.js");
+  const { criticalNotices } = await import("../src/services/notice-service.js");
+
+  const runId = `run-smoke-${randomUUID().slice(0, 8)}`;
+  const critico = { severity: "critical", problem: "leitura fora do limite do vetor" };
+
+  // Duas pendencias do mesmo run, com tres criticos no total: um aviso so.
+  const notices = criticalNotices([
+    {
+      runId,
+      agentName: "pr-review",
+      createdAt: 1_760_000_000,
+      payload: { findings: [critico, { severity: "low", problem: "nome confuso" }] },
+    },
+    {
+      runId,
+      agentName: "pr-review",
+      createdAt: 1_760_000_060,
+      payload: { findings: [critico, critico] },
+    },
+    { runId: `${runId}-outro`, agentName: "pr-review", createdAt: 1, payload: { findings: [] } },
+  ]);
+
+  if (notices.length !== 1) {
+    throw new Error(`o mesmo run virou ${notices.length} aviso(s) em vez de um`);
+  }
+  const [notice] = notices;
+  if (notice === undefined) throw new Error("agrupamento nao devolveu aviso");
+  if (notice.runId !== runId) throw new Error("o aviso aponta para outro run");
+  if (notice.criticalCount !== 3) {
+    throw new Error(`o aviso contou ${notice.criticalCount} criticos e o esperado era 3`);
+  }
+  if (notice.at !== 1_760_000_060) throw new Error("o aviso nao pegou a pendencia mais nova");
+
+  const cliques: string[] = [];
+  await setupNotifications({ openInbox: (id) => void cliques.push(id) });
+
+  buildNotification(notice).emit("click");
+  if (cliques.length !== 1 || cliques[0] !== runId) {
+    throw new Error(`o clique mandou para ${JSON.stringify(cliques)} em vez de ${runId}`);
+  }
+  if (notificationsShown() !== 0) {
+    throw new Error("o smoke mostrou notificacao na tela");
+  }
+  teardownNotifications();
+
+  return "aviso montado sem exibir, tres criticos num run so, clique aponta para o run";
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -252,11 +331,12 @@ async function main(): Promise<void> {
 
     const power = await checkPower();
     const secrets = await checkSecrets();
+    const avisos = await checkNotifications();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
-        `energia com ${power}, keychain com ${secrets}`,
+        `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}`,
     );
     app.exit(0);
     return;
@@ -276,6 +356,10 @@ async function main(): Promise<void> {
   }
 
   await setupTray({ openWindow: showWindow });
+
+  const { setupNotifications } = await import("./notify.js");
+  const jaNaFila = await setupNotifications({ openInbox });
+  if (jaNaFila > 0) console.log(`notificacao: ${jaNaFila} aviso(s) ja na fila, nenhum exibido`);
 
   const { setupPower } = await import("./power.js");
   setupPower();

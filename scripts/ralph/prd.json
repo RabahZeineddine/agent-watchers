@@ -230,7 +230,7 @@
       "description": "Notification nativa quando um achado critico entra na fila ou quando um run falha. Clique abre a janela na inbox. Agrupar: uma notificacao por run, nao uma por achado.",
       "done_when": "Sob --smoke uma notificacao e montada sem ser exibida e o payload aponta para o run certo.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
