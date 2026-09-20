@@ -44,6 +44,12 @@ suja.
 **Sem segredo.** Nada de token, chave ou credencial em código, teste ou
 documentação.
 
+**Português com acento.** Comentário, mensagem de commit e documentação levam
+acento como qualquer texto em português. Escrever "execucao" e "nao" porque o
+texto está dentro de um heredoc ou de um commit é desleixo que fica no
+repositório para sempre. Isto vale para comentário de código também, não só para
+o que aparece na tela.
+
 **Escrita em português, sem travessão.** Comentário, commit e documentação em
 prosa normal. Sem assinatura de IA no commit, sem `Co-Authored-By`, sem rodapé
 de atribuição.

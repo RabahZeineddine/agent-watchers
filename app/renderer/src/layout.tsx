@@ -1,6 +1,7 @@
 import { useRead } from "@/lib/bridge";
 import { useRota } from "@/lib/router";
 import { cn } from "@/lib/utils";
+import { Assistente } from "./assistente";
 import { Paleta } from "./paleta";
 import { ROTA_IDS, ROTA_PADRAO, ROTAS } from "./rotas";
 
@@ -134,6 +135,7 @@ export function Layout() {
       </div>
 
       <Paleta />
+      <Assistente />
 
       {/*
         Marcador do smoke. Ele confere que este elemento esta com display none,

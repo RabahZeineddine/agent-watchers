@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
+import { EscolhaDoModelo } from "../assistente-modelo";
 import { useState } from "react";
 
 type Provedor = ReadResult<"providers.list">[number];
@@ -70,6 +71,13 @@ export function Configuracao() {
           a ponte recusou {erro.channel}: {erro.message}
         </p>
       )}
+
+      <Secao
+        descricao="Qual modelo responde no console. O catalogo vem de cada provedor, nao de lista no codigo."
+        titulo="Modelo do assistente"
+      >
+        <EscolhaDoModelo />
+      </Secao>
 
       <Secao
         descricao="O que roda neste computador, e o que falta para o resto rodar."
