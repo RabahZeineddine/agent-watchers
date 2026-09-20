@@ -11,6 +11,7 @@ import { aplicarIdioma } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
 import { credentialService } from "../src/services/credential-service.js";
+import { githubService } from "../src/services/github-service.js";
 import { i18nService } from "../src/services/i18n-service.js";
 import { machineService } from "../src/services/machine-service.js";
 import { mcpService } from "../src/services/mcp-service.js";
@@ -126,6 +127,11 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "providers.allModels": () => providerService.listAllModels(),
 
     "credentials.overview": () => credentialService.overview(),
+
+    "github.status": () => githubService.status(),
+    "github.save": (token) => githubService.setToken(token),
+    "github.forget": () => githubService.clearToken(),
+    "github.check": () => githubService.check(),
 
     "metrics.report": (options) => metricsService.report(options),
     "machine.profile": () => machineService.profile(),

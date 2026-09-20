@@ -49,6 +49,9 @@ export const READ_CHANNELS = [
   "providers.fallbacks",
   "providers.preview",
   "credentials.overview",
+  // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
+  // que a última conferência descobriu. O token não volta por canal nenhum.
+  "github.status",
   "chat.status",
   "metrics.report",
   "machine.profile",
@@ -80,6 +83,16 @@ export type ReadChannel = (typeof READ_CHANNELS)[number];
  */
 export const ACTION_CHANNELS = [
   "runs.rerunStep",
+  // O token do GitHub indo para o keychain, e o único segredo que a janela
+  // manda. Está aqui e não na leitura porque é escrita, e porque exige alguém
+  // digitando: um hook que dispara ao montar a tela não tem o que gravar. A
+  // viagem é de mão única, e a prova disso está no catálogo de leitura, onde
+  // não existe canal que devolva valor de segredo.
+  "github.save",
+  "github.forget",
+  // Conferir sai para a rede e responde quem é a conta, então fica atrás de um
+  // clique pelo mesmo motivo de `mcp.test`: abrir a tela não é pedir exame.
+  "github.check",
   "mcp.test",
   "mcp.tools",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um

@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { call, useRead, type ReadResult } from "@/lib/bridge";
+import { call, read, useRead, type ReadResult } from "@/lib/bridge";
 import { cn } from "@/lib/utils";
 import { EscolhaDoModelo } from "../assistente-modelo";
 import { useIdioma } from "../idioma";
@@ -13,6 +13,8 @@ type Fallback = ReadResult<"providers.fallbacks">[number];
 type Servidor = ReadResult<"mcp.list">[number];
 type Orcamento = ReadResult<"agents.budgets">[number];
 type Credencial = ReadResult<"credentials.overview">["refs"][number];
+type EstadoDoGithub = ReadResult<"github.status">;
+type ConferenciaDoGithub = ReadResult<"github.check">;
 type Ferramenta = ReadResult<"mcp.tools">[number];
 type Teste = ReadResult<"mcp.test">;
 
@@ -132,6 +134,13 @@ export function Configuracao() {
             />
           ))
         )}
+      </Secao>
+
+      <Secao
+        descricao={t("settings.github.description")}
+        titulo={t("settings.github.title")}
+      >
+        <Github />
       </Secao>
 
       <Secao
@@ -505,6 +514,226 @@ function ResultadoDoTeste({ estado, nome }: { estado: EstadoDoTeste; nome: strin
             elapsed: teste.elapsedMs,
             error: teste.error ?? t("settings.servers.noReason"),
           })}
+    </p>
+  );
+}
+
+
+/* ------------------------------------------------------------------- github */
+
+type Conferencia =
+  | { fase: "parado" }
+  | { fase: "conferindo" }
+  | { fase: "respondeu"; resultado: ConferenciaDoGithub }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * A credencial do GitHub: guardar, esquecer e perguntar de quem ela é.
+ *
+ * O valor digitado sai daqui numa direção só, para o keychain, e nunca volta:
+ * não existe canal que devolva segredo, então nem recarregando a tela o campo
+ * reaparece preenchido. O que fica visível é se há algo guardado, de quem é a
+ * conta e quando foi a última conferência, que é o suficiente para alguém saber
+ * se pode ligar um gatilho.
+ *
+ * Conferir fica atrás de um clique pela mesma razão do teste de servidor MCP:
+ * ele sai para a rede, e abrir a tela de configuração não é pedir exame.
+ */
+function Github() {
+  const { i18n, t } = useTranslation();
+  const inicial = useRead("github.status");
+  const [recarregado, setRecarregado] = useState<EstadoDoGithub | null>(null);
+  const [token, setToken] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [conferencia, setConferencia] = useState<Conferencia>({ fase: "parado" });
+
+  const estado = recarregado ?? inicial.data ?? null;
+
+  const recarregar = (): Promise<void> =>
+    read("github.status").then(setRecarregado, () => undefined);
+
+  const guardar = (): void => {
+    setSalvando(true);
+    // O campo é limpo antes mesmo da resposta: o que foi digitado já está a
+    // caminho do cofre, e deixá-lo na tela só aumenta a chance de ele aparecer
+    // numa captura ou num ombro alheio.
+    const valor = token;
+    setToken("");
+    call("github.save", valor)
+      .then(recarregar, () => undefined)
+      .finally(() => {
+        setSalvando(false);
+        // A conferência anterior era do token antigo, e o serviço já a apagou.
+        setConferencia({ fase: "parado" });
+      });
+  };
+
+  const esquecer = (): void => {
+    call("github.forget")
+      .then(recarregar, () => undefined)
+      .finally(() => setConferencia({ fase: "parado" }));
+  };
+
+  const conferir = (): void => {
+    setConferencia({ fase: "conferindo" });
+    call("github.check").then(
+      (resultado) => {
+        setConferencia({ fase: "respondeu", resultado });
+        void recarregar();
+      },
+      // `check` devolve a recusa do GitHub como dado, então chegar aqui quer
+      // dizer que a ponte recusou, e não que o token está errado.
+      (erro: unknown) =>
+        setConferencia({
+          fase: "recusado",
+          erro: erro instanceof Error ? erro.message : String(erro),
+        }),
+    );
+  };
+
+  const conferidoEm =
+    estado?.checkedAt == null
+      ? null
+      : new Date(estado.checkedAt * 1000).toLocaleString(i18n.language);
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-github-ambiente={estado?.env === true ? "sim" : "nao"}
+      data-locum-github-cofre={estado?.vault === true ? "aberto" : "fechado"}
+      data-locum-github-conferido={estado?.checkedAt ?? ""}
+      data-locum-github-guardado={estado === null ? "" : estado.stored ? "sim" : "nao"}
+      data-locum-github-login={estado?.identity?.login ?? ""}
+      data-locum-probe="github"
+    >
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="w-40 shrink-0 truncate font-medium">{estado?.ref ?? ""}</span>
+        <Badge variant={estado?.stored === true ? "secondary" : "destructive"}>
+          {t(estado?.stored === true ? "settings.github.stored" : "settings.github.absent")}
+        </Badge>
+        {estado?.env === true ? (
+          <Badge variant="outline">{t("settings.github.fromEnv")}</Badge>
+        ) : null}
+        {estado?.vault === false ? (
+          <Badge variant="outline">{t("settings.github.noVault")}</Badge>
+        ) : null}
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            data-locum-github-conferir=""
+            disabled={conferencia.fase === "conferindo"}
+            onClick={conferir}
+            size="sm"
+            variant="ghost"
+          >
+            {t(
+              conferencia.fase === "conferindo"
+                ? "settings.github.checking"
+                : "settings.github.check",
+            )}
+          </Button>
+          {estado?.stored === true ? (
+            <Button data-locum-github-esquecer="" onClick={esquecer} size="sm" variant="ghost">
+              {t("settings.github.forget")}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {estado?.identity == null ? null : (
+        <p className="text-muted-foreground text-xs" data-locum-github-identidade="">
+          {t("settings.github.identity", {
+            login: estado.identity.login,
+            scopes:
+              estado.identity.scopes.length === 0
+                ? t("settings.github.fineGrained")
+                : estado.identity.scopes.join(", "),
+          })}
+          {conferidoEm === null ? null : ` · ${t("settings.github.when", { when: conferidoEm })}`}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {/*
+         * Campo de senha, e não de texto: o valor colado aqui aparece em
+         * gravação de tela e em quem estiver olhando de lado, e o campo fica
+         * numa tela que se abre para conferir outras coisas.
+         */}
+        <input
+          aria-label={t("settings.github.field")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-64 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-github-token=""
+          onChange={(evento) => setToken(evento.target.value)}
+          placeholder={t("settings.github.placeholder")}
+          spellCheck={false}
+          type="password"
+          value={token}
+        />
+        <Button
+          data-locum-github-salvar=""
+          disabled={salvando || token.trim().length === 0}
+          onClick={guardar}
+          size="sm"
+          variant="secondary"
+        >
+          {t(salvando ? "settings.github.saving" : "settings.github.save")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">
+        {t("settings.github.howTo")}
+      </p>
+
+      <ResultadoDoGithub conferencia={conferencia} />
+    </div>
+  );
+}
+
+function ResultadoDoGithub({ conferencia }: { conferencia: Conferencia }) {
+  const { t } = useTranslation();
+
+  if (conferencia.fase === "parado" || conferencia.fase === "conferindo") return null;
+
+  if (conferencia.fase === "recusado") {
+    return (
+      <p
+        className="text-destructive text-xs"
+        data-locum-github-resultado="recusado"
+        data-locum-ok="nao"
+      >
+        {t("settings.github.refused", { message: conferencia.erro })}
+      </p>
+    );
+  }
+
+  const { resultado } = conferencia;
+  if (resultado.ok) {
+    return (
+      <p
+        className="text-muted-foreground text-xs"
+        data-locum-github-resultado="ok"
+        data-locum-ok="sim"
+      >
+        {t("settings.github.answered", {
+          login: resultado.login,
+          scopes:
+            resultado.scopes.length === 0
+              ? t("settings.github.fineGrained")
+              : resultado.scopes.join(", "),
+        })}
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className="text-destructive text-xs"
+      data-locum-github-resultado={resultado.reason}
+      data-locum-ok="nao"
+    >
+      {resultado.reason === "missing"
+        ? t("settings.github.missing")
+        : t("settings.github.failed", { error: resultado.message })}
     </p>
   );
 }

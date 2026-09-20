@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import type { ActionHandler } from "../approval/gate.js";
 import type { EventPayload } from "../executor/executor.js";
+import { GITHUB_TOKEN_ENV, githubToken } from "../services/github-service.js";
 
 export type Finding = {
   file?: string;
@@ -16,9 +17,21 @@ export type Finding = {
 
 export type ReviewPayload = { owner: string; repo: string; pull: number; findings: Finding[] };
 
+/**
+ * O cliente autenticado, com o token vindo do cofre ou do ambiente.
+ *
+ * Quem decide de onde o token sai é o `githubToken`, e não este arquivo: a
+ * mesma ordem vale para a varredura, para a ingestão e para a publicação, e
+ * repetir a decisão aqui faria um desses três caminhos ficar para trás no dia
+ * em que ela mudasse.
+ */
 export function octokit(): Octokit {
-  const auth = process.env.GITHUB_TOKEN;
-  if (!auth) throw new Error("GITHUB_TOKEN ausente");
+  const auth = githubToken();
+  if (auth === undefined) {
+    throw new Error(
+      `sem token do GitHub: guarde um na configuração ou exporte ${GITHUB_TOKEN_ENV}`,
+    );
+  }
   return new Octokit({ auth });
 }
 

@@ -483,7 +483,7 @@
       "description": "Seção na configuração para guardar o token do GitHub no keychain, pelo caminho do CredentialService, e um botão que testa a conexão e mostra quem é o usuário autenticado e quais escopos o token tem. Nunca mostrar o valor do token, só se há valor guardado e quando foi conferido pela última vez. Sem token, a seção explica onde criar e quais permissões pedir.",
       "done_when": "Um token gravado pela interface é lido pelo source do GitHub sem variável de ambiente, e o teste de conexão responde.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

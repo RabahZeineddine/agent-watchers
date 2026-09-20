@@ -1275,6 +1275,8 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
+  const github = await checkGithub(window);
+
   return t("smoke.config", {
     providers: provedores.length,
     fallbacks: fallbacks.length,
@@ -1282,7 +1284,242 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     fixture: FIXTURE_SERVER,
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
+    github,
   });
+}
+
+/**
+ * Confere a secao da credencial do GitHub, sem nunca falar com o GitHub.
+ *
+ * O marco proibe credencial de verdade, e essa proibicao nao tira nada do que
+ * a story pede: guardar, ler do cofre, conferir e esquecer sao quatro caminhos
+ * que terminam dentro da maquina. O unico pedaco que sairia daqui e a resposta
+ * do GitHub a um token, e ela e exercitada pelo servico com uma sonda trocada,
+ * que e o que existe para isso no construtor.
+ *
+ * O exame roda contra uma referencia sorteada, e nao contra `source/github`. O
+ * smoke roda no banco e no cofre de quem desenvolve, e escrever na referencia
+ * de verdade apagaria um token que pode estar em uso.
+ *
+ * Na interface, o clique de conferir so acontece com o cofre vazio, quando a
+ * resposta e "nao ha token" e nao sai da maquina. Com token guardado o exame
+ * pula o clique de proposito: ele viraria uma chamada autenticada a API do
+ * GitHub com a credencial de alguem, feita por um loop que roda sem ninguem
+ * olhando.
+ */
+async function checkGithub(window: BrowserWindow): Promise<string> {
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const {
+    GITHUB_CREDENTIAL_REF,
+    GITHUB_TOKEN_ENV,
+    GithubService,
+    githubToken,
+  } = await import("../src/services/github-service.js");
+
+  if (!secretService.available) throw new Error("keychain indisponivel para o cofre do GitHub");
+
+  const ref = `source/locum-smoke-${randomUUID().slice(0, 8)}`;
+  const token = `token-de-mentira-${randomUUID()}`;
+  let recebido: string | null = null;
+
+  const servico = new GithubService(
+    secretService,
+    settingsService,
+    async (visto) => {
+      recebido = visto;
+      return { login: "locum-smoke", scopes: ["repo", "read:org"] };
+    },
+    ref,
+  );
+
+  try {
+    const vazio = await servico.status();
+    if (vazio.stored) throw new Error(`a referencia sorteada ${ref} ja tinha valor`);
+    if (vazio.identity !== null) throw new Error("uma referencia nova nasceu com identidade");
+
+    // Sem token, a conferencia responde de dentro da maquina: a sonda nao e
+    // chamada, e e por isso que `recebido` continua nulo logo abaixo.
+    const semToken = await servico.check();
+    if (semToken.ok || semToken.reason !== "missing") {
+      throw new Error(`sem token a conferencia respondeu ${JSON.stringify(semToken)}`);
+    }
+    if (recebido !== null) throw new Error("a conferencia saiu perguntando sem ter token");
+
+    await servico.setToken(token);
+    if (readFileSync(secretService.pathFor(ref)).includes(token)) {
+      throw new Error("o token do GitHub foi para o disco em claro");
+    }
+
+    const conferida = await servico.check();
+    if (!conferida.ok) throw new Error(`a conferencia recusou: ${JSON.stringify(conferida)}`);
+    if (recebido !== token) throw new Error("a sonda recebeu um token diferente do guardado");
+    if (conferida.login !== "locum-smoke") {
+      throw new Error(`a conferencia devolveu a conta ${conferida.login}`);
+    }
+
+    const depois = await servico.status();
+    if (!depois.stored) throw new Error("o token nao ficou guardado");
+    if (depois.identity?.login !== "locum-smoke" || depois.checkedAt === null) {
+      throw new Error("a identidade conferida nao sobreviveu ao status");
+    }
+
+    // Trocar o token joga fora a conta que era dele. Sem isso a tela mostraria
+    // o login antigo ao lado de um token novo, com cara de dado conferido.
+    await servico.setToken(`${token}-outro`);
+    const trocado = await servico.status();
+    if (trocado.identity !== null || trocado.checkedAt !== null) {
+      throw new Error("a identidade do token anterior sobreviveu a troca");
+    }
+
+    if (!(await servico.clearToken())) throw new Error("esquecer nao achou o que apagar");
+    if ((await servico.status()).stored) throw new Error("o token sobreviveu ao esquecer");
+  } finally {
+    secretService.remove(ref);
+    await new GithubService(secretService, settingsService, undefined, ref).clearToken();
+  }
+
+  // O caminho que o source usa, com a variavel de ambiente fora do ar: e esse
+  // "sem variavel de ambiente" que a story cobra.
+  const doAmbiente = process.env[GITHUB_TOKEN_ENV];
+  delete process.env[GITHUB_TOKEN_ENV];
+  const jaGuardado = secretService.has(GITHUB_CREDENTIAL_REF);
+  try {
+    if (jaGuardado) {
+      // Quem desenvolve ja guardou o token dele. Sobrescrever para provar o
+      // caminho seria destruir o que esta em uso, entao o que se confere e que
+      // o cofre responde sem o ambiente, que e a mesma afirmacao.
+      const lido = githubToken();
+      if (lido === undefined) throw new Error("o cofre tinha token e o source nao o enxergou");
+    } else {
+      secretService.set(GITHUB_CREDENTIAL_REF, token);
+      try {
+        if (githubToken() !== token) {
+          throw new Error("o source nao leu do cofre o token que a interface guardaria");
+        }
+      } finally {
+        secretService.remove(GITHUB_CREDENTIAL_REF);
+      }
+      if (githubToken() !== undefined) throw new Error("o token sobreviveu ao remove");
+    }
+  } finally {
+    if (doAmbiente !== undefined) process.env[GITHUB_TOKEN_ENV] = doAmbiente;
+  }
+
+  // Agora a interface, que e o que a story entrega. A tela ja esta montada; o
+  // marcador espera a leitura de `github.status` responder.
+  const naTela = await esperarProbe<{ guardado: string; cofre: string; ambiente: string }>(
+    window,
+    "github",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=github]");
+      if (probe === null || probe.dataset.locumGithubGuardado === "") return null;
+      return {
+        guardado: probe.dataset.locumGithubGuardado,
+        cofre: probe.dataset.locumGithubCofre,
+        ambiente: probe.dataset.locumGithubAmbiente,
+      };
+    })()`,
+  );
+
+  if (naTela.cofre !== "aberto") throw new Error("a tela diz que o cofre esta fechado");
+  const esperado = secretService.has(GITHUB_CREDENTIAL_REF) ? "sim" : "nao";
+  if (naTela.guardado !== esperado) {
+    throw new Error(`a tela diz "${naTela.guardado}" e o cofre diz "${esperado}"`);
+  }
+
+  if (esperado === "sim") {
+    // Com token guardado nao ha o que exercitar sem sair da maquina, e o que a
+    // linha final do smoke diz e exatamente isso, sem fingir que conferiu.
+    return t("smoke.github", { path: t("smoke.githubStored") });
+  }
+
+  const clicouConferir = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector("[data-locum-github-conferir]");
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (clicouConferir !== true) throw new Error("a tela nao ofereceu botao de conferir");
+
+  const semTokenNaTela = await esperarProbe<string>(
+    window,
+    "conferencia do github",
+    `document.querySelector("[data-locum-github-resultado]")?.dataset.locumGithubResultado ?? null`,
+  );
+  if (semTokenNaTela !== "missing") {
+    throw new Error(`a tela respondeu "${semTokenNaTela}" para conferir sem token`);
+  }
+
+  // Digitar e guardar, que e o caminho que a story pede. O valor e de mentira e
+  // sai logo abaixo; o que esta sendo provado e que ele chega ao cofre e que a
+  // tela nao o mostra de volta.
+  const guardou = await window.webContents.executeJavaScript(
+    `(() => {
+      const campo = document.querySelector("[data-locum-github-token]");
+      const botao = document.querySelector("[data-locum-github-salvar]");
+      if (campo === null || botao === null) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set;
+      setter.call(campo, ${JSON.stringify(token)});
+      campo.dispatchEvent(new Event("input", { bubbles: true }));
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (guardou !== true) throw new Error("a tela nao ofereceu campo e botao de guardar");
+
+  try {
+    await esperarProbe<true>(
+      window,
+      "token guardado pela tela",
+      `document.querySelector("[data-locum-probe=github]")?.dataset.locumGithubGuardado === "sim"
+        ? true
+        : null`,
+    );
+
+    if (githubToken() !== token) {
+      throw new Error("o que a tela guardou nao foi o que o source leu do cofre");
+    }
+
+    // O campo volta vazio e o valor nao aparece em lugar nenhum da pagina. E o
+    // ponto da story: a tela grava segredo e nao o mostra, nem por acidente.
+    const naPagina = await window.webContents.executeJavaScript(
+      `(() => ({
+        campo: document.querySelector("[data-locum-github-token]").value,
+        html: document.documentElement.outerHTML.includes(${JSON.stringify(token)}),
+      }))()`,
+    );
+    const visto = naPagina as { campo: string; html: boolean };
+    if (visto.campo !== "") throw new Error("o campo ficou com o token depois de guardar");
+    if (visto.html) throw new Error("o token apareceu no HTML da pagina");
+  } finally {
+    secretService.remove(GITHUB_CREDENTIAL_REF);
+  }
+
+  const esqueceu = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector("[data-locum-github-esquecer]");
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (esqueceu !== true) throw new Error("a tela nao ofereceu botao de esquecer");
+
+  await esperarProbe<true>(
+    window,
+    "token esquecido pela tela",
+    `document.querySelector("[data-locum-probe=github]")?.dataset.locumGithubGuardado === "nao"
+      ? true
+      : null`,
+  );
+
+  return t("smoke.github", { path: t("smoke.githubRoundTrip") });
 }
 
 /**

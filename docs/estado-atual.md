@@ -23,7 +23,7 @@ que a interface vai usar.
 | executor durável com retomada | pronto e verificado |
 | orçamento por execução e por dia | pronto e verificado |
 | fila de aprovação com identificador externo antes da publicação | pronto |
-| fonte GitHub com varredura por cursor | escrito, sem teste com token |
+| fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
@@ -40,14 +40,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 33 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 39 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -59,6 +59,7 @@ que a interface vai usar.
 | empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
+| credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
 
 ## Execução verificada
 
@@ -476,6 +477,30 @@ quem liga os dois, e nada impede dois cadastros apontarem para a mesma. Por
 isso o `credentials.overview` devolve os usuários de cada referência e a tela
 indexa por `kind:name`. O que ele nunca devolve é valor: o cofre só se abre no
 caminho de quem vai conectar, e a janela não é esse caminho.
+
+**O token do GitHub atravessa a ponte numa direção só.** A regra de que a
+janela não abre o cofre continua de pé: nenhum canal devolve valor de segredo, e
+`github.status` responde endereço, se há algo guardado, de quem é a conta e
+quando foi a última conferência. O que mudou é que existe um canal de ida,
+`github.save`, porque digitar o token em algum lugar é o único jeito de ele
+chegar ao keychain sem abrir terminal. A prova de que a volta não existe está no
+catálogo de leitura, escrito à mão, e o smoke a repete de fora: depois de
+guardar, o valor não aparece no campo nem no HTML da página.
+
+**Guardar token novo apaga a conta do anterior.** O login e os escopos descrevem
+o token que estava ali, e não a referência. Mantê-los depois da troca faria a
+tela afirmar, com cara de dado conferido, uma conta que o token novo pode nem
+ter. Por isso `setToken` e `clearToken` limpam a conferência, e o smoke cobra
+isso.
+
+**A conferência do GitHub é exercitada sem falar com o GitHub.** O marco proíbe
+credencial de verdade, e a proibição não tira nada do que a story pede: guardar,
+ler do cofre, conferir e esquecer terminam dentro da máquina. O único pedaço que
+sairia é a resposta do GitHub a um token, e ela entra pelo construtor do
+`GithubService`, que aceita a sonda trocada. Na interface o clique de conferir só
+acontece com o cofre vazio, quando a resposta é "não há token" e não sai daqui;
+com token guardado o exame pula o clique, porque ele viraria uma chamada
+autenticada feita por um loop que roda sem ninguém olhando.
 
 **O único clique do smoke é testar conexão.** O botão de reexecutar passo
 continua sendo só conferido por existir, porque clicar solta o executor de
