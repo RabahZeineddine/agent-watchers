@@ -47,6 +47,7 @@ que a interface vai usar.
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
 | tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
+| grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 
 ## Execução verificada
 
@@ -395,6 +396,37 @@ fixture, pelo mesmo motivo do `.mcp.json`: o cadastro não tem campo para
 diretório de trabalho, e quem sobe o processo usa o `cwd` de quem chamou, que é
 `app/` para o smoke e a raiz do repositório para um cliente externo. O registro
 é por nome, então subir o smoke de novo sobrescreve em vez de acumular linha.
+
+**A família de workflow não se chama workflow no registry.** O
+`npx shadcn add @ai-elements/workflow` responde 404: o que existe são os itens
+soltos `canvas`, `node`, `edge`, `connection`, `controls`, `panel` e `toolbar`,
+e o grafo precisa dos quatro primeiros. Todos dependem de `@xyflow/react`, que
+entrou como dependência e é empacotada pelo Vite, sem nada de rede em tempo de
+execução. Como nas outras vendorizações, a CLI escreve em `app/src/components`
+e mover para `app/renderer/components` é parte do trabalho.
+
+**O dado de um nó do React Flow precisa de assinatura de índice.** A restrição
+é `Record<string, unknown>`, e `interface` não a satisfaz: só o alias de objeto
+ganha a assinatura implícita. Declarar o dado do passo como `interface` quebra
+a compilação em três lugares de uma vez, e a mensagem fala de índice ausente,
+não de React Flow.
+
+**O arranjo do grafo é conta nossa.** O React Flow desenha onde mandarem, e não
+posiciona nada sozinho. A coluna de cada passo é a maior distância até um passo
+sem dependência, e não a menor: com a menor, um passo que espera dois cairia à
+esquerda de quem ele espera e a seta apontaria para trás. Quem faz a conta é
+`renderer/lib/grafo.ts`, fora do componente.
+
+**A aresta entra no DOM um quadro depois do nó.** O React Flow só desenha a
+ligação depois de medir as caixas, então conferir logo que o nó aparece
+contaria zero aresta com o grafo certo na tela. O smoke gira até as duas
+contagens saírem do zero, e compara nó e aresta contra o `needs` do spec, não
+contra número escrito no teste.
+
+**A forma do grafo vem do spec, o estado vem do run.** A tabela `steps` guarda
+a ordem em que o executor rodou, que é uma linearização: desenhar a partir dela
+transformaria todo grafo numa fila. O `needs` só existe no spec da versão que
+executou, que o `runs.get` já devolve junto.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

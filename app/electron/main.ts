@@ -3,6 +3,10 @@ import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+// So tipo: o `import type` e apagado no build, e um import de valor vindo de
+// `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
+// apontar o binario do Electron.
+import type { RunService } from "../src/services/run-service.js";
 
 const smoke = process.argv.includes("--smoke");
 
@@ -1252,10 +1256,89 @@ async function checkRuns(window: BrowserWindow, runId: string): Promise<string> 
     throw new Error(`os botoes de reexecutar cobrem ${rerun} e os passos sao ${detalhe.chaves}`);
   }
 
+  const grafo = await checkGrafo(window, doBanco);
+
   return (
     `lista com ${lista.total} execucao(oes) e ${desenhadas} linha(s) desenhada(s), ` +
-    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada`
+    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada, ` +
+    grafo
   );
+}
+
+/**
+ * Confere o grafo do run que esta aberto na janela.
+ *
+ * O esperado sai do `needs` do spec, e nao de uma lista escrita aqui: o que
+ * precisa ser provado e que o desenho segue a dependencia declarada, e nao que
+ * alguem lembrou de atualizar dois lugares ao mesmo tempo.
+ *
+ * O no e a aresta sao contados no DOM alem de conferidos no marcador, pelo
+ * mesmo motivo da lista virtualizada: um grafo que montasse a conta certa e
+ * desenhasse nada passaria pela primeira conferencia inteira.
+ */
+async function checkGrafo(
+  window: BrowserWindow,
+  run: Awaited<ReturnType<RunService["get"]>>,
+): Promise<string> {
+  if (run === undefined) throw new Error("o grafo foi conferido sem run");
+
+  const chaves = run.spec.steps.map((p) => p.key);
+  const esperadas = run.spec.steps.flatMap((passo) =>
+    passo.needs.filter((n) => chaves.includes(n)).map((n) => `${n}->${passo.key}`),
+  );
+  if (esperadas.length !== 3) {
+    throw new Error(`o agent semente passou a ter ${esperadas.length} arestas e o smoke espera tres`);
+  }
+
+  const visto = await esperarProbe<{
+    arestas: string;
+    desenhadas: number;
+    estados: string;
+    nos: string;
+  }>(
+    window,
+    "grafo",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=grafo]");
+      if (probe === null) return null;
+      const caixas = Array.from(document.querySelectorAll("[data-locum-no]"));
+      // A aresta so entra no DOM depois que o React Flow mede as caixas, que e
+      // um quadro depois do no aparecer: sem esta espera a contagem sairia
+      // zero com o grafo certo na tela.
+      const linhas = document.querySelectorAll(".react-flow__edge").length;
+      if (caixas.length === 0 || linhas === 0) return null;
+      return {
+        arestas: probe.dataset.arestas,
+        desenhadas: linhas,
+        estados: caixas.map((c) => c.dataset.locumNo + ":" + c.dataset.locumEstado).join(","),
+        nos: probe.dataset.nos,
+      };
+    })()`,
+  );
+
+  if (visto.nos !== chaves.join(",")) {
+    throw new Error(`o grafo listou os nos ${visto.nos} e o spec tem ${chaves.join(",")}`);
+  }
+  if (visto.arestas !== esperadas.join(",")) {
+    throw new Error(`o grafo listou as arestas ${visto.arestas} e o spec pede ${esperadas.join(",")}`);
+  }
+  if (visto.desenhadas !== esperadas.length) {
+    throw new Error(`o grafo desenhou ${visto.desenhadas} aresta(s) e o spec pede ${esperadas.length}`);
+  }
+
+  // O estado por no e o que separa "desenhou caixa" de "desenhou o run": o
+  // passo pulado e o que espera aprovacao so aparecem se vierem do banco.
+  const doBanco = run.steps.map((p) => `${p.stepKey}:${p.status}`).join(",");
+  if (visto.estados !== doBanco) {
+    throw new Error(`o grafo mostrou ${visto.estados} e o run esta em ${doBanco}`);
+  }
+  for (const exigido of ["skipped", "awaiting_approval"]) {
+    if (!visto.estados.includes(`:${exigido}`)) {
+      throw new Error(`o grafo do fixture nao mostrou nenhum passo ${exigido}`);
+    }
+  }
+
+  return `grafo com ${chaves.length} no(s) e ${visto.desenhadas} aresta(s), estados ${visto.estados}`;
 }
 
 /**

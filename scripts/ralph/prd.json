@@ -340,7 +340,7 @@
       "description": "Desenho somente leitura do run com a familia de workflow do AI Elements, lendo needs de cada passo. Estado por cor, passo pulado e passo aguardando aprovacao visiveis. Sem edicao: o editor continua sendo a lista.",
       "done_when": "O grafo do agent semente mostra os quatro passos e as tres arestas.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

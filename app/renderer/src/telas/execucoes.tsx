@@ -18,6 +18,7 @@ import { useJanela } from "@/lib/janela";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { useState } from "react";
+import { GrafoDaExecucao } from "../grafo";
 import type { TelaProps } from "../rotas";
 
 type Execucao = ReadResult<"runs.list">[number];
@@ -167,6 +168,13 @@ function Execucao({ navegar, runId }: { navegar: TelaProps["navegar"]; runId: st
           {detalhe.error}
         </p>
       ) : null}
+
+      {/*
+        O grafo antes da linha do tempo de proposito: ele responde "o que esta
+        esperando o que", e a lista abaixo responde "o que aconteceu em cada
+        um". Quem abre um run parado quer a primeira pergunta.
+      */}
+      <GrafoDaExecucao detalhe={detalhe} />
 
       <ol className="flex flex-col gap-3">
         {detalhe.steps.map((passo) => (
