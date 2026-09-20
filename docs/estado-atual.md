@@ -29,6 +29,11 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; falta o evento de energia do M3 |
+| camada de serviço, dez serviços | pronto |
+| servidor MCP próprio, 19 ferramentas | pronto |
+| reconciliador de review humano | pronto, sem teste com token |
+| métricas por versão | pronto |
+| agendador por cursor | pronto, falta o evento de energia do M3 |
 | casca Electron e interface | não começou |
 
 ## Execução verificada

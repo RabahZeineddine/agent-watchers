@@ -74,6 +74,28 @@ um assistente externo enquanto a interface está sendo construída. Isso transfo
 a interface em conforto, não em pré-requisito, e reduz o risco de o projeto
 parar antes de ser útil.
 
+### 6. Gravar agent também não pode publicar
+
+Emenda de 19 de setembro de 2026, escrita depois da revisão do primeiro lote de
+implementação.
+
+Não expor aprovação não bastava. O `upsert_agent` grava o spec inteiro, e um
+passo de ação carrega o modo. Gravar um passo em automático e chamar `run_agent`
+publicaria sem clique nenhum, contornando a decisão 4 em dois movimentos.
+
+A gravação passa a declarar quem está gravando. Vinda de agent, todo passo de
+ação em rascunho ou automático volta rebaixado para aprovação, e o rebaixamento
+é declarado na resposta. Passo que já estava naquele modo na versão anterior
+segue como está: uma pessoa autorizou antes, e reeditar outra parte do spec não
+derruba essa autorização.
+
+O padrão do parâmetro é agent, de modo que um ponto de chamada novo que esqueça
+de declarar cai no lado restritivo.
+
+A lição vale para o resto do projeto: a invariante não é "não existe ferramenta
+de aprovar", é "nada sai sem uma pessoa ter dito que sai". Cada capacidade nova
+precisa ser conferida contra a segunda formulação, não contra a primeira.
+
 ## Consequências
 
 O cadastro de servidores MCP sai da lista fixa em `src/cli.ts` e passa para o
