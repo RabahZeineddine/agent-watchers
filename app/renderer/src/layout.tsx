@@ -74,10 +74,10 @@ export function Layout() {
   const naFila = pendencias.data?.length ?? -1;
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <nav className="flex w-56 shrink-0 flex-col border-border border-r">
+    <div className="flex h-screen text-foreground">
+      <nav className="regiao-de-arrasto flex w-56 shrink-0 flex-col border-sidebar-border border-r">
         <div
-          className="px-4 pt-6 pb-4 font-semibold text-sm tracking-tight"
+          className="px-4 pt-8 pb-4 font-semibold text-sm tracking-tight"
           data-locum-probe="marca"
         >
           Locum
@@ -119,8 +119,8 @@ export function Layout() {
         />
       </nav>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center border-border border-b px-6 py-4">
+      <div className="bg-background flex min-w-0 flex-1 flex-col">
+        <header className="regiao-de-arrasto flex items-center border-border border-b px-6 py-4">
           <h1 className="font-semibold text-lg">{rota.titulo}</h1>
         </header>
         <main

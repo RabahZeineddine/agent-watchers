@@ -27,6 +27,11 @@ export type ProviderEntry = {
    */
   requires: string[];
   model?: (id: string) => LanguageModel;
+  /**
+   * Onde perguntar quais modelos existem. O catalogo e do provedor, e um
+   * gateway expoe o que quiser: lista fixa no codigo envelhece e mente.
+   */
+  catalog?: () => { url: string; headers: Record<string, string> };
 };
 
 /**
@@ -78,6 +83,10 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
       requires: [keyVar, urlVar],
       model: (id: string) =>
         createOpenAICompatible({ name, apiKey: apiKey!, baseURL: baseURL! }).chatModel(id),
+      catalog: () => ({
+        url: `${baseURL!.replace(/\/$/, "")}/models`,
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }),
     } satisfies ProviderEntry;
   };
 
@@ -88,11 +97,22 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
       available: () => Boolean(env("ANTHROPIC_API_KEY")),
       requires: ["ANTHROPIC_API_KEY"],
       model: (id) => createAnthropic({ apiKey: env("ANTHROPIC_API_KEY")! })(id),
+      catalog: () => ({
+        url: "https://api.anthropic.com/v1/models",
+        headers: {
+          "x-api-key": env("ANTHROPIC_API_KEY")!,
+          "anthropic-version": "2023-06-01",
+        },
+      }),
     },
     openai: {
       available: () => Boolean(env("OPENAI_API_KEY")),
       requires: ["OPENAI_API_KEY"],
       model: (id) => createOpenAI({ apiKey: env("OPENAI_API_KEY")! })(id),
+      catalog: () => ({
+        url: "https://api.openai.com/v1/models",
+        headers: { Authorization: `Bearer ${env("OPENAI_API_KEY")}` },
+      }),
     },
     google: {
       available: () => Boolean(env("GOOGLE_GENERATIVE_AI_API_KEY")),
@@ -108,6 +128,10 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
       requires: ["OLLAMA_BASE_URL"],
       model: (id) =>
         createOpenAICompatible({ name: "ollama", apiKey: "ollama", baseURL: env("OLLAMA_BASE_URL")! }).chatModel(id),
+      catalog: () => ({
+        url: `${env("OLLAMA_BASE_URL")!.replace(/\/$/, "")}/models`,
+        headers: {},
+      }),
     },
   };
 }

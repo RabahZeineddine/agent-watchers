@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { BRIDGE_CHANNELS, BRIDGE_GLOBAL, type LocumBridge } from "./bridge-contract.js";
+import {
+  BRIDGE_CHANNELS,
+  BRIDGE_GLOBAL,
+  CHAT_EVENT_CHANNEL,
+  type LocumBridge,
+} from "./bridge-contract.js";
 
 /**
  * O preload, que e a unica coisa que a janela ganha do lado de ca.
@@ -20,5 +25,14 @@ for (const channel of BRIDGE_CHANNELS) {
   // versao dela para sair de sincronia.
   bridge[group][member] = (...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
 }
+
+// Assinatura do fluxo do chat. Um canal fixo, sem nome vindo da janela, para
+// que a janela nao consiga escutar qualquer coisa que trafegue no IPC.
+bridge["chat"] ??= {};
+bridge["chat"]["onEvent"] = (ouvinte: (evento: unknown) => void) => {
+  const encaminha = (_e: unknown, evento: unknown) => ouvinte(evento);
+  ipcRenderer.on(CHAT_EVENT_CHANNEL, encaminha);
+  return () => ipcRenderer.removeListener(CHAT_EVENT_CHANNEL, encaminha);
+};
 
 contextBridge.exposeInMainWorld(BRIDGE_GLOBAL, bridge as unknown as LocumBridge);

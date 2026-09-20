@@ -114,6 +114,47 @@ export class ProviderService {
     }));
   }
 
+  /**
+   * Modelos que o provedor declara ter, perguntando a ele.
+   *
+   * Nao existe lista fixa no codigo de proposito. Um gateway expoe o catalogo
+   * que a organizacao dele decidiu, e um id chutado aqui quebra na primeira
+   * chamada, tarde, dentro de uma execucao.
+   */
+  async listModels(name: string): Promise<{ modelos: string[]; erro?: string }> {
+    const entry = this.providers[name];
+    if (!entry) return { modelos: [], erro: `provedor "${name}" nao existe` };
+    if (!entry.available()) {
+      return { modelos: [], erro: `provedor "${name}" sem credencial nesta maquina` };
+    }
+    if (!entry.catalog) {
+      return { modelos: [], erro: `provedor "${name}" nao publica catalogo de modelos` };
+    }
+
+    const { url, headers } = entry.catalog();
+    try {
+      const resposta = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+      if (!resposta.ok) {
+        return { modelos: [], erro: `catalogo respondeu ${resposta.status}` };
+      }
+      const corpo = (await resposta.json()) as { data?: { id?: string }[]; models?: { name?: string }[] };
+      // OpenAI e compativeis devolvem `data[].id`; Anthropic tambem. Ollama, na
+      // rota nativa, devolve `models[].name`, e a compativel devolve `data`.
+      const ids = (corpo.data ?? []).map((m) => m.id).concat((corpo.models ?? []).map((m) => m.name));
+      return { modelos: ids.filter((v): v is string => typeof v === "string").sort() };
+    } catch (err) {
+      return { modelos: [], erro: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** Catalogo de todos os provedores disponiveis, prefixado com o nome deles. */
+  async listAllModels(): Promise<{ provedor: string; modelos: string[]; erro?: string }[]> {
+    const disponiveis = this.listProviders().filter((p) => p.available && !p.subscription);
+    return Promise.all(
+      disponiveis.map(async (p) => ({ provedor: p.name, ...(await this.listModels(p.name)) })),
+    );
+  }
+
   isAvailable(name: string): boolean {
     return this.providers[name]?.available() ?? false;
   }

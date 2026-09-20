@@ -52,6 +52,12 @@ function createWindow(options: { show?: boolean } = {}): BrowserWindow {
     height: 760,
     show: false,
     titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 16 },
+    // Material do sistema atras da janela. Sem isto o fundo escuro vira um
+    // retangulo chapado, que e o que denuncia interface web dentro de janela.
+    vibrancy: "under-window",
+    visualEffectState: "active",
+    backgroundColor: "#00000000",
     webPreferences: {
       preload: PRELOAD,
       // A janela nao tem Node nenhum. Tudo que ela alcanca do sistema passa

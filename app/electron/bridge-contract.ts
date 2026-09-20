@@ -66,6 +66,12 @@ interface ServiceApi {
   "providers.fallbacks": ProviderService["getFallbacks"];
   /** Onde cada modelo do spec cai nesta maquina. So conta, nao dispara nada. */
   "providers.preview": ProviderService["resolvePreviews"];
+  /**
+   * O catalogo vem do provedor, nao de lista no codigo. Gateway publica o que a
+   * organizacao dele decidiu, e id chutado quebra tarde, dentro de uma execucao.
+   */
+  "providers.models": ProviderService["listModels"];
+  "providers.allModels": ProviderService["listAllModels"];
 
   /**
    * Onde cada credencial mora e se ha valor guardado nela. Nunca o valor: o
@@ -84,6 +90,19 @@ interface ServiceApi {
 
   /** Run para onde o ultimo clique de notificacao mandou, ou nulo. */
   "window.inboxTarget": () => string | null;
+
+  /**
+   * O console em linguagem natural.
+   *
+   * `send` dispara e volta logo: a resposta chega em pedaco pelo canal de
+   * evento, porque texto so aparecendo no fim vira silencio de meio minuto.
+   * O catalogo de ferramentas do assistente e outro arquivo, escrito a mao, e
+   * nao inclui aprovar: ele le diff e achado, que sao conteudo de terceiro.
+   */
+  "chat.status": () => Promise<{ disponivel: boolean; modelo: string | null; motivo?: string }>;
+  "chat.setModel": (modelo: string) => Promise<void>;
+  "chat.send": (texto: string) => Promise<void>;
+  "chat.cancel": () => Promise<void>;
 }
 
 export type LocumApi = { [K in keyof ServiceApi]: Asyncify<ServiceApi[K]> };
@@ -113,6 +132,8 @@ export const BRIDGE_CHANNELS = [
   "providers.list",
   "providers.fallbacks",
   "providers.preview",
+  "providers.models",
+  "providers.allModels",
   "credentials.overview",
   "metrics.report",
   "machine.profile",
@@ -121,6 +142,10 @@ export const BRIDGE_CHANNELS = [
   "startup.get",
   "startup.set",
   "window.inboxTarget",
+  "chat.status",
+  "chat.setModel",
+  "chat.send",
+  "chat.cancel",
 ] as const satisfies readonly (keyof LocumApi)[];
 
 export type BridgeChannel = (typeof BRIDGE_CHANNELS)[number];
@@ -134,6 +159,13 @@ export type LocumBridge = {
     [M in MemberOf<G, BridgeChannel>]: LocumApi[`${G}.${M}` & BridgeChannel];
   };
 };
+
+/**
+ * Canal de mao unica, do processo principal para a janela.
+ *
+ * Fica fora de `BRIDGE_CHANNELS` porque nao e chamada com resposta: e fluxo.
+ */
+export const CHAT_EVENT_CHANNEL = "chat:event";
 
 /** O nome sob o qual o preload pendura a ponte na janela. */
 export const BRIDGE_GLOBAL = "locum";

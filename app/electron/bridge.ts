@@ -1,4 +1,5 @@
 import { ipcMain, type BrowserWindow, type WebContents } from "electron";
+import { chatSession } from "./chat.js";
 import {
   BRIDGE_CHANNELS,
   type BridgeChannel,
@@ -51,6 +52,15 @@ function assertTrusted(sender: WebContents, channel: BridgeChannel): void {
  * e sinal de que a regra escapou do servico, e a linha de comando e o servidor
  * MCP vao deixar de enxerga-la.
  */
+/**
+ * Quem pediu e quem recebe o fluxo do chat.
+ *
+ * Guardado por chamada em vez de vir do `BridgeHandlers`, porque o destino do
+ * fluxo e sempre a janela que mandou a mensagem, e nao uma janela fixa
+ * escolhida na subida.
+ */
+let remetente: WebContents | null = null;
+
 function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
   return {
     "agents.list": () => agentService.list(),
@@ -77,6 +87,16 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
       return { approvalId, decision };
     },
 
+    // O assistente responde por fluxo, entao `send` volta assim que a conversa
+    // comeca. O que chega de volta vai pelo canal de evento.
+    "chat.status": () => chatSession.status(),
+    "chat.setModel": (modelo) => chatSession.escolher(modelo),
+    "chat.send": async (texto) => {
+      if (!remetente) throw new Error("sem janela para receber o fluxo");
+      await chatSession.enviar(texto, remetente);
+    },
+    "chat.cancel": async () => chatSession.interromper(),
+
     "mcp.list": () => mcpService.list(),
     "mcp.test": (name) => mcpService.testConnection(name),
     "mcp.tools": (name) => mcpService.listTools(name),
@@ -84,6 +104,8 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "providers.list": async () => providerService.listProviders(),
     "providers.fallbacks": (machine) => providerService.getFallbacks(machine),
     "providers.preview": (models, machine) => providerService.resolvePreviews(models, machine),
+    "providers.models": (nome) => providerService.listModels(nome),
+    "providers.allModels": () => providerService.listAllModels(),
 
     "credentials.overview": () => credentialService.overview(),
 
@@ -112,6 +134,7 @@ export function setupBridge(bridgeHandlers: BridgeHandlers): number {
   for (const channel of BRIDGE_CHANNELS) {
     ipcMain.handle(channel, async (event, ...args: unknown[]) => {
       assertTrusted(event.sender, channel);
+      remetente = event.sender;
       // O cast e inevitavel: o `ipcMain` entrega `unknown[]`, e o tipo de cada
       // canal so existe no contrato. O que sustenta a assinatura e o mapa
       // acima, que compila contra os servicos.
