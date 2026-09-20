@@ -88,6 +88,11 @@ e não só contra o `npm run build`.
 notarização, não publicar em servidor de atualização. Depende de conta que o
 dono do repositório pode não ter, e é decisão dele.
 
+**Nada de credencial de verdade, no marco M6.** Não criar token do GitHub, não
+chamar a API do GitHub com credencial real, não observar repositório nenhum. As
+stories constroem o caminho; quem conecta é o dono do repositório, com o token
+dele. Verificação continua sendo com evento sintético.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
