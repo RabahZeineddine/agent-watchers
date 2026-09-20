@@ -39,12 +39,13 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 23 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
+| tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
 
 ## Execução verificada
 
@@ -275,6 +276,28 @@ quebraria isso na hora.
 objeto literal, que muda de referência a cada render, e comparar por identidade
 dispararia a leitura em laço. Os argumentos de verdade viajam numa `ref`, porque
 espalhá-los na lista traria a identidade de volta.
+
+**Comparar versão exige duas, e o banco novo tem uma.** O
+`app/src/fixtures/agent-history.ts` planta a que falta, e planta a antiga, não a
+nova: ele grava o passo de ação em `draft` e logo em seguida devolve o spec
+canônico por cima, então o topo do histórico continua em `approve`. A ordem é o
+ponto. Deixar o `draft` no topo faria uma verificação afrouxar o modo de
+publicação do agent que roda nesta máquina, e o teto do que sai sem clique não é
+coisa que teste mexe. A idempotência é por conteúdo, e não por identificador:
+o `upsert` devolve a versão existente quando o spec bate com o topo, e a
+checagem antes da gravação é o que impede o histórico de crescer duas linhas a
+cada subida do smoke.
+
+**Contar token de ferramenta sobe servidor.** Por isso `mcp.tools` entrou em
+`ACTION_CHANNELS`, e não no catálogo de leitura: num hook que dispara ao montar
+a tela, abrir o destino de agents subiria todo servidor MCP citado por um spec.
+Atrás de um clique, sobe o que alguém pediu e só quando pediu. O smoke confere
+que existe um botão por passo com ferramenta, e nunca clica.
+
+**Prévia de modelo em lote.** O `resolvePreview` relê a tabela de substituição
+da máquina a cada chamada, então uma tela que pergunta pelo spec inteiro faria
+uma consulta por passo. O `resolvePreviews` lê uma vez e responde a lista, e é
+ele que o canal `providers.preview` encaminha.
 
 **A execução do smoke é plantada, não rodada.** Um `demo` de verdade custa
 minutos de assinatura, e o smoke roda a cada iteração do loop. Por isso

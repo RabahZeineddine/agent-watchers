@@ -62,6 +62,8 @@ interface ServiceApi {
 
   "providers.list": ProviderService["listProviders"];
   "providers.fallbacks": ProviderService["getFallbacks"];
+  /** Onde cada modelo do spec cai nesta maquina. So conta, nao dispara nada. */
+  "providers.preview": ProviderService["resolvePreviews"];
 
   "metrics.report": MetricsService["report"];
   "machine.profile": MachineService["profile"];
@@ -101,6 +103,7 @@ export const BRIDGE_CHANNELS = [
   "mcp.tools",
   "providers.list",
   "providers.fallbacks",
+  "providers.preview",
   "metrics.report",
   "machine.profile",
   "triggers.list",

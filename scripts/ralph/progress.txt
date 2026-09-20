@@ -26,3 +26,4 @@
 2026-09-19  M4a.3 feito      cliente tipado da ponte no renderer, catalogo de leitura a mao sem approvals.decide, smoke confere agents runs e fila
 2026-09-19  M4a.4 feito      barra lateral com quatro destinos, rota por hash com fallback para inbox, paleta pelo atalho sem comando, smoke navega e confere o destino ativo
 2026-09-19  M4a.5 feito      tela de execucoes com lista virtualizada e linha do tempo dos passos, fixture de run planta sem gastar assinatura, botao de reexecutar por passo
+2026-09-19  M4a.6 feito      tela de agents com historico de versoes e comparacao de spec, previa de modelo por passo, fixture planta a versao antiga sem afrouxar o topo

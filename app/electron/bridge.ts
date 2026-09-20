@@ -81,6 +81,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "providers.list": async () => providerService.listProviders(),
     "providers.fallbacks": (machine) => providerService.getFallbacks(machine),
+    "providers.preview": (models, machine) => providerService.resolvePreviews(models, machine),
 
     "metrics.report": (options) => metricsService.report(options),
     "machine.profile": () => machineService.profile(),

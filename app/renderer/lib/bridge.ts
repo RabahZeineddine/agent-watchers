@@ -41,6 +41,7 @@ export const READ_CHANNELS = [
   "mcp.list",
   "providers.list",
   "providers.fallbacks",
+  "providers.preview",
   "metrics.report",
   "machine.profile",
   "triggers.list",
@@ -62,9 +63,15 @@ export type ReadChannel = (typeof READ_CHANNELS)[number];
  * `approvals.decide`. Ela nao e uma acao da janela, e o clique de uma pessoa
  * na inbox, e chega ao processo principal por um caminho que a inbox monta,
  * nao por um catalogo que qualquer tela enxerga.
+ *
+ * `mcp.tools` esta aqui, e nao na lista de leitura, porque contar o peso de
+ * uma ferramenta sobe o servidor que a expoe. Numa tela que lista agents isso
+ * significaria subir todo servidor citado por um spec so de abrir o destino;
+ * atras de um clique, sobe o que alguem pediu e so quando pediu.
  */
 export const ACTION_CHANNELS = [
   "runs.rerunStep",
+  "mcp.tools",
 ] as const satisfies readonly BridgeChannel[];
 
 export type ActionChannel = (typeof ACTION_CHANNELS)[number];

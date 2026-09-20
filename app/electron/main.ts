@@ -576,12 +576,16 @@ async function checkRenderer(): Promise<string> {
   const { agentService } = await import("../src/services/agent-service.js");
   const { runService } = await import("../src/services/run-service.js");
   const { ensureDemoRun } = await import("../src/fixtures/demo-run.js");
+  const { ensureAgentHistory } = await import("../src/fixtures/agent-history.js");
 
   // Banco vazio faz a tela de execucoes passar sem provar nada: lista vazia e
   // detalhe inexistente batem com servico vazio por acidente. O fixture planta
   // uma execucao pronta, e nao roda o pipeline, que custaria minutos de
   // assinatura a cada verificacao do loop.
   const fixture = await ensureDemoRun();
+  // A tela de agents compara duas versoes, e um banco novo so tem uma. O
+  // fixture planta a que falta sem rodar nada, e deixa o spec canonico no topo.
+  await ensureAgentHistory();
 
   setupBridge({ inboxTarget: pendingInboxTarget });
 
@@ -615,6 +619,9 @@ async function checkRenderer(): Promise<string> {
 
     const rotas = await checkRoutes(window);
     const paleta = await checkPalette(window);
+    // Antes das execucoes de proposito: o `checkRuns` deixa a janela no detalhe
+    // de um run, que e onde a verificacao do destaque procura o bloco de codigo.
+    const agents = await checkAgents(window);
 
     const execucoes = await checkRuns(window, fixture);
     // O bloco de codigo mora no detalhe de uma execucao, que e quem vai usa-lo
@@ -641,7 +648,7 @@ async function checkRenderer(): Promise<string> {
 
     return (
       "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
-      `${rotas} navegando, ${paleta}, ${execucoes}, ` +
+      `${rotas} navegando, ${paleta}, ${agents}, ${execucoes}, ` +
       `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
       `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
     );
@@ -817,6 +824,173 @@ async function checkPalette(window: BrowserWindow): Promise<string> {
   if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
 
   return "paleta abrindo e fechando pelo atalho";
+}
+
+/**
+ * Confere a tela de agents: a lista, o historico e a comparacao de versoes.
+ *
+ * Tudo que a janela mostra e conferido contra os mesmos servicos, e nao contra
+ * numeros escritos aqui. O unico valor deste lado e a exigencia da story, que e
+ * a diferenca de modo do passo de acao aparecer na comparacao: qual modo e de
+ * cada versao sai do banco, porque o fixture pode mudar e o teste continua
+ * valendo.
+ *
+ * O botao de contar tokens e conferido por existir, e nunca clicado. Clicar
+ * subiria os servidores MCP citados pelo spec, e o loop roda sem ninguem
+ * olhando: o que esta sendo provado aqui e a fiacao.
+ */
+async function checkAgents(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { providerService } = await import("../src/services/provider-service.js");
+
+  await irPara(window, "agents");
+  const lista = await esperarProbe<{ agents: string; total: number }>(
+    window,
+    "agents",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agents]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { agents: probe.dataset.agents, total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  const doServico = await agentService.list();
+  if (lista.agents !== doServico.map((a) => a.id).join(",")) {
+    throw new Error(`a lista mostrou ${lista.agents} e o servico devolveu ${doServico.length} agent(s)`);
+  }
+
+  const desenhadas = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-agent]").length`,
+  )) as number;
+  if (desenhadas !== doServico.length) {
+    throw new Error(`a lista desenhou ${desenhadas} linha(s) para ${doServico.length} agent(s)`);
+  }
+
+  // O alvo e quem tem historico: comparar versao exige duas, e um agent de uma
+  // versao so provaria a tela de lista mais uma vez.
+  let alvo: string | undefined;
+  for (const agent of doServico) {
+    if ((await agentService.listVersions(agent.id)).length >= 2) {
+      alvo = agent.id;
+      break;
+    }
+  }
+  if (alvo === undefined) throw new Error("nenhum agent tem duas versoes para comparar");
+
+  await irPara(window, "agents", alvo);
+  const detalhe = await esperarProbe<{
+    versoes: string;
+    versao: number;
+    comparando: string;
+    diff: number;
+    saiu: string;
+    entrou: string;
+  }>(
+    window,
+    "agent",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agent]");
+      const diff = document.querySelector("[data-locum-probe=diff]");
+      const passos = document.querySelector("[data-locum-passos]");
+      // As previas de modelo sao uma terceira leitura, e ela so comeca depois
+      // que o perfil da maquina chega: girar ate ela terminar e o que separa
+      // conferir o que a maquina resolve de conferir o estado de carregando.
+      if (probe === null || diff === null || passos === null) return null;
+      if (probe.dataset.versoes === "") return null;
+      if (passos.dataset.locumMaquina === "" || passos.dataset.locumPrevias !== "ready") return null;
+      return {
+        versoes: probe.dataset.versoes,
+        versao: Number(probe.dataset.versao),
+        comparando: probe.dataset.comparando,
+        diff: Number(diff.dataset.locumDiff),
+        saiu: diff.dataset.locumSaiu ?? "",
+        entrou: diff.dataset.locumEntrou ?? "",
+      };
+    })()`,
+  );
+
+  const versoes = await agentService.listVersions(alvo);
+  if (detalhe.versoes !== versoes.map((v) => v.version).join(",")) {
+    throw new Error(`o historico mostrou ${detalhe.versoes} e o servico tem ${versoes.length} versao(oes)`);
+  }
+  if (detalhe.versao !== versoes[0]!.version) {
+    throw new Error(`a tela abriu na v${detalhe.versao} e o topo do historico e a v${versoes[0]!.version}`);
+  }
+
+  const atual = versoes[0]!;
+  const anterior = versoes[1]!;
+  if (detalhe.comparando !== `${anterior.version}:${atual.version}`) {
+    throw new Error(`a comparacao ficou em ${detalhe.comparando} e o par esperado e o topo com o anterior`);
+  }
+
+  const modo = (v: (typeof versoes)[number]): string | undefined =>
+    v.spec.steps.find((p) => p.type === "action")?.mode;
+  const de = modo(anterior);
+  const para = modo(atual);
+  if (de === undefined || para === undefined) {
+    throw new Error(`a v${anterior.version} ou a v${atual.version} nao tem passo de acao`);
+  }
+  if (de === para) {
+    throw new Error(`as duas versoes do topo tem o passo de acao em "${de}", nao ha diferenca de modo`);
+  }
+  if (detalhe.diff === 0) throw new Error("a comparacao nao apontou nenhuma linha diferente");
+  if (!detalhe.saiu.includes(`"mode": "${de}"`)) {
+    throw new Error(`a comparacao nao mostrou o modo "${de}" saindo da v${anterior.version}`);
+  }
+  if (!detalhe.entrou.includes(`"mode": "${para}"`)) {
+    throw new Error(`a comparacao nao mostrou o modo "${para}" entrando na v${atual.version}`);
+  }
+
+  // O que a maquina resolve para cada passo de modelo, conferido contra o mesmo
+  // servico: uma tabela repetida deste lado passaria a concordar consigo mesma.
+  const naTela = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-modelo]")).map((e) => ({
+      pedido: e.dataset.locumModelo,
+      resolvido: e.dataset.locumResolvido ?? "",
+    }))`,
+  )) as { pedido: string; resolvido: string }[];
+
+  const passosDeModelo = atual.spec.steps.filter((p) => p.type === "model");
+  if (naTela.length !== passosDeModelo.length) {
+    throw new Error(
+      `a tela mostrou ${naTela.length} resolucao(oes) e a v${atual.version} tem ${passosDeModelo.length} passo(s) de modelo`,
+    );
+  }
+
+  const previas = await providerService.resolvePreviews(
+    passosDeModelo.map((p) => p.model),
+    machineId,
+  );
+  for (const [i, passo] of passosDeModelo.entries()) {
+    const previa = previas[i]!;
+    const esperado = previa.ok ? previa.resolution.used : "";
+    if (naTela[i]!.pedido !== passo.model) {
+      throw new Error(`o passo ${passo.key} mostrou o modelo ${naTela[i]!.pedido} e o spec pede ${passo.model}`);
+    }
+    if (naTela[i]!.resolvido !== esperado) {
+      throw new Error(
+        `o passo ${passo.key} resolveu para "${naTela[i]!.resolvido}" na tela e "${esperado}" no servico`,
+      );
+    }
+  }
+
+  // Um spec sem ferramenta nao tem botao, e isso nao e falha: o agent semente
+  // herda a lista vazia. O que nao pode e existir ferramenta sem como contar.
+  const comFerramenta = passosDeModelo.filter(
+    (p) => (p.tools ?? atual.spec.defaultTools).length > 0,
+  ).length;
+  const botoes = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-contar]").length`,
+  )) as number;
+  if (botoes !== comFerramenta) {
+    throw new Error(`${botoes} botao(oes) de contar token para ${comFerramenta} passo(s) com ferramenta`);
+  }
+
+  return (
+    `lista com ${lista.total} agent(s), historico de ${versoes.length} versao(oes) de ${alvo} e ` +
+    `comparacao apontando o passo de acao de "${de}" para "${para}"`
+  );
 }
 
 /**

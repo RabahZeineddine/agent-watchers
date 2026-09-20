@@ -318,7 +318,7 @@
       "description": "Lista de agents, historico de versoes e comparacao entre duas versoes do spec. Sem edicao nesta story: o editor entra depois. Mostrar por passo o modelo pedido, o que a maquina resolve, e as ferramentas com a contagem de tokens.",
       "done_when": "O historico mostra as versoes do agent semente e a comparacao aponta a diferenca de modo do passo de acao.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
