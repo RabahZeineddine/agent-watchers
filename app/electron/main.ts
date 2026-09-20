@@ -2,6 +2,9 @@ import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
+import en from "../locales/en.json";
+import ptBR from "../locales/pt-BR.json";
 import { join } from "node:path";
 // So tipo: o `import type` e apagado no build, e um import de valor vindo de
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
@@ -198,8 +201,9 @@ async function checkLoginItem(): Promise<string> {
   }
 
   const state = await applyPreference();
-  const decision = state.preference === null ? "nao decidida" : String(state.preference);
-  return `preferencia ${decision}, sistema ${state.status}`;
+  const decision =
+    state.preference === null ? t("smoke.loginItemUndecided") : String(state.preference);
+  return t("smoke.loginItem", { decision, status: state.status });
 }
 
 /**
@@ -242,7 +246,7 @@ async function checkPower(): Promise<string> {
     throw new Error("ouvinte de energia sobrou depois do teardown");
   }
 
-  return "suspend e resume registrados, uma batida depois de 90min de sono";
+  return t("smoke.power", { minutes: sleep / 60_000 });
 }
 
 /**
@@ -293,7 +297,7 @@ async function checkSecrets(): Promise<string> {
   }
 
   if (secretService.get(ref) !== undefined) throw new Error("segredo sobreviveu ao remove");
-  return "segredo cifrado no disco, referencia no banco, valor so na conexao";
+  return t("smoke.secrets");
 }
 
 /**
@@ -352,7 +356,7 @@ async function checkNotifications(): Promise<string> {
   }
   teardownNotifications();
 
-  return "aviso montado sem exibir, tres criticos num run so, clique aponta para o run";
+  return t("smoke.notifications");
 }
 
 /**
@@ -465,10 +469,9 @@ async function checkDeepLink(): Promise<string> {
     secretService.remove(`mcp/${nome}`);
   }
 
-  return (
-    `esquema locum ${protocolo.registered ? "registrado" : "nao aceito fora de app empacotado"}, ` +
-    "retorno de OAuth roteado, token no cofre e referencia no cadastro"
-  );
+  return t("smoke.deepLink", {
+    scheme: t(protocolo.registered ? "smoke.schemeRegistered" : "smoke.schemeRefused"),
+  });
 }
 
 /**
@@ -537,7 +540,7 @@ async function checkBridge(): Promise<string> {
     // recusa. A ponte nao tem o que dizer sobre publicar. O Electron registra
     // sozinho todo erro de handler de IPC, entao a recusa esperada vai aparecer
     // no log logo abaixo: e o teste passando, nao o smoke quebrando.
-    console.log("ponte: a proxima linha de erro e a recusa esperada da gate");
+    console.log(t("smoke.expectedRefusal"));
     const recusa = (await window.webContents.executeJavaScript(
       `globalThis.${BRIDGE_GLOBAL}.approvals.decide("nao-existe", "approved").then(() => "passou", (e) => String(e.message))`,
     )) as string;
@@ -549,7 +552,7 @@ async function checkBridge(): Promise<string> {
     teardownBridge();
   }
 
-  return `${canais} canais no ar, janela sem Node, valores batendo com os servicos`;
+  return t("smoke.bridge", { channels: canais });
 }
 
 /**
@@ -614,19 +617,26 @@ async function checkRenderer(): Promise<string> {
   try {
     await window.loadFile(RENDERER);
 
-    const visto = (await window.webContents.executeJavaScript(
+    // A espera nao e frescura: a janela pergunta o idioma pela ponte antes de
+    // desenhar, e conferir logo depois do `loadFile` pegaria a raiz ainda
+    // vazia. Montar em ingles e corrigir depois faria a tela piscar em toda
+    // subida de quem escolheu portugues, entao quem espera e o exame.
+    const visto = await esperarProbe<{ raiz: number; marca: string; folha: string }>(
+      window,
+      "raiz",
       `(() => {
+        const raiz = document.getElementById("root");
+        if (raiz === null || raiz.childElementCount === 0) return null;
         const probe = document.querySelector("[data-locum-probe=tailwind]");
         return {
-          raiz: document.getElementById("root")?.childElementCount ?? 0,
+          raiz: raiz.childElementCount,
           marca: document.querySelector("[data-locum-probe=marca]")?.textContent ?? "",
           folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
         };
       })()`,
-    )) as { raiz: number; marca: string; folha: string };
+    );
 
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
-    if (visto.raiz === 0) throw new Error("a raiz #root ficou vazia, o React nao montou");
     if (visto.marca !== "Locum") throw new Error(`a barra lateral montou com a marca ${visto.marca}`);
     if (visto.folha !== "none") {
       throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
@@ -646,6 +656,9 @@ async function checkRenderer(): Promise<string> {
     // aparece.
     const destacado = await esperarDestaque(window);
     const ponte = await esperarPonte(window);
+    // Por ultimo de proposito: o exame recarrega a janela, e recarregar antes
+    // jogaria fora o destino em que os outros exames deixaram a pagina.
+    const idioma = await checkI18n(window);
 
     const agentes = (await agentService.list()).map((a) => a.id).join(",");
     if (ponte.agents !== agentes) {
@@ -662,12 +675,17 @@ async function checkRenderer(): Promise<string> {
 
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
 
-    return (
-      "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
-      `${rotas} navegando, ${paleta}, ${agents}, ${configuracao}, ${execucoes}, ` +
-      `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
-      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
-    );
+    return t("smoke.renderer", {
+      routes: rotas,
+      palette: paleta,
+      agents,
+      config: configuracao,
+      runs: execucoes,
+      spans: destacado,
+      windowRuns: ponte.runs,
+      windowPending: ponte.pendencias,
+      language: idioma,
+    });
   } finally {
     window.destroy();
     teardownBridge();
@@ -805,7 +823,7 @@ async function checkRoutes(window: BrowserWindow): Promise<string> {
     throw new Error(`hash desconhecido levou a janela para ${desconhecido}`);
   }
 
-  return `${barra.length} destino(s)`;
+  return t("smoke.routes", { count: barra.length });
 }
 
 /**
@@ -839,7 +857,7 @@ async function checkPalette(window: BrowserWindow): Promise<string> {
   );
   if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
 
-  return "paleta abrindo e fechando pelo atalho";
+  return t("smoke.palette");
 }
 
 /**
@@ -1003,10 +1021,13 @@ async function checkAgents(window: BrowserWindow): Promise<string> {
     throw new Error(`${botoes} botao(oes) de contar token para ${comFerramenta} passo(s) com ferramenta`);
   }
 
-  return (
-    `lista com ${lista.total} agent(s), historico de ${versoes.length} versao(oes) de ${alvo} e ` +
-    `comparacao apontando o passo de acao de "${de}" para "${para}"`
-  );
+  return t("smoke.agents", {
+    agents: lista.total,
+    versions: versoes.length,
+    agent: alvo,
+    from: de,
+    to: para,
+  });
 }
 
 /**
@@ -1167,11 +1188,14 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
-  return (
-    `${provedores.length} provedor(es), ${fallbacks.length} substituicao(oes), ` +
-    `${servidores.length} servidor(es) com ${FIXTURE_SERVER} respondendo ` +
-    `${resultado.ferramentas} ferramenta(s) na interface, e ${orcamentos.length} orcamento(s)`
-  );
+  return t("smoke.config", {
+    providers: provedores.length,
+    fallbacks: fallbacks.length,
+    servers: servidores.length,
+    fixture: FIXTURE_SERVER,
+    tools: resultado.ferramentas,
+    budgets: orcamentos.length,
+  });
 }
 
 /**
@@ -1264,11 +1288,13 @@ async function checkRuns(window: BrowserWindow, runId: string): Promise<string> 
 
   const grafo = await checkGrafo(window, doBanco);
 
-  return (
-    `lista com ${lista.total} execucao(oes) e ${desenhadas} linha(s) desenhada(s), ` +
-    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada, ` +
-    grafo
-  );
+  return t("smoke.runs", {
+    runs: lista.total,
+    rows: desenhadas,
+    steps: detalhe.passos,
+    findings: detalhe.achados,
+    graph: grafo,
+  });
 }
 
 /**
@@ -1344,7 +1370,11 @@ async function checkGrafo(
     }
   }
 
-  return `grafo com ${chaves.length} no(s) e ${visto.desenhadas} aresta(s), estados ${visto.estados}`;
+  return t("smoke.graph", {
+    nodes: chaves.length,
+    edges: visto.desenhadas,
+    states: visto.estados,
+  });
 }
 
 /**
@@ -1369,6 +1399,604 @@ async function esperarProbe<T>(
   }
 
   throw new Error(`o marcador ${nome} nao ficou pronto dentro de ${limiteMs / 1000}s`);
+}
+
+type Dicionario = typeof en;
+
+/**
+ * O texto que o dicionário tem para uma chave, lido do arquivo.
+ *
+ * O exame não pergunta pelo mesmo `t` que monta a bandeja e a notificação: duas
+ * chamadas à mesma porta concordariam entre si até com o dicionário vazio. Aqui
+ * o JSON é lido direto, e o que está sendo comparado é o texto que o tradutor
+ * escreveu com o que apareceu no menu.
+ *
+ * A forma de plural sai do `Intl.PluralRules`, que é o que o i18next usa do
+ * outro lado. Reimplementar a regra, ainda que com um `if`, faria o exame
+ * concordar consigo mesmo: em português a forma "one" cobre o zero, e um exame
+ * que não soubesse disso passaria a exigir o texto errado. O `_zero` é a
+ * exceção que o próprio i18next abre para contagem zero, e vem antes das formas.
+ */
+type Vars = Record<string, string | number>;
+
+function doDicionario(
+  dicionario: Dicionario,
+  idioma: string,
+  caminho: string,
+  vars: Vars = {},
+): string {
+  const partes = caminho.split(".");
+  const folha = partes.pop() ?? "";
+  let no: unknown = dicionario;
+  for (const parte of partes) no = (no as Record<string, unknown>)[parte];
+  const formas = no as Record<string, string | undefined>;
+
+  const count = vars["count"];
+  const chaves =
+    typeof count === "number"
+      ? [
+          ...(count === 0 ? [`${folha}_zero`] : []),
+          `${folha}_${new Intl.PluralRules(idioma).select(count)}`,
+          `${folha}_other`,
+        ]
+      : [folha];
+
+  const modelo = chaves.map((chave) => formas[chave]).find((texto) => texto !== undefined);
+  if (modelo === undefined) throw new Error(`o dicionario ${idioma} nao tem ${caminho}`);
+
+  return Object.entries(vars).reduce(
+    (texto, [nome, valor]) => texto.replaceAll(`{{${nome}}}`, String(valor)),
+    modelo,
+  );
+}
+
+interface IdiomaVisto {
+  idioma: string;
+  documento: string;
+  preferencia: string;
+  estrito: string;
+  rodape: string;
+  runs: number;
+}
+
+/** O texto que cada tela desenhou, com o que ela contou. */
+interface TelasVistas {
+  inbox: string;
+  pendencias: number;
+  execucoes: string;
+  total: number;
+  agents: string;
+  quantosAgents: number;
+  orcamento: string;
+  execucoesDeHoje: number;
+  gastoDeHoje: string;
+}
+
+/**
+ * O que a janela aplicou de idioma, junto do rodapé que ela desenhou.
+ *
+ * O rodapé entra porque atributo de marcador prova que o estado chegou, e não
+ * que o texto mudou: uma tradução esquecida deixaria o marcador em `pt-BR` com
+ * a tela inteira em inglês. O exame espera as leituras terminarem antes de
+ * olhar, senão pegaria o texto de "carregando" em vez do plural.
+ */
+async function lerIdioma(window: BrowserWindow): Promise<IdiomaVisto> {
+  return esperarProbe<IdiomaVisto>(
+    window,
+    "idioma",
+    `(() => {
+      const idioma = document.querySelector("[data-locum-probe=idioma]");
+      const ponte = document.querySelector("[data-locum-probe=ponte]");
+      if (idioma === null || ponte === null) return null;
+      if (ponte.dataset.estado !== "pronto") return null;
+      return {
+        idioma: idioma.dataset.idioma,
+        documento: document.documentElement.lang,
+        preferencia: idioma.dataset.preferencia,
+        estrito: idioma.dataset.estrito,
+        rodape: (ponte.textContent ?? "").trim(),
+        runs: Number(ponte.dataset.runs),
+      };
+    })()`,
+  );
+}
+
+/**
+ * O que as quatro telas escreveram, no idioma corrente.
+ *
+ * Todas elas contam coisas, e contagem e onde tradução quebra primeiro: o
+ * plural do português troca a palavra, e um texto montado com "(oes)" no fim
+ * passaria por qualquer conferência de marcador. Por isso o exame compara a
+ * frase inteira com o dicionário, e não só o número ao lado dela.
+ *
+ * De configuração vem a linha de gasto do dia, e não um título de seção: o
+ * título sairia igual traduzido ou não numa tela onde o resto ficou em
+ * inglês, e a frase com plural não sai.
+ */
+async function lerTelas(window: BrowserWindow): Promise<TelasVistas> {
+  await irPara(window, "inbox");
+  const inbox = await esperarProbe<{ texto: string; pendencias: number }>(
+    window,
+    "inbox",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=inbox]");
+      if (probe === null) return null;
+      return { texto: (probe.textContent ?? "").trim(), pendencias: Number(probe.dataset.pendencias) };
+    })()`,
+  );
+
+  await irPara(window, "execucoes");
+  const execucoes = await esperarProbe<{ texto: string; total: number }>(
+    window,
+    "execucoes",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucoes]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { texto: (probe.textContent ?? "").trim(), total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  await irPara(window, "agents");
+  const agents = await esperarProbe<{ texto: string; total: number }>(
+    window,
+    "agents",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agents]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { texto: (probe.textContent ?? "").trim(), total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  await irPara(window, "configuracao");
+  const orcamento = await esperarProbe<{ texto: string; runs: number; gasto: string }>(
+    window,
+    "orcamento",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=configuracao]");
+      if (probe === null || probe.dataset.estado !== "pronto") return null;
+      const linha = document.querySelector("[data-locum-orcamento]");
+      const hoje = linha?.querySelector("[data-locum-hoje]");
+      if (linha === null || hoje === undefined || hoje === null) return null;
+      return {
+        texto: (hoje.textContent ?? "").trim(),
+        runs: Number(hoje.dataset.locumHoje),
+        gasto: linha.dataset.locumGastoHoje,
+      };
+    })()`,
+  );
+
+  return {
+    inbox: inbox.texto,
+    pendencias: inbox.pendencias,
+    execucoes: execucoes.texto,
+    total: execucoes.total,
+    agents: agents.texto,
+    quantosAgents: agents.total,
+    orcamento: orcamento.texto,
+    execucoesDeHoje: orcamento.runs,
+    gastoDeHoje: orcamento.gasto,
+  };
+}
+
+/** Recarrega a página e espera ela terminar de carregar. */
+async function recarregar(window: BrowserWindow): Promise<void> {
+  const carregou = new Promise<void>((resolve) => {
+    window.webContents.once("did-finish-load", () => resolve());
+  });
+  window.webContents.reload();
+  await carregou;
+}
+
+/**
+ * Prova que a preferência de idioma manda na janela e que o texto muda com ela.
+ *
+ * A troca é pedida de dentro da página, pelo mesmo canal que a tela de
+ * configuração vai usar, e não por chamada direta ao serviço deste lado: o que
+ * interessa saber é que o caminho inteiro funciona, da janela até `settings` e
+ * de volta. A página recarrega entre uma e outra de propósito: este exame prova
+ * que a preferência sobrevive a uma subida, e não que a tela troca no lugar,
+ * que é o que o `checkLanguagePicker` prova logo em seguida.
+ *
+ * O retorno padrão é conferido no serviço, com uma etiqueta de sistema que o
+ * Locum não fala: a máquina do loop está num idioma só, e esperar que ela
+ * esteja em alemão para exercitar o `en` seria um exame que nunca roda.
+ */
+async function checkI18n(window: BrowserWindow): Promise<string> {
+  const { BRIDGE_GLOBAL } = await import("./bridge-contract.js");
+  const { FALLBACK_LANGUAGE, i18nService, matchLanguage } = await import(
+    "../src/services/i18n-service.js"
+  );
+
+  const original = await i18nService.getPreference();
+  // O canal de trocar idioma agora mexe também na instância do processo
+  // principal, que é a que escreve a linha final do smoke.
+  const idiomaDoPrincipal = idiomaAtual();
+
+  async function preferir(idioma: string | null): Promise<IdiomaVisto> {
+    const argumento = idioma === null ? "null" : JSON.stringify(idioma);
+    await window.webContents.executeJavaScript(
+      `globalThis.${BRIDGE_GLOBAL}.i18n.setPreference(${argumento}).then(() => null)`,
+    );
+    await recarregar(window);
+    return lerIdioma(window);
+  }
+
+  /** As quatro telas conferidas contra o dicionário do idioma que está valendo. */
+  async function conferirTelas(dicionario: Dicionario, idioma: string): Promise<TelasVistas> {
+    const telas = await lerTelas(window);
+    const cobrar = (onde: string, visto: string, caminho: string, vars: Vars): void => {
+      const esperado = doDicionario(dicionario, idioma, caminho, vars);
+      if (visto !== esperado) {
+        throw new Error(
+          `${onde} em ${idioma} escreveu "${visto}" e o dicionario pede "${esperado}"`,
+        );
+      }
+    };
+
+    cobrar("a inbox", telas.inbox, "inbox.waiting", { count: telas.pendencias });
+    cobrar("as execucoes", telas.execucoes, "runs.count", { count: telas.total });
+    cobrar("a lista de agents", telas.agents, "agents.count", { count: telas.quantosAgents });
+    cobrar("o orcamento", telas.orcamento, "settings.budgets.today", {
+      count: telas.execucoesDeHoje,
+      spent: Number(telas.gastoDeHoje).toFixed(3),
+    });
+    return telas;
+  }
+
+  try {
+    const portugues = await preferir("pt-BR");
+    if (portugues.idioma !== "pt-BR" || portugues.documento !== "pt-BR") {
+      throw new Error(
+        `a preferencia pt-BR deixou a janela em ${portugues.idioma} e o documento em ${portugues.documento}`,
+      );
+    }
+    if (portugues.estrito !== "true") {
+      throw new Error("fora de app empacotado a guarda de chave ausente devia estar ligada");
+    }
+    const esperadoPt = doDicionario(ptBR, "pt-BR", "bridge.runs", { count: portugues.runs });
+    if (!portugues.rodape.includes(esperadoPt)) {
+      throw new Error(`o rodape em pt-BR ficou "${portugues.rodape}" e devia trazer "${esperadoPt}"`);
+    }
+    const telasPt = await conferirTelas(ptBR, "pt-BR");
+
+    const ingles = await preferir("en");
+    if (ingles.idioma !== "en" || ingles.preferencia !== "en") {
+      throw new Error(`a preferencia en deixou a janela em ${ingles.idioma}`);
+    }
+    const esperadoEn = doDicionario(en, "en", "bridge.runs", { count: ingles.runs });
+    if (!ingles.rodape.includes(esperadoEn)) {
+      throw new Error(`o rodape em en ficou "${ingles.rodape}" e devia trazer "${esperadoEn}"`);
+    }
+    if (ingles.rodape === portugues.rodape) {
+      throw new Error(`o texto nao mudou de idioma, ficou "${ingles.rodape}" nos dois`);
+    }
+    const telasEn = await conferirTelas(en, "en");
+    // Dicionário igual nos dois idiomas passaria pelas conferências acima sem
+    // ninguém ter traduzido nada. A lista de execuções é a que prova: o plural
+    // do português troca a palavra, e o da inbox pode coincidir com zero item.
+    if (telasEn.execucoes === telasPt.execucoes) {
+      throw new Error(`a lista de execucoes ficou "${telasEn.execucoes}" nos dois idiomas`);
+    }
+
+    // Sem preferencia, quem manda e a maquina, e o exame confere contra o que o
+    // servico resolve para a etiqueta que o Electron devolveu.
+    const doSistema = await preferir(null);
+    const daMaquina = matchLanguage(app.getLocale()) ?? FALLBACK_LANGUAGE;
+    if (doSistema.preferencia !== "" || doSistema.idioma !== daMaquina) {
+      throw new Error(
+        `sem preferencia a janela ficou em ${doSistema.idioma} e o sistema pede ${daMaquina}`,
+      );
+    }
+
+    const desconhecido = await i18nService.resolve("de-DE");
+    if (desconhecido.language !== FALLBACK_LANGUAGE) {
+      throw new Error(`maquina em de-DE caiu em ${desconhecido.language} e nao no idioma base`);
+    }
+
+    const escolha = await checkLanguagePicker(window);
+
+    return t("smoke.language", {
+      pt: portugues.rodape,
+      en: ingles.rodape,
+      system: doSistema.idioma,
+      fallback: FALLBACK_LANGUAGE,
+      screens: t("smoke.screens", {
+        agents: telasPt.agents,
+        budget: telasPt.orcamento,
+        inbox: telasPt.inbox,
+        runs: telasPt.execucoes,
+      }),
+      picker: escolha,
+    });
+  } finally {
+    // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima
+    // subida do Locum nesta maquina abriria no idioma da ultima verificacao.
+    await i18nService.setPreference(original);
+    await aplicarIdioma(idiomaDoPrincipal);
+  }
+}
+
+/** O botão de devolver a escolha ao sistema, que não é código de idioma. */
+const SEGUIR_O_SISTEMA = "sistema";
+
+/**
+ * Prova que a seção de idioma da configuração troca tudo com um clique.
+ *
+ * O clique é no botão da tela, e não numa chamada ao canal: entre os dois está
+ * justamente o que esta story entrega, que é a seção existir e estar ligada ao
+ * provedor de idioma. Nada recarrega entre uma escolha e outra, e a prova
+ * disso é uma marca deixada no `globalThis` da página, que uma recarga apagaria.
+ *
+ * A bandeja entra pelos rótulos montados em memória, como no `checkMainText`:
+ * o que precisa ficar provado é que o processo principal virou de idioma na
+ * mesma batida, e não que existe um ícone pendurado na barra do sistema.
+ */
+async function checkLanguagePicker(window: BrowserWindow): Promise<string> {
+  const { trayMenuLabels } = await import("./tray.js");
+  const { FALLBACK_LANGUAGE, matchLanguage } = await import("../src/services/i18n-service.js");
+
+  const dicionarios: Record<string, Dicionario> = { en, "pt-BR": ptBR };
+
+  await irPara(window, "configuracao");
+
+  const rotulos: string[] = [];
+  const daBandeja: string[] = [];
+
+  for (const idioma of ["pt-BR", "en"]) {
+    const visto = await escolherIdioma(window, idioma, idioma, dicionarios);
+
+    if (visto.preferencia !== idioma) {
+      throw new Error(
+        `o clique em ${idioma} gravou a preferencia como "${visto.preferencia}"`,
+      );
+    }
+    if (idiomaAtual() !== idioma) {
+      throw new Error(
+        `a janela foi para ${idioma} e o processo principal ficou em ${idiomaAtual()}`,
+      );
+    }
+
+    // O item de abrir, que é frase curta e sem contagem: o que está sendo
+    // provado aqui é o idioma da bandeja, e a contagem já tem exame próprio.
+    const abrir = trayMenuLabels()[2] ?? "";
+    const esperado = doDicionario(dicionarios[idioma] as Dicionario, idioma, "tray.open");
+    if (abrir !== esperado) {
+      throw new Error(
+        `depois do clique em ${idioma} a bandeja ficou com "${abrir}" e o dicionario pede "${esperado}"`,
+      );
+    }
+
+    rotulos.push(visto.rotulo);
+    daBandeja.push(abrir);
+  }
+
+  if (rotulos[0] === rotulos[1] || daBandeja[0] === daBandeja[1]) {
+    throw new Error(`o clique nao mudou o texto, ficou "${rotulos.join('" e "')}"`);
+  }
+
+  // Seguir o sistema não é escolher o idioma que o sistema fala agora: a
+  // preferência sai de `settings`, e a máquina volta a mandar no dia em que
+  // ela mudar de idioma.
+  const daMaquina = matchLanguage(app.getLocale()) ?? FALLBACK_LANGUAGE;
+  const sistema = await escolherIdioma(window, SEGUIR_O_SISTEMA, daMaquina, dicionarios);
+  if (sistema.preferencia !== "" || sistema.ativo !== daMaquina) {
+    throw new Error(
+      `seguir o sistema deixou a tela em ${sistema.ativo} com a preferencia "${sistema.preferencia}"`,
+    );
+  }
+  if (idiomaAtual() !== daMaquina) {
+    throw new Error(`seguir o sistema deixou o processo principal em ${idiomaAtual()}`);
+  }
+
+  return t("smoke.picker", {
+    pt: rotulos[0] ?? "",
+    en: rotulos[1] ?? "",
+    tray: daBandeja.join(" / "),
+  });
+}
+
+interface EscolhaVista {
+  ativo: string;
+  preferencia: string;
+  documento: string;
+  rotulo: string;
+  semRecarregar: boolean;
+}
+
+/**
+ * Clica num botão da seção de idioma e espera a tela assentar no novo idioma.
+ *
+ * A espera é pelo texto, e não pelo atributo do marcador: o estado do React
+ * chega um quadro antes do `changeLanguage` terminar, e conferir o atributo
+ * aprovaria uma tela que mudou de idioma por dentro sem reescrever uma palavra.
+ * O rótulo de seguir o sistema serve de amostra porque é o único da seção que
+ * sai do dicionário: os outros são o nome de cada idioma nele mesmo.
+ *
+ * A preferência gravada entra na espera junto do texto, e não numa conferência
+ * depois: numa máquina que já está no idioma escolhido nada no texto muda, e o
+ * exame leria o estado anterior antes de o clique chegar a `settings`.
+ */
+async function escolherIdioma(
+  window: BrowserWindow,
+  alvo: string,
+  idioma: string,
+  dicionarios: Record<string, Dicionario>,
+): Promise<EscolhaVista> {
+  const esperado = doDicionario(
+    dicionarios[idioma] as Dicionario,
+    idioma,
+    "settings.language.system",
+  );
+  // Seguir o sistema apaga a preferência, e o marcador escreve string vazia
+  // onde ela não existe: atributo de dado não guarda nulo.
+  const preferencia = alvo === SEGUIR_O_SISTEMA ? "" : alvo;
+
+  const seletor = `[data-locum-idioma=${JSON.stringify(alvo)}]`;
+
+  const clicou = (await window.webContents.executeJavaScript(
+    `(() => {
+      // Marca que uma recarga apagaria: a troca tem que acontecer na mesma
+      // página, e não numa que subiu de novo por baixo do exame.
+      globalThis.__locumSemRecarregar = true;
+      const botao = document.querySelector(${JSON.stringify(seletor)});
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  )) as boolean;
+  if (!clicou) throw new Error(`a secao de idioma nao tem botao para ${alvo}`);
+
+  const visto = await esperarProbe<EscolhaVista>(
+    window,
+    "idioma-escolha",
+    `(() => {
+      const secao = document.querySelector("[data-locum-probe=idioma-escolha]");
+      if (secao === null) return null;
+      if (secao.dataset.locumIdiomaAtivo !== ${JSON.stringify(idioma)}) return null;
+      if (secao.dataset.locumIdiomaPreferencia !== ${JSON.stringify(preferencia)}) return null;
+      const sistema = secao.querySelector(${JSON.stringify(
+        `[data-locum-idioma=${JSON.stringify(SEGUIR_O_SISTEMA)}]`,
+      )});
+      const rotulo = (sistema?.textContent ?? "").trim();
+      if (rotulo !== ${JSON.stringify(esperado)}) return null;
+      return {
+        ativo: secao.dataset.locumIdiomaAtivo,
+        preferencia: secao.dataset.locumIdiomaPreferencia,
+        documento: document.documentElement.lang,
+        rotulo,
+        semRecarregar: globalThis.__locumSemRecarregar === true,
+      };
+    })()`,
+  );
+
+  if (!visto.semRecarregar) {
+    throw new Error(`a troca para ${idioma} recarregou a janela em vez de trocar no lugar`);
+  }
+  if (visto.documento !== idioma) {
+    throw new Error(`a tela foi para ${idioma} e o documento ficou marcado como ${visto.documento}`);
+  }
+
+  return visto;
+}
+
+/**
+ * Prova que a bandeja e a notificação saem no idioma escolhido.
+ *
+ * Nada é pendurado na barra do sistema nem exibido: o menu é montado e lido em
+ * memória, e a notificação nasce sem `show()`. O loop roda sem ninguém olhando,
+ * e alerta na tela de quem estiver usando a máquina não é coisa que um exame
+ * possa fazer.
+ *
+ * O esperado sai do arquivo de dicionário, e a comparação entre os dois idiomas
+ * entra junto: texto igual nos dois significa tradução esquecida, que é
+ * exatamente o que passa despercebido num menu que quase ninguém abre.
+ */
+async function checkMainText(): Promise<string> {
+  const { trayMenuLabels, trayPendingCount } = await import("./tray.js");
+  const { noticeText } = await import("./notify.js");
+  const { promptDoSistema } = await import("./chat.js");
+
+  const antes = idiomaAtual();
+  const idiomas: [string, Dicionario][] = [
+    ["pt-BR", ptBR],
+    ["en", en],
+  ];
+
+  const aviso = {
+    key: "critical_finding:run-smoke-texto",
+    runId: "run-smoke-texto",
+    kind: "critical_finding" as const,
+    agentName: "pr-review",
+    criticalCount: 3,
+    at: 1_760_000_000,
+  };
+
+  const bandeja: string[] = [];
+  const avisos: string[] = [];
+  const prompts: string[] = [];
+
+  try {
+    for (const [idioma, dicionario] of idiomas) {
+      await aplicarIdioma(idioma);
+
+      // A contagem é a que a bandeja leu da fila mais cedo: o que está sendo
+      // provado aqui é o idioma, e reler o banco só traria outra oportunidade
+      // de a contagem mudar no meio do exame.
+      const pendentes = trayPendingCount();
+      const rotulos = trayMenuLabels();
+      const esperados = [
+        doDicionario(dicionario, idioma, "tray.pending", { count: pendentes }),
+        "",
+        doDicionario(dicionario, idioma, "tray.open"),
+        doDicionario(dicionario, idioma, "tray.pause"),
+        "",
+        doDicionario(dicionario, idioma, "tray.quit"),
+      ];
+      if (rotulos.join("|") !== esperados.join("|")) {
+        throw new Error(
+          `a bandeja em ${idioma} montou "${rotulos.join("|")}" e o dicionario pede "${esperados.join("|")}"`,
+        );
+      }
+
+      const texto = noticeText(aviso);
+      const titulo = doDicionario(dicionario, idioma, "notification.criticalFinding.title", {
+        agent: aviso.agentName,
+        count: aviso.criticalCount,
+      });
+      const corpo = doDicionario(dicionario, idioma, "notification.criticalFinding.body", {
+        count: aviso.criticalCount,
+      });
+      if (texto.title !== titulo || texto.body !== corpo) {
+        throw new Error(
+          `a notificacao em ${idioma} saiu como "${texto.title}" e "${texto.body}"`,
+        );
+      }
+
+      // Run que falhou sem deixar mensagem: o corpo vem do dicionario. Com
+      // mensagem ele sai como veio, porque a frase e do provedor.
+      const semMensagem = noticeText({ ...aviso, kind: "run_failed", criticalCount: 0 });
+      const esperadoSemMensagem = doDicionario(
+        dicionario,
+        idioma,
+        "notification.runFailed.noError",
+      );
+      if (semMensagem.body !== esperadoSemMensagem) {
+        throw new Error(`a falha sem mensagem em ${idioma} saiu como "${semMensagem.body}"`);
+      }
+      const comMensagem = noticeText({ ...aviso, kind: "run_failed", error: "socket hang up" });
+      if (comMensagem.body !== "socket hang up") {
+        throw new Error(`o erro do provedor foi reescrito para "${comMensagem.body}"`);
+      }
+
+      // O prompt de sistema do assistente e texto de produto, e a linha que
+      // manda responder num idioma e a que decide o idioma da resposta. Sem
+      // isto a tela viraria de idioma e o assistente continuaria respondendo
+      // no anterior.
+      const prompt = promptDoSistema();
+      const esperadoPrompt = doDicionario(dicionario, idioma, "assistant.system");
+      if (prompt !== esperadoPrompt) {
+        throw new Error(`o prompt do assistente em ${idioma} nao saiu do dicionario`);
+      }
+
+      bandeja.push(rotulos[2] ?? "");
+      avisos.push(texto.title);
+      prompts.push(prompt.split("\n")[1] ?? "");
+    }
+
+    if (bandeja[0] === bandeja[1] || avisos[0] === avisos[1] || prompts[0] === prompts[1]) {
+      throw new Error(`o texto do processo principal nao mudou de idioma: ${bandeja.join(", ")}`);
+    }
+  } finally {
+    // O exame trocou o idioma da instância que a bandeja e a notificação usam
+    // de verdade. Sem devolver, o resto do smoke sairia no último idioma visto.
+    await aplicarIdioma(antes);
+  }
+
+  return t("smoke.mainText", {
+    assistant: prompts.join(" / "),
+    notification: avisos.join(" / "),
+    tray: bandeja.join(" / "),
+  });
 }
 
 /**
@@ -1435,8 +2063,28 @@ async function runSecretCommand(): Promise<void> {
   console.log(`${ref} guardado no keychain`);
 }
 
+/**
+ * Poe o processo principal no idioma de quem esta na maquina.
+ *
+ * Qual idioma vale sai do mesmo servico que responde a janela, entao a bandeja
+ * e a tela nunca discordam; o que a casca traz e so a etiqueta do sistema, que
+ * e a unica parte que depende do Electron. Fora de app empacotado, chave
+ * ausente estoura, como na janela: texto cru num menu da barra do sistema passa
+ * despercebido por semanas.
+ */
+async function setupI18n(): Promise<string> {
+  const { i18nService } = await import("../src/services/i18n-service.js");
+  const { language } = await i18nService.resolve(app.getLocale());
+  iniciarI18n({ idioma: language, estrito: !app.isPackaged });
+  return language;
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
+
+  // Antes de qualquer texto: bandeja, notificacao e o proprio smoke falam pelo
+  // dicionario, e pedir chave antes disso estoura de proposito.
+  await setupI18n();
 
   if (flagValue("--set-secret") !== undefined || flagValue("--remove-secret") !== undefined) {
     await runSecretCommand();
@@ -1465,6 +2113,7 @@ async function main(): Promise<void> {
         `bandeja marca ${trayPendingCount()} pendencia(s) e a fila tem ${pending}`,
       );
     }
+    const mainText = await checkMainText();
     teardownTray();
 
     const power = await checkPower();
@@ -1475,10 +2124,18 @@ async function main(): Promise<void> {
     const renderer = await checkRenderer();
 
     console.log(
-      `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
-        `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
-        `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
-        `deep link com ${deepLink}, ponte com ${ponte}, interface com ${renderer}`,
+      t("smoke.ok", {
+        agents,
+        pending,
+        loginItem,
+        power,
+        secrets,
+        notifications: avisos,
+        deepLink,
+        bridge: ponte,
+        renderer,
+        mainText,
+      }),
     );
     app.exit(0);
     return;
@@ -1504,7 +2161,9 @@ async function main(): Promise<void> {
   const { applyPreference } = await import("./login-item.js");
   const startup = await applyPreference();
   if (startup.preference !== null) {
-    console.log(`inicio no login: preferencia ${startup.preference}, sistema ${startup.status}`);
+    console.log(
+      t("loginItem.applied", { preference: startup.preference, status: startup.status }),
+    );
   }
 
   await setupTray({ openWindow: showWindow });

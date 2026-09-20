@@ -15,9 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
 import { useJanela } from "@/lib/janela";
+import { rotuloDeEstado, rotuloDeSeveridade, type Estado } from "@/lib/rotulos";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import { useState } from "react";
+import type { TFunction } from "i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { GrafoDaExecucao } from "../grafo";
 import type { TelaProps } from "../rotas";
 
@@ -46,6 +49,7 @@ export function Execucoes({ detalhe, navegar }: TelaProps) {
 /* ------------------------------------------------------------------ lista */
 
 function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
+  const { t } = useTranslation();
   // O limite e alto de proposito: a janela virtual abaixo e quem sustenta a
   // lista longa, e pedir de vinte em vinte traria paginacao para uma tela que
   // ninguem pagina, ela rola.
@@ -63,16 +67,20 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
         data-total={linhas.length}
       >
         {runs.status === "error"
-          ? `a ponte recusou: ${runs.error.message}`
+          ? t("runs.refused", { message: runs.error.message })
           : runs.status === "loading"
-            ? "lendo execucoes..."
-            : `${linhas.length} execucao(oes)`}
+            ? t("runs.loading")
+            : t("runs.count", { count: linhas.length })}
       </div>
 
       {runs.status === "ready" && linhas.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          Nenhuma execucao ainda. O comando <code>npm run dev demo</code> cria uma
-          a partir do evento sintetico.
+          {/*
+            O comando fica dentro da frase traduzida, e nao colado de fora: a
+            posicao dele muda com o idioma, e frase partida em dois pedacos
+            perde a ordem no primeiro idioma que nao siga a do portugues.
+          */}
+          <Trans components={{ code: <code /> }} i18nKey="runs.empty" />
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border" ref={janela.ref}>
@@ -98,6 +106,8 @@ function LinhaDeExecucao({
   navegar: TelaProps["navegar"];
   run: Execucao;
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       className="flex w-full items-center gap-3 border-border border-b px-4 text-left text-sm last:border-b-0 hover:bg-accent/50"
@@ -108,13 +118,16 @@ function LinhaDeExecucao({
     >
       <Estado status={run.status} />
       <span className="w-48 shrink-0 truncate font-medium">
-        {run.agentId} <span className="text-muted-foreground">v{run.agentVersion}</span>
+        {run.agentId}{" "}
+        <span className="text-muted-foreground">
+          {t("common.version", { version: run.agentVersion })}
+        </span>
       </span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
         {run.agentName}
       </span>
       <span className="shrink-0 text-muted-foreground text-xs">{quando(run.createdAt)}</span>
-      <span className="w-28 shrink-0 text-right tabular-nums">{dinheiro(run)}</span>
+      <span className="w-28 shrink-0 text-right tabular-nums">{dinheiro(t, run)}</span>
     </button>
   );
 }
@@ -122,17 +135,18 @@ function LinhaDeExecucao({
 /* ----------------------------------------------------------------- detalhe */
 
 function Execucao({ navegar, runId }: { navegar: TelaProps["navegar"]; runId: string }) {
+  const { t } = useTranslation();
   const run = useRead("runs.get", runId);
   const achados = useRead("runs.findings", runId);
 
   if (run.status === "error") {
-    return <Aviso probe="execucao">a ponte recusou: {run.error.message}</Aviso>;
+    return <Aviso probe="execucao">{t("runs.refused", { message: run.error.message })}</Aviso>;
   }
   if (run.status === "loading") {
-    return <Aviso probe="execucao">lendo a execucao...</Aviso>;
+    return <Aviso probe="execucao">{t("runs.detail.loading")}</Aviso>;
   }
   if (run.data === undefined) {
-    return <Aviso probe="execucao">execucao {runId} nao existe mais</Aviso>;
+    return <Aviso probe="execucao">{t("runs.detail.missing", { runId })}</Aviso>;
   }
 
   const detalhe = run.data;
@@ -153,14 +167,17 @@ function Execucao({ navegar, runId }: { navegar: TelaProps["navegar"]; runId: st
       <div className="flex items-center gap-3">
         <Button onClick={() => navegar("execucoes")} size="sm" variant="ghost">
           <ArrowLeft className="size-4" />
-          Execucoes
+          {t("runs.title")}
         </Button>
         <Estado status={detalhe.status} />
         <span className="font-medium text-sm">
-          {detalhe.agentId} <span className="text-muted-foreground">v{detalhe.agentVersion}</span>
+          {detalhe.agentId}{" "}
+          <span className="text-muted-foreground">
+            {t("common.version", { version: detalhe.agentVersion })}
+          </span>
         </span>
         <span className="text-muted-foreground text-xs">{quando(detalhe.createdAt)}</span>
-        <span className="ml-auto text-sm tabular-nums">{dinheiro(detalhe)}</span>
+        <span className="ml-auto text-sm tabular-nums">{dinheiro(t, detalhe)}</span>
       </div>
 
       {detalhe.error !== null ? (
@@ -209,6 +226,7 @@ function PassoDaExecucao({
   passo: Passo;
   runId: string;
 }) {
+  const { t } = useTranslation();
   const segundos =
     passo.startedAt !== null && passo.endedAt !== null ? passo.endedAt - passo.startedAt : undefined;
   const ferramentas = lista(passo.toolsUsed);
@@ -223,15 +241,15 @@ function PassoDaExecucao({
         <span className="font-medium">{passo.name}</span>
         <Estado status={passo.status} />
         <span className="text-muted-foreground text-xs">
-          {passo.modelUsed ?? "acao"}
-          {passo.substitutionReason !== null ? " (substituido)" : ""}
+          {passo.modelUsed ?? t("runs.step.action")}
+          {passo.substitutionReason !== null ? ` ${t("runs.step.substituted")}` : ""}
         </span>
         <span className="ml-auto flex items-center gap-3 text-muted-foreground text-xs tabular-nums">
-          <span>{segundos === undefined ? "-" : `${segundos}s`}</span>
+          <span>{segundos === undefined ? "-" : t("runs.step.seconds", { seconds: segundos })}</span>
           <span>
-            {passo.promptTokens + passo.completionTokens} tok
+            {t("runs.step.tokens", { tokens: passo.promptTokens + passo.completionTokens })}
           </span>
-          <span>{passo.costUsd.toFixed(3)} USD</span>
+          <span>{t("runs.step.cost", { cost: passo.costUsd.toFixed(3) })}</span>
           <Reexecutar runId={runId} stepKey={passo.stepKey} />
         </span>
       </div>
@@ -252,24 +270,32 @@ function PassoDaExecucao({
 
       {passo.modelRequested !== null ? (
         <Reasoning defaultOpen={false} duration={segundos}>
-          <ReasoningTrigger>Como o passo foi resolvido</ReasoningTrigger>
+          <ReasoningTrigger>{t("runs.step.reasoning.trigger")}</ReasoningTrigger>
           <ReasoningContent>
             {[
-              `Modelo pedido: \`${passo.modelRequested}\``,
-              `Modelo usado: \`${passo.modelUsed ?? "nenhum"}\``,
+              t("runs.step.reasoning.requested", { model: passo.modelRequested }),
+              t("runs.step.reasoning.used", {
+                model: passo.modelUsed ?? t("runs.step.reasoning.none"),
+              }),
               passo.substitutionReason !== null
-                ? `Motivo da substituicao: ${passo.substitutionReason}`
-                : "Sem substituicao nesta maquina.",
-              skills.length > 0 ? `Skills: ${skills.join(", ")}` : "Nenhuma skill selecionada.",
-              `Tentativa ${passo.attempt}, ${passo.promptTokens} token(s) de entrada e ${passo.completionTokens} de saida.`,
+                ? t("runs.step.reasoning.substitution", { reason: passo.substitutionReason })
+                : t("runs.step.reasoning.noSubstitution"),
+              skills.length > 0
+                ? t("runs.step.reasoning.skills", { skills: skills.join(", ") })
+                : t("runs.step.reasoning.noSkills"),
+              t("runs.step.reasoning.attempt", {
+                attempt: passo.attempt,
+                count: passo.promptTokens,
+                completion: passo.completionTokens,
+              }),
             ].join("\n\n")}
           </ReasoningContent>
         </Reasoning>
       ) : null}
 
-      {passo.input !== null ? <Json rotulo="Entrada" valor={passo.input} /> : null}
+      {passo.input !== null ? <Json rotulo={t("runs.step.input")} valor={passo.input} /> : null}
       {passo.output !== null ? (
-        <Json marcado={marcado} rotulo="Saida" valor={passo.output} />
+        <Json marcado={marcado} rotulo={t("runs.step.output")} valor={passo.output} />
       ) : null}
     </div>
   );
@@ -284,6 +310,7 @@ function PassoDaExecucao({
  * executor, entao o que a tela le depois ja e o estado novo.
  */
 function Reexecutar({ runId, stepKey }: { runId: string; stepKey: string }) {
+  const { t } = useTranslation();
   const [estado, setEstado] = useState<"parado" | "pedindo" | "erro">("parado");
 
   return (
@@ -298,7 +325,9 @@ function Reexecutar({ runId, stepKey }: { runId: string; stepKey: string }) {
         );
       }}
       size="sm"
-      title={estado === "erro" ? "a reexecucao foi recusada" : `reexecutar ${stepKey}`}
+      title={
+        estado === "erro" ? t("runs.rerun.refused") : t("runs.rerun.title", { step: stepKey })
+      }
       variant="ghost"
     >
       <RotateCcw className={cn("size-3.5", estado === "erro" && "text-destructive")} />
@@ -307,19 +336,21 @@ function Reexecutar({ runId, stepKey }: { runId: string; stepKey: string }) {
 }
 
 function Achados({ achados }: { achados: ReadResult<"runs.findings"> }) {
+  const { t } = useTranslation();
+
   if (achados.length === 0) return null;
 
   return (
     <Task defaultOpen>
-      <TaskTrigger title={`${achados.length} achado(s)`} />
+      <TaskTrigger title={t("findings.count", { count: achados.length })} />
       <TaskContent>
         {achados.map((achado, i) => (
-          <TaskItem key={`${achado.file ?? "geral"}-${achado.line ?? i}`}>
+          <TaskItem key={`${achado.file ?? "sem-arquivo"}-${achado.line ?? i}`}>
             <Badge variant={achado.severity === "critical" ? "destructive" : "secondary"}>
-              {achado.severity}
+              {rotuloDeSeveridade(t, achado.severity)}
             </Badge>{" "}
             <TaskItemFile>
-              {achado.file ?? "geral"}
+              {achado.file ?? t("findings.general")}
               {achado.line === undefined ? "" : `:${achado.line}`}
             </TaskItemFile>{" "}
             {achado.problem}
@@ -352,7 +383,7 @@ function Json({
 }
 
 /** As cores dos estados, num lugar so, porque lista e detalhe mostram os mesmos. */
-const CORES: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const CORES: Record<Estado, "default" | "secondary" | "destructive" | "outline"> = {
   done: "secondary",
   running: "default",
   queued: "outline",
@@ -364,10 +395,19 @@ const CORES: Record<string, "default" | "secondary" | "destructive" | "outline">
   cancelled: "outline",
 };
 
+/**
+ * O crachá de estado.
+ *
+ * O marcador guarda o estado cru, e não o traduzido: o smoke compara com o que
+ * o serviço devolve, e comparar contra texto de tela faria a verificação
+ * depender do idioma da máquina que roda o loop.
+ */
 function Estado({ status }: { status: string }) {
+  const { t } = useTranslation();
+
   return (
-    <Badge data-locum-estado={status} variant={CORES[status] ?? "outline"}>
-      {status}
+    <Badge data-locum-estado={status} variant={CORES[status as Estado] ?? "outline"}>
+      {rotuloDeEstado(t, status)}
     </Badge>
   );
 }
@@ -395,6 +435,9 @@ function quando(segundos: number): string {
  * Passo que roda na assinatura nao cobra dinheiro, e mostrar so o cobrado faria
  * toda execucao parecer gratuita.
  */
-function dinheiro(run: { costUsd: number; estimateUsd: number }): string {
-  return `${run.costUsd.toFixed(3)} / ${run.estimateUsd.toFixed(3)} USD`;
+function dinheiro(t: TFunction, run: { costUsd: number; estimateUsd: number }): string {
+  return t("runs.money", {
+    cost: run.costUsd.toFixed(3),
+    estimate: run.estimateUsd.toFixed(3),
+  });
 }

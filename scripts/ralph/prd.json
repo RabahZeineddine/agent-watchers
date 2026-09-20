@@ -351,7 +351,7 @@
       "description": "Instalar i18next e react-i18next. Dicionários em app/locales/en.json e app/locales/pt-BR.json, idioma base en, chave em inglês. O idioma vem de app.getLocale() no processo principal e chega à janela por um canal novo, com preferência gravada em settings sobrepondo a do sistema. Plural por Intl.PluralRules, nunca por ternário no componente. Configurar para falhar em desenvolvimento quando uma chave não existir, em vez de mostrar a chave crua.",
       "done_when": "A janela troca de idioma pela preferência e o texto muda, com en como retorno padrão.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -362,7 +362,7 @@
       "description": "Menu da bandeja, notificação, item de login e mensagens do --smoke passam pelo mesmo dicionário. O processo principal não pode depender do react-i18next: use a instância base do i18next, compartilhada com a janela pelo mesmo arquivo de dicionário.",
       "done_when": "A bandeja e a notificação saem no idioma escolhido, e o smoke confirma as duas.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -373,7 +373,7 @@
       "description": "Mover todo texto visível dessas duas telas para o dicionário, incluindo plural de achado, execução e pendência, e os rótulos de severidade. Manter o sentido das mensagens: a inbox tem frases que explicam estado, e traduzir para algo genérico esvazia a tela.",
       "done_when": "Nenhum literal de texto em português sobra nos dois arquivos.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -384,7 +384,7 @@
       "description": "Mesmo tratamento para as outras telas, a barra lateral, a paleta de comandos e o painel do assistente. O prompt de sistema do assistente também é texto de produto: ele passa a viver no dicionário e a responder no idioma escolhido.",
       "done_when": "Nenhum literal de texto em português sobra nesses arquivos e o assistente responde no idioma escolhido.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -395,7 +395,7 @@
       "description": "Um script em app/scripts/check-i18n.mjs que varre renderer e electron atrás de literal de texto voltado a pessoa fora do dicionário, e falha com a lista. Ligar no script de verificação. Reconhecer as exceções óbvias: nome de canal, identificador, classe de CSS e chave de dicionário.",
       "done_when": "O script passa no estado atual e falha quando uma string nova é cravada num componente.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -406,7 +406,7 @@
       "description": "Uma seção com os idiomas disponíveis e a opção de seguir o sistema. Gravada em settings, aplicada sem reiniciar a janela, e valendo também para bandeja e notificação.",
       "done_when": "Trocar o idioma muda a janela e a bandeja na hora.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

@@ -10,6 +10,7 @@ import { assinarEventosDoChat, type ChatEvent } from "@/lib/chat";
 import { cn } from "@/lib/utils";
 import { CornerDownLeft, MessageSquare, Square, Wrench, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Fala {
   de: "user" | "assistant";
@@ -29,6 +30,7 @@ interface Fala {
  * e e escrito a mao pelo motivo da emenda 5 do ADR 0003.
  */
 export function Assistente() {
+  const { t } = useTranslation();
   const [aberto, setAberto] = useState(false);
   const [falas, setFalas] = useState<Fala[]>([]);
   const [rascunho, setRascunho] = useState("");
@@ -91,7 +93,7 @@ export function Assistente() {
     <aside className="border-border bg-popover/95 animate-in slide-in-from-right-4 fixed top-0 right-0 bottom-0 z-40 flex w-[420px] flex-col border-l shadow-2xl backdrop-blur-xl duration-200">
       <header className="border-border flex items-center gap-2 border-b px-4 py-3">
         <MessageSquare className="text-muted-foreground size-4" aria-hidden />
-        <span className="flex-1 text-sm font-medium">Assistente</span>
+        <span className="flex-1 text-sm font-medium">{t("assistant.title")}</span>
         {status.status === "ready" && status.data.modelo && (
           <span className="text-muted-foreground font-mono text-[11px]">{status.data.modelo}</span>
         )}
@@ -102,7 +104,7 @@ export function Assistente() {
           variant="ghost"
         >
           <X className="size-4" aria-hidden />
-          <span className="sr-only">Fechar</span>
+          <span className="sr-only">{t("assistant.close")}</span>
         </Button>
       </header>
 
@@ -112,11 +114,11 @@ export function Assistente() {
             <ConversationEmptyState
               description={
                 indisponivel
-                  ? (status.data.motivo ?? "assistente indisponível")
-                  : "Pergunte sobre execuções, achados, custo ou configuração. Ele olha o estado real antes de responder."
+                  ? (status.data.motivo ?? t("assistant.unavailable.body"))
+                  : t("assistant.empty.body")
               }
               icon={<MessageSquare className="size-5" />}
-              title={indisponivel ? "Sem modelo escolhido" : "Console do Locum"}
+              title={t(indisponivel ? "assistant.unavailable.title" : "assistant.empty.title")}
             />
           )}
 
@@ -158,7 +160,9 @@ export function Assistente() {
                 void enviar();
               }
             }}
-            placeholder={indisponivel ? "escolha o modelo em Configuração" : "Pergunte alguma coisa"}
+            placeholder={t(
+              indisponivel ? "assistant.placeholderUnavailable" : "assistant.placeholder",
+            )}
             ref={campo}
             rows={1}
             value={rascunho}
@@ -171,7 +175,7 @@ export function Assistente() {
               variant="ghost"
             >
               <Square className="size-3.5" aria-hidden />
-              <span className="sr-only">Interromper</span>
+              <span className="sr-only">{t("assistant.stop")}</span>
             </Button>
           ) : (
             <Button
@@ -182,19 +186,19 @@ export function Assistente() {
               variant="ghost"
             >
               <CornerDownLeft className="size-3.5" aria-hidden />
-              <span className="sr-only">Enviar</span>
+              <span className="sr-only">{t("assistant.send")}</span>
             </Button>
           )}
         </div>
-        <p className="text-muted-foreground/70 mt-1.5 text-xs">
-          Ele não aprova nem publica. A decisão continua sendo o seu clique na inbox.
-        </p>
+        <p className="text-muted-foreground/70 mt-1.5 text-xs">{t("assistant.disclaimer")}</p>
       </div>
     </aside>
   );
 }
 
 function BotaoFlutuante({ aoAbrir }: { aoAbrir: () => void }) {
+  const { t } = useTranslation();
+
   return (
     <button
       className="border-border bg-card/90 hover:bg-accent focus-visible:ring-ring fixed right-5 bottom-5 z-40 flex h-10 cursor-pointer items-center gap-2 rounded-full border px-3.5 text-sm shadow-lg backdrop-blur transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-none"
@@ -202,8 +206,10 @@ function BotaoFlutuante({ aoAbrir }: { aoAbrir: () => void }) {
       type="button"
     >
       <MessageSquare className="size-4" aria-hidden />
-      Assistente
-      <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">⌘J</kbd>
+      {t("assistant.title")}
+      <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">
+        {t("assistant.shortcut")}
+      </kbd>
     </button>
   );
 }

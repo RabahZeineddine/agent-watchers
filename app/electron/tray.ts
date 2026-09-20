@@ -1,4 +1,5 @@
 import { app, Menu, nativeImage, Tray } from "electron";
+import { t } from "./i18n.js";
 import { approvalService } from "../src/services/approval-service.js";
 
 // O icone vive em base64 aqui dentro em vez de num arquivo porque o build
@@ -82,25 +83,29 @@ export function teardownTray(): void {
   tray = null;
 }
 
+/** Os rotulos do menu como ele esta agora. Serve ao smoke, que nao clica. */
+export function trayMenuLabels(): string[] {
+  return buildMenu().items.map((item) => item.label);
+}
+
 function buildMenu(): Menu {
   return Menu.buildFromTemplate([
     {
-      label:
-        pendingCount > 0
-          ? `${pendingCount} aguardando aprovacao`
-          : "Nada aguardando aprovacao",
+      // Fila vazia e outra frase, e nao outra forma de plural: quem decide e o
+      // `_zero` do dicionario, junto das demais formas, e nao um ternario aqui.
+      label: t("tray.pending", { count: pendingCount }),
       enabled: false,
     },
     { type: "separator" },
-    { label: "Abrir", click: () => openWindow?.() },
+    { label: t("tray.open"), click: () => openWindow?.() },
     {
-      label: paused ? "Retomar tudo" : "Pausar tudo",
+      label: t(paused ? "tray.resume" : "tray.pause"),
       click: () => {
         paused = !paused;
         void refreshTray();
       },
     },
     { type: "separator" },
-    { label: "Sair", click: () => app.quit() },
+    { label: t("tray.quit"), click: () => app.quit() },
   ]);
 }

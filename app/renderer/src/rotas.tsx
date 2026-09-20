@@ -24,15 +24,19 @@ export interface TelaProps {
  * A lista e escrita a mao, e e a unica fonte tanto da barra quanto do hash:
  * destino novo se acrescenta aqui e aparece nos dois lugares, sem chance de a
  * barra oferecer rota que nao existe nem de existir rota que a barra esconde.
+ *
+ * O destino carrega a chave do dicionário, e não o título já escrito: a barra e
+ * o cabeçalho leem a mesma chave, então a troca de idioma muda os dois de uma
+ * vez e nenhum dos dois guarda uma cópia do texto.
  */
 export const ROTAS = [
-  { id: "inbox", titulo: "Inbox", icone: InboxIcon, Tela: Inbox },
-  { id: "execucoes", titulo: "Execucoes", icone: ListTree, Tela: Execucoes },
-  { id: "agents", titulo: "Agents", icone: Bot, Tela: Agents },
-  { id: "configuracao", titulo: "Configuracao", icone: Settings, Tela: Configuracao },
+  { id: "inbox", rotulo: "nav.inbox", icone: InboxIcon, Tela: Inbox },
+  { id: "execucoes", rotulo: "nav.runs", icone: ListTree, Tela: Execucoes },
+  { id: "agents", rotulo: "nav.agents", icone: Bot, Tela: Agents },
+  { id: "configuracao", rotulo: "nav.settings", icone: Settings, Tela: Configuracao },
 ] as const satisfies readonly {
   id: string;
-  titulo: string;
+  rotulo: string;
   icone: ComponentType<{ className?: string }>;
   Tela: ComponentType<TelaProps>;
 }[];

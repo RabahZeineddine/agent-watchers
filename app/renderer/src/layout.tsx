@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useRead } from "@/lib/bridge";
 import { useRota } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,10 @@ import { ROTA_IDS, ROTA_PADRAO, ROTAS } from "./rotas";
  * comparar o que a janela enxergou com o que os servicos devolvem do outro
  * lado. Ele carrega os identificadores dos agents, e nao so a contagem, porque
  * contagem igual por acaso passaria sem a ponte ter trazido nada.
+ *
+ * O texto sai do dicionário, com plural de verdade: em português a contagem
+ * troca a palavra, e um "execucao(oes)" entre parênteses é o que se escreve
+ * quando não há de onde tirar a forma certa.
  */
 function Ponte({
   agents,
@@ -30,6 +35,8 @@ function Ponte({
   execucoes: number;
   naFila: number;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="border-border border-t px-3 py-3 text-muted-foreground text-xs"
@@ -41,14 +48,13 @@ function Ponte({
       data-runs={execucoes}
     >
       {erro !== undefined ? (
-        <span>
-          a ponte recusou {erro.channel}: {erro.message}
-        </span>
+        <span>{t("bridge.refused", { channel: erro.channel, message: erro.message })}</span>
       ) : estado === "carregando" ? (
-        <span>lendo pela ponte...</span>
+        <span>{t("bridge.loading")}</span>
       ) : (
         <span>
-          {agents.length} agent(s), {execucoes} execucao(oes)
+          {t("bridge.agents", { count: agents.length })},{" "}
+          {t("bridge.runs", { count: execucoes })}
         </span>
       )}
     </div>
@@ -60,6 +66,7 @@ function Ponte({
  * titulo do destino ativo, e a tela dele no corpo.
  */
 export function Layout() {
+  const { t } = useTranslation();
   const { ativa, detalhe, navegar } = useRota(ROTA_IDS, ROTA_PADRAO);
   const rota = ROTAS.find((r) => r.id === ativa) ?? ROTAS[0];
   const { Tela } = rota;
@@ -85,7 +92,7 @@ export function Layout() {
         </div>
 
         <ul className="flex-1 space-y-1 px-2">
-          {ROTAS.map(({ id, titulo, icone: Icone }) => (
+          {ROTAS.map(({ id, rotulo, icone: Icone }) => (
             <li key={id}>
               <button
                 aria-current={id === ativa ? "page" : undefined}
@@ -100,7 +107,7 @@ export function Layout() {
                 type="button"
               >
                 <Icone className="size-4" />
-                <span className="flex-1">{titulo}</span>
+                <span className="flex-1">{t(rotulo)}</span>
                 {id === "inbox" && naFila > 0 ? (
                   <span className="rounded-full bg-primary px-1.5 text-primary-foreground text-xs">
                     {naFila}
@@ -122,7 +129,7 @@ export function Layout() {
 
       <div className="bg-background flex min-w-0 flex-1 flex-col">
         <header className="regiao-de-arrasto flex items-center border-border border-b px-6 py-4">
-          <h1 className="font-semibold text-lg">{rota.titulo}</h1>
+          <h1 className="font-semibold text-lg">{t(rota.rotulo)}</h1>
         </header>
         <main
           className="min-h-0 flex-1 overflow-auto px-6 py-6"
@@ -141,10 +148,12 @@ export function Layout() {
         Marcador do smoke. Ele confere que este elemento esta com display none,
         o que so acontece se a folha construida pelo Tailwind chegou na pagina:
         raiz montada prova o React, nao prova o CSS.
+
+        Sem texto dentro, e de propósito: o que está sendo medido é o estilo
+        calculado, e frase nenhuma precisa existir aqui para isso. Uma que
+        existisse seria texto fora do dicionário sem ninguém para ler.
       */}
-      <span className="hidden" data-locum-probe="tailwind">
-        folha de estilo carregada
-      </span>
+      <span className="hidden" data-locum-probe="tailwind" />
     </div>
   );
 }

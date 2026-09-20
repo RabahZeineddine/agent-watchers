@@ -17,7 +17,9 @@ import type {
   NodeProps as PropsDoNo,
 } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
+import { rotuloDeEstado } from "@/lib/rotulos";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 
 type Detalhe = NonNullable<ReadResult<"runs.get">>;
 type PassoDoSpec = Detalhe["spec"]["steps"][number];
@@ -124,8 +126,7 @@ function dados(
   return {
     chave,
     detalhe:
-      doRun?.modelUsed ??
-      (doSpec?.type === "model" ? doSpec.model : (acao?.action ?? "acao")),
+      doRun?.modelUsed ?? (doSpec?.type === "model" ? doSpec.model : (acao?.action ?? chave)),
     modo: acao?.mode ?? null,
     motivo: doRun?.error ?? doRun?.substitutionReason ?? null,
     nome: doSpec?.name ?? doRun?.name ?? chave,
@@ -155,6 +156,8 @@ const BORDAS: Record<string, string> = {
 };
 
 function NoDoPasso({ data }: PropsDoNo<NoDoFluxo<DadosDoPasso>>) {
+  const { t } = useTranslation();
+
   return (
     <Node
       className={cn("w-full", BORDAS[data.status] ?? "border-border")}
@@ -169,9 +172,13 @@ function NoDoPasso({ data }: PropsDoNo<NoDoFluxo<DadosDoPasso>>) {
       </NodeHeader>
       <NodeContent className="flex flex-col gap-1 text-xs">
         <span className="flex items-center gap-2">
-          <span className="text-muted-foreground">{data.status}</span>
-          {data.opcional ? <span className="text-muted-foreground">opcional</span> : null}
-          {data.modo === "approve" ? <span className="text-amber-500">so com clique</span> : null}
+          <span className="text-muted-foreground">{rotuloDeEstado(t, data.status)}</span>
+          {data.opcional ? (
+            <span className="text-muted-foreground">{t("graph.optional")}</span>
+          ) : null}
+          {data.modo === "approve" ? (
+            <span className="text-amber-500">{t("graph.onlyWithClick")}</span>
+          ) : null}
         </span>
         <span className="truncate text-muted-foreground">{data.detalhe}</span>
         {data.motivo === null ? null : (

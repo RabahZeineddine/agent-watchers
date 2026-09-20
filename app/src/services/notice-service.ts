@@ -16,8 +16,10 @@ export interface Notice {
   key: string;
   runId: string;
   kind: NoticeKind;
-  title: string;
-  body: string;
+  /** De quem e o run. Quem escreve a frase e a casca, com o dicionario dela. */
+  agentName: string;
+  /** So em `run_failed`, e so quando o run deixou mensagem. */
+  error?: string;
   /** Quantos achados criticos o run juntou. Zero nos avisos de falha. */
   criticalCount: number;
   /** Quando a noticia aconteceu, em segundos, para ordenar e para o corte. */
@@ -42,6 +44,11 @@ export interface NoticeFilter {
  * Decide o que merece notificacao nativa. Mora no servico, e nao no processo
  * principal do Electron, porque a regra de agrupar por run e de que severidade
  * interrompe e a mesma para qualquer casca que venha depois.
+ *
+ * O que sai daqui e o fato, e nao a frase: titulo e corpo sao montados por quem
+ * exibe, com o dicionario do idioma escolhido. Texto pronto no servico voltaria
+ * a prender o aviso a um idioma so, e nem a linha de comando nem o servidor MCP
+ * falam necessariamente o mesmo da janela.
  *
  * Nao guarda o que ja foi avisado: isso e estado de sessao e fica em quem
  * entrega, em electron/notify.ts.
@@ -80,8 +87,8 @@ export class NoticeService {
       key: `run_failed:${r.runId}`,
       runId: r.runId,
       kind: "run_failed" as const,
-      title: `${r.agentName} falhou`,
-      body: r.error ?? "sem mensagem de erro",
+      agentName: r.agentName,
+      error: r.error ?? undefined,
       criticalCount: 0,
       at: r.endedAt ?? r.createdAt,
     }));
@@ -137,11 +144,7 @@ export function criticalNotices(candidates: ApprovalCandidate[]): Notice[] {
     key: `critical_finding:${runId}`,
     runId,
     kind: "critical_finding" as const,
-    title: `${dados.agentName}: ${plural(dados.criticals)} aguardando aprovacao`,
-    body:
-      dados.criticals === 1
-        ? "Um achado critico esta na fila esperando decisao."
-        : `${dados.criticals} achados criticos estao na fila esperando decisao.`,
+    agentName: dados.agentName,
     criticalCount: dados.criticals,
     at: dados.at,
   }));
@@ -161,10 +164,6 @@ function countCritical(payload: unknown): number {
     if (item === null || typeof item !== "object") return false;
     return (item as { severity?: unknown }).severity === "critical";
   }).length;
-}
-
-function plural(n: number): string {
-  return n === 1 ? "um achado critico" : `${n} achados criticos`;
 }
 
 /** Corte por data, ou nada quando quem chamou nao pediu corte. */

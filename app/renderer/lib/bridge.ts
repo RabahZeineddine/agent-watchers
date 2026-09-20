@@ -53,6 +53,7 @@ export const READ_CHANNELS = [
   "machine.profile",
   "triggers.list",
   "startup.get",
+  "i18n.state",
   "window.inboxTarget",
 ] as const satisfies readonly BridgeChannel[];
 
@@ -87,6 +88,9 @@ export const ACTION_CHANNELS = [
   "chat.setModel",
   "chat.send",
   "chat.cancel",
+  // Escolher idioma é um clique de quem está usando, e a escrita em `settings`
+  // vale para a próxima subida também. Não é leitura de tela.
+  "i18n.setPreference",
 ] as const satisfies readonly BridgeChannel[];
 
 export type ActionChannel = (typeof ACTION_CHANNELS)[number];

@@ -3,6 +3,7 @@ import { call, useRead } from "@/lib/bridge";
 import { cn } from "@/lib/utils";
 import { Check, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Catalogo {
   provedor: string;
@@ -19,6 +20,7 @@ interface Catalogo {
  * falando de credencial quando o problema era o nome do modelo.
  */
 export function EscolhaDoModelo() {
+  const { t } = useTranslation();
   const status = useRead("chat.status");
   const [catalogos, setCatalogos] = useState<Catalogo[] | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -56,7 +58,7 @@ export function EscolhaDoModelo() {
             {atual ? (
               <span className="font-mono text-xs">{atual}</span>
             ) : (
-              <span className="text-muted-foreground">nenhum modelo escolhido</span>
+              <span className="text-muted-foreground">{t("assistant.model.none")}</span>
             )}
           </p>
           {status.status === "ready" && status.data.motivo && (
@@ -75,14 +77,13 @@ export function EscolhaDoModelo() {
           ) : (
             <RefreshCw className="size-3.5" aria-hidden />
           )}
-          Atualizar catálogo
+          {t("assistant.model.refresh")}
         </Button>
       </div>
 
       {semProvedor && (
         <p className="text-muted-foreground px-3 py-3 text-sm">
-          Nenhum provedor com chave de API nesta máquina. O assistente não usa o runtime de
-          assinatura, porque ele não entrega texto em pedaço e a conversa ficaria muda.
+          {t("assistant.model.noProvider")}
         </p>
       )}
 
@@ -91,9 +92,7 @@ export function EscolhaDoModelo() {
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-medium">{catalogo.provedor}</span>
             <span className="text-muted-foreground text-xs">
-              {catalogo.erro
-                ? catalogo.erro
-                : `${catalogo.modelos.length} ${catalogo.modelos.length === 1 ? "modelo" : "modelos"}`}
+              {catalogo.erro ?? t("assistant.model.count", { count: catalogo.modelos.length })}
             </span>
           </div>
 

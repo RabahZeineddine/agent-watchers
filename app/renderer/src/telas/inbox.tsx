@@ -2,29 +2,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { decidir } from "@/lib/aprovar";
 import { read, useRead, type ReadResult } from "@/lib/bridge";
+import { rotuloDeSeveridade, SEVERIDADES, type Severidade } from "@/lib/rotulos";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Check, ChevronRight, Inbox as InboxIcon, Pencil, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import type { TelaProps } from "../rotas";
 
 type Pendencia = ReadResult<"approvals.listPending">[number];
 type Execucao = ReadResult<"runs.list">[number];
 type Achado = ReadResult<"runs.findings">[number];
 
-const SEVERIDADES = ["critical", "high", "medium", "low"] as const;
-type Severidade = (typeof SEVERIDADES)[number];
-
 /**
  * Palavra junto da cor, sempre. Cor sozinha nao chega para quem nao distingue
  * vermelho de verde, e tambem nao chega para quem esta de relance.
  */
-const ROTULO: Record<Severidade, string> = {
-  critical: "critico",
-  high: "alto",
-  medium: "medio",
-  low: "baixo",
-};
-
 const PONTO: Record<Severidade, string> = {
   critical: "bg-red-500",
   high: "bg-orange-500",
@@ -40,12 +33,12 @@ function pior(achados: Achado[]): Severidade {
 }
 
 /** Idade em palavra, porque timestamp exige conta mental. */
-function idade(segundos: number): { texto: string; velho: boolean } {
+function idade(t: TFunction, segundos: number): { texto: string; velho: boolean } {
   const h = Math.floor((Date.now() / 1000 - segundos) / 3600);
-  if (h < 1) return { texto: "agora", velho: false };
-  if (h < 24) return { texto: `há ${h}h`, velho: false };
+  if (h < 1) return { texto: t("inbox.age.now"), velho: false };
+  if (h < 24) return { texto: t("inbox.age.hours", { hours: h }), velho: false };
   const d = Math.floor(h / 24);
-  return { texto: `há ${d}d`, velho: d >= 2 };
+  return { texto: t("inbox.age.days", { days: d }), velho: d >= 2 };
 }
 
 interface Item {
@@ -204,13 +197,22 @@ function ordenar(itens: Item[]): Item[] {
 }
 
 function Cabecalho({ quantidade }: { quantidade: number }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex items-baseline justify-between">
-      <h1 className="text-lg font-semibold tracking-tight">Inbox</h1>
-      <p className="text-muted-foreground text-sm tabular-nums">
-        {quantidade === 0
-          ? "nada esperando você"
-          : `${quantidade} esperando você`}
+      <h1 className="text-lg font-semibold tracking-tight">{t("inbox.title")}</h1>
+      {/*
+        O marcador existe para o smoke, que confere o texto contra o dicionario
+        nos dois idiomas: atributo com a contagem provaria que o estado chegou,
+        e nao que a frase trocou de idioma.
+      */}
+      <p
+        className="text-muted-foreground text-sm tabular-nums"
+        data-locum-probe="inbox"
+        data-pendencias={quantidade}
+      >
+        {t("inbox.waiting", { count: quantidade })}
       </p>
     </div>
   );
@@ -227,6 +229,8 @@ function FaixaDeFalha({
   quantidade: number;
   navegar: TelaProps["navegar"];
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
@@ -234,9 +238,7 @@ function FaixaDeFalha({
       className="border-border/60 bg-muted/40 hover:bg-muted focus-visible:ring-ring flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-left text-sm transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-none"
     >
       <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden />
-      <span className="text-muted-foreground">
-        {quantidade === 1 ? "1 execução falhou" : `${quantidade} execuções falharam`}
-      </span>
+      <span className="text-muted-foreground">{t("inbox.failures", { count: quantidade })}</span>
       <ChevronRight className="text-muted-foreground ml-auto size-4" aria-hidden />
     </button>
   );
@@ -265,8 +267,9 @@ function Linha({
   aoDescartar,
   aoEditar,
 }: LinhaProps) {
+  const { t } = useTranslation();
   const { pendencia, achados, severidade } = item;
-  const { texto: quando, velho } = idade(pendencia.createdAt);
+  const { texto: quando, velho } = idade(t, pendencia.createdAt);
   const principal = achados[0];
   const alvo = alvoDaPendencia(pendencia);
 
@@ -289,7 +292,7 @@ function Linha({
           <div className="flex items-baseline gap-2">
             <span className="truncate text-sm font-medium">{alvo}</span>
             <Badge variant="outline" className="shrink-0 text-[11px] font-normal">
-              {ROTULO[severidade]}
+              {rotuloDeSeveridade(t, severidade)}
             </Badge>
             <span
               className={cn(
@@ -304,13 +307,13 @@ function Linha({
           <p className="text-muted-foreground mt-0.5 truncate text-sm">
             {achados.length === 0
               ? pendencia.stepName
-              : `${achados.length} ${achados.length === 1 ? "achado" : "achados"} · ${principal?.problem ?? ""}`}
+              : t("inbox.summary", { count: achados.length, problem: principal?.problem ?? "" })}
           </p>
 
           <div className="mt-2 flex items-center gap-1">
             <Button size="sm" className="h-8 cursor-pointer" onClick={aoAprovar} disabled={ocupada}>
               <Check className="size-3.5" aria-hidden />
-              Aprovar
+              {t("inbox.approve")}
             </Button>
             <Button
               size="sm"
@@ -320,7 +323,7 @@ function Linha({
               disabled={ocupada}
             >
               <Pencil className="size-3.5" aria-hidden />
-              Editar
+              {t("inbox.edit")}
             </Button>
             <Button
               size="sm"
@@ -330,7 +333,7 @@ function Linha({
               disabled={ocupada}
             >
               <X className="size-3.5" aria-hidden />
-              Descartar
+              {t("inbox.discard")}
             </Button>
             {achados.length > 1 && (
               <button
@@ -339,7 +342,7 @@ function Linha({
                 aria-expanded={aberta}
                 className="text-muted-foreground hover:text-foreground focus-visible:ring-ring ml-auto cursor-pointer rounded px-2 py-1 text-xs transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-none"
               >
-                {aberta ? "menos" : `ver os ${achados.length}`}
+                {aberta ? t("inbox.collapse") : t("inbox.expand", { count: achados.length })}
               </button>
             )}
           </div>
@@ -359,7 +362,7 @@ function Linha({
               />
               <div className="min-w-0">
                 <span className="text-muted-foreground font-mono text-xs">
-                  {a.file ?? "geral"}
+                  {a.file ?? t("findings.general")}
                   {a.line ? `:${a.line}` : ""}
                 </span>
                 <p className="mt-0.5">{a.problem}</p>
@@ -386,25 +389,27 @@ function alvoDaPendencia(p: Pendencia): string {
  * e fila quebrada sao a mesma tela.
  */
 function Vazio() {
+  const { t } = useTranslation();
+
   return (
     <div className="border-border/60 flex flex-col items-center gap-2 rounded-md border border-dashed px-6 py-14 text-center">
       <InboxIcon className="text-muted-foreground/60 size-6" aria-hidden />
-      <p className="text-sm font-medium">Nada esperando você</p>
-      <p className="text-muted-foreground max-w-sm text-sm">
-        Os watchers continuam rodando. Quando algo precisar da sua decisão, aparece aqui
-        e na bandeja.
-      </p>
+      <p className="text-sm font-medium">{t("inbox.empty.title")}</p>
+      <p className="text-muted-foreground max-w-sm text-sm">{t("inbox.empty.body")}</p>
     </div>
   );
 }
 
 function Atalhos() {
+  const { t } = useTranslation();
+  // A tecla e a mesma em qualquer idioma: ela e o que se aperta, e nao o que se
+  // le. So a acao ao lado passa pelo dicionario.
   const teclas: [string, string][] = [
-    ["j / k", "mover"],
-    ["enter", "abrir"],
-    ["a", "aprovar"],
-    ["e", "editar"],
-    ["x", "descartar"],
+    ["j / k", t("inbox.shortcuts.move")],
+    ["enter", t("inbox.shortcuts.open")],
+    ["a", t("inbox.shortcuts.approve")],
+    ["e", t("inbox.shortcuts.edit")],
+    ["x", t("inbox.shortcuts.discard")],
   ];
   return (
     <p className="text-muted-foreground/70 mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">

@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 19 de setembro de 2026.
+Atualizado em 20 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -39,7 +39,7 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 25 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 33 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
@@ -48,6 +48,12 @@ que a interface vai usar.
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
 | tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
+| base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
+| texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
+| texto da inbox e das execuções | as duas telas pelo dicionário, com plural de achado, execução e pendência, e os rótulos de severidade e de estado num módulo só |
+| texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
+| guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
+| seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 
 ## Execução verificada
 
@@ -100,6 +106,8 @@ npm run build:main                    # empacota o processo principal em dist/ma
 npm run build:renderer                # constrói a página em dist/renderer
 npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
+npm run check:i18n                    # acusa texto cravado fora do dicionário
+npm run verify                        # tipos, guarda de i18n, build e smoke
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
@@ -144,6 +152,13 @@ por credencial dentro da pasta do app, e no banco fica apenas o `credential_ref`
 Gravar exige o app aberto; quem usa a linha de comando lê `undefined` e cai para
 a variável de ambiente, que é como sempre funcionou.
 
+**A janela não desenha antes de saber o idioma.** A etiqueta do sistema só
+existe do lado do Electron, então o provedor de idioma espera a resposta da
+ponte antes de montar a árvore. Montar em inglês e corrigir depois faria a tela
+piscar em toda subida de quem escolheu português. A consequência é que o smoke
+não pode conferir `#root` logo depois do `loadFile`: ele espera o marcador, como
+já fazia com as leituras da ponte.
+
 **Marcador de credencial no cadastro de MCP.** O valor `${credential}` em `env`
 ou `headers` é onde o segredo entra na hora de conectar. A substituição acontece
 num caminho separado do que alimenta tela, log e ferramenta de leitura, para que
@@ -151,6 +166,75 @@ não exista listagem por onde um segredo decifrado escape. Sem nada guardado, a
 entrada de `env` cai para a variável de ambiente de mesmo nome, e não havendo
 nem isso a entrada some do mapa: mandar o marcador adiante viraria um token
 literal numa chamada de rede.
+
+**O serviço entrega o fato, a casca escreve a frase.** O `NoticeService` passou
+a devolver o nome do agent e a contagem de críticos em vez de título e corpo
+prontos. Texto montado no serviço prenderia o aviso a um idioma só, e a linha de
+comando e o servidor MCP não falam necessariamente o mesmo da janela. A exceção
+é a mensagem de erro do run, que sai como veio: ela é do provedor, e traduzir
+seria inventar. O processo principal monta a própria instância do i18next, sem
+`react-i18next`, e o que ele compartilha com a janela é o par de arquivos de
+dicionário, não o módulo que cria a instância.
+
+**O prompt de sistema do assistente é texto de produto.** Ele saiu do código e
+foi para o dicionário, em `assistant.system`. A linha que manda responder em
+português é justamente a que precisa mudar quando a janela está em inglês, e
+deixá-la numa constante faria o assistente responder num idioma com a tela em
+volta dele em outro. O prompt é lido a cada envio, e não uma vez por subida,
+porque o idioma do processo principal pode ter mudado desde que o módulo
+carregou.
+
+**O destino da barra lateral guarda a chave, não o título.** `ROTAS` passou a
+carregar `rotulo: "nav.inbox"` no lugar do texto pronto. A barra e o cabeçalho
+leem a mesma chave, então a troca de idioma muda os dois de uma vez e nenhum dos
+dois fica com uma cópia do texto para envelhecer sozinha.
+
+**O marcador do Tailwind ficou sem texto dentro.** O que o smoke mede ali é o
+estilo calculado, e frase nenhuma precisa existir para isso. A que existia era
+texto fora do dicionário sem ninguém para ler.
+
+**Trocar de idioma pela tela avisa o processo principal.** O canal
+`i18n.setPreference` grava em `settings`, devolve o estado novo para a janela e,
+na mesma chamada, aplica o idioma na instância do processo principal e remonta o
+menu da bandeja. Sem isso a janela viraria de idioma sozinha e a barra do sistema
+continuaria na língua da subida até alguém reiniciar o app, que é justamente o
+tipo de desencontro que ninguém repara num menu que quase ninguém abre.
+
+**O nome de cada idioma não sai do dicionário.** Ele vem do `Intl.DisplayNames`
+no próprio idioma, e não de uma chave traduzida para o idioma corrente: quem
+abre essa seção é quem está com a janela numa língua que não lê, e "Portuguese"
+escrito em inglês não ajuda a achar o português na lista. Seguir o sistema é
+botão à parte, e não o mesmo que escolher o idioma que a máquina fala hoje: quem
+segue o sistema vira junto quando a máquina virar.
+
+**A guarda de i18n olha a posição, não o formato da string.** Procurar "texto
+que parece prosa" acusaria nome de evento, consulta SQL e caminho de arquivo, e
+o barulho faria a guarda ser desligada na primeira semana. O
+`app/scripts/check-i18n.mjs` lê o TypeScript pelo compilador e só conta literal
+que chega a uma pessoa pelo lugar onde está: conteúdo de JSX, atributo que o
+navegador mostra ou lê em voz alta, e propriedade que o Electron pinta em menu
+ou notificação. Fora dessas quatro posições, literal é identificador até prova
+em contrário, e é daí que saem de graça as exceções de nome de canal, classe de
+CSS e chave de dicionário. O `renderer/components` fica fora da varredura: o
+texto em inglês do shadcn e do AI Elements veio do registry, e reescrevê-lo
+quebraria a próxima atualização do upstream.
+
+**Prefixo de versão e tecla de atalho também são texto.** A guarda achou `v{n}`
+nas telas de agents e de execuções e o `⌘J` no botão do assistente, e os três
+foram para o dicionário em vez de para a lista de exceções. Uma guarda que
+absorve na exceção o que acabou de encontrar não guarda nada.
+
+**Rótulo de severidade e de estado passa por lista conhecida.** A severidade e
+o estado chegam do banco como texto solto, e a guarda de chave ausente está
+ligada fora de app empacotado: um valor novo gravado lá atrás derrubaria a tela
+inteira em vez de aparecer cru. O `app/renderer/lib/rotulos.ts` confere contra a
+lista antes de consultar o dicionário, e devolve o valor como veio quando não
+reconhece. Sem tradução é ruim; tela em branco é pior.
+
+**O crachá de estado guarda o valor cru no marcador.** O texto do crachá segue o
+idioma, mas `data-locum-estado` continua com o que o serviço devolveu. O smoke
+compara os dois lados, e comparar contra o texto da tela faria a verificação
+depender do idioma da máquina que roda o loop.
 
 **Notificação é sobre o que chegou agora.** A primeira leitura da fila na
 subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de

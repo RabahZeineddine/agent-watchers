@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
  * A paleta de comandos, ainda sem comando nenhum.
@@ -10,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
  * mesmo motivo que o catalogo de canais e.
  */
 export function Paleta() {
+  const { t } = useTranslation();
   const [aberta, setAberta] = useState(false);
   const campo = useRef<HTMLInputElement>(null);
 
@@ -36,7 +38,7 @@ export function Paleta() {
     <div data-aberta={aberta ? "sim" : "nao"} data-locum-probe="paleta">
       {aberta ? (
         <div
-          aria-label="Paleta de comandos"
+          aria-label={t("palette.label")}
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[20vh]"
           onClick={(evento) => {
@@ -47,12 +49,12 @@ export function Paleta() {
           <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
             <input
               className="w-full bg-transparent px-4 py-3 text-popover-foreground text-sm outline-none placeholder:text-muted-foreground"
-              placeholder="Buscar comando..."
+              placeholder={t("palette.placeholder")}
               ref={campo}
               type="text"
             />
             <div className="border-border border-t px-4 py-6 text-center text-muted-foreground text-sm">
-              Nenhum comando cadastrado ainda.
+              {t("palette.empty")}
             </div>
           </div>
         </div>
