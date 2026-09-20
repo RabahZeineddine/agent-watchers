@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
 import { EscolhaDoModelo } from "../assistente-modelo";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type Provedor = ReadResult<"providers.list">[number];
 type Fallback = ReadResult<"providers.fallbacks">[number];
@@ -27,6 +28,7 @@ type Teste = ReadResult<"mcp.test">;
  * dia todo e barulho caro.
  */
 export function Configuracao() {
+  const { t } = useTranslation();
   const maquina = useRead("machine.profile");
   const machineId = maquina.data?.machineId ?? null;
 
@@ -68,20 +70,20 @@ export function Configuracao() {
     >
       {erro === undefined ? null : (
         <p className="text-destructive text-sm">
-          a ponte recusou {erro.channel}: {erro.message}
+          {t("settings.refused", { channel: erro.channel, message: erro.message })}
         </p>
       )}
 
       <Secao
-        descricao="Qual modelo responde no console. O catalogo vem de cada provedor, nao de lista no codigo."
-        titulo="Modelo do assistente"
+        descricao={t("settings.assistantModel.description")}
+        titulo={t("settings.assistantModel.title")}
       >
         <EscolhaDoModelo />
       </Secao>
 
       <Secao
-        descricao="O que roda neste computador, e o que falta para o resto rodar."
-        titulo="Provedores"
+        descricao={t("settings.providers.description")}
+        titulo={t("settings.providers.title")}
       >
         {(provedores.data ?? []).map((provedor) => (
           <LinhaDoProvedor
@@ -93,14 +95,11 @@ export function Configuracao() {
       </Secao>
 
       <Secao
-        descricao={`Para onde cada modelo cai quando o pedido nao roda em "${machineId ?? "..."}".`}
-        titulo="Substituicao de modelo"
+        descricao={t("settings.fallbacks.description", { machine: machineId ?? "..." })}
+        titulo={t("settings.fallbacks.title")}
       >
         {(fallbacks.data ?? []).length === 0 ? (
-          <Vazio>
-            Nenhuma substituicao cadastrada: cada passo roda o modelo que o spec pede,
-            ou falha.
-          </Vazio>
+          <Vazio>{t("settings.fallbacks.empty")}</Vazio>
         ) : (
           (fallbacks.data ?? []).map((fallback) => (
             <LinhaDoFallback fallback={fallback} key={`${fallback.fromModel}>${fallback.toModel}`} />
@@ -109,11 +108,11 @@ export function Configuracao() {
       </Secao>
 
       <Secao
-        descricao="Cadastros que os passos referenciam. Testar sobe o servidor, e so quando pedido."
-        titulo="Servidores MCP"
+        descricao={t("settings.servers.description")}
+        titulo={t("settings.servers.title")}
       >
         {(servidores.data ?? []).length === 0 ? (
-          <Vazio>Nenhum servidor cadastrado.</Vazio>
+          <Vazio>{t("settings.servers.empty")}</Vazio>
         ) : (
           (servidores.data ?? []).map((servidor) => (
             <LinhaDoServidor
@@ -126,8 +125,8 @@ export function Configuracao() {
       </Secao>
 
       <Secao
-        descricao="O teto sai da versao do topo de cada agent, e o gasto de hoje sai do que ja rodou."
-        titulo="Orcamentos"
+        descricao={t("settings.budgets.description")}
+        titulo={t("settings.budgets.title")}
       >
         {(orcamentos.data ?? []).map((orcamento) => (
           <LinhaDoOrcamento key={orcamento.agentId} orcamento={orcamento} />
@@ -170,6 +169,8 @@ function LinhaDoProvedor({
   credencial: Credencial | undefined;
   provedor: Provedor;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-3 text-sm last:border-b-0"
@@ -178,13 +179,17 @@ function LinhaDoProvedor({
     >
       <span className="w-40 shrink-0 truncate font-medium">{provedor.name}</span>
       <Badge variant={provedor.available ? "secondary" : "outline"}>
-        {provedor.available ? "disponivel" : "indisponivel"}
+        {t(provedor.available ? "settings.providers.available" : "settings.providers.unavailable")}
       </Badge>
-      {provedor.subscription ? <Badge variant="outline">assinatura</Badge> : null}
+      {provedor.subscription ? (
+        <Badge variant="outline">{t("settings.providers.subscription")}</Badge>
+      ) : null}
       <Credenciais credencial={credencial} />
       {provedor.requires.length > 0 ? (
         <span className="text-muted-foreground text-xs">
-          {provedor.available ? "usa" : "falta"} {provedor.requires.join(", ")}
+          {t(provedor.available ? "settings.providers.uses" : "settings.providers.missing", {
+            requirements: provedor.requires.join(", "),
+          })}
         </span>
       ) : null}
     </div>
@@ -198,6 +203,8 @@ function LinhaDoProvedor({
  * endereco e um booleano, e e isso que a tela tem para mostrar.
  */
 function Credenciais({ credencial }: { credencial: Credencial | undefined }) {
+  const { t } = useTranslation();
+
   if (credencial === undefined) return null;
   return (
     <Badge
@@ -205,7 +212,9 @@ function Credenciais({ credencial }: { credencial: Credencial | undefined }) {
       data-locum-guardado={credencial.stored ? "sim" : "nao"}
       variant={credencial.stored ? "secondary" : "destructive"}
     >
-      {credencial.ref} · {credencial.stored ? "guardada" : "sem valor no cofre"}
+      {t(credencial.stored ? "settings.credential.stored" : "settings.credential.missing", {
+        ref: credencial.ref,
+      })}
     </Badge>
   );
 }
@@ -213,6 +222,8 @@ function Credenciais({ credencial }: { credencial: Credencial | undefined }) {
 /* ---------------------------------------------------------------- fallbacks */
 
 function LinhaDoFallback({ fallback }: { fallback: Fallback }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-2 text-sm last:border-b-0"
@@ -220,10 +231,10 @@ function LinhaDoFallback({ fallback }: { fallback: Fallback }) {
       data-locum-ordem={fallback.order}
     >
       <code className="text-xs">{fallback.fromModel}</code>
-      <span className="text-muted-foreground text-xs">vira</span>
+      <span className="text-muted-foreground text-xs">{t("settings.fallbacks.becomes")}</span>
       <code className="text-xs">{fallback.toModel}</code>
       <span className="ml-auto text-muted-foreground text-xs tabular-nums">
-        ordem {fallback.order}
+        {t("settings.fallbacks.order", { order: fallback.order })}
       </span>
     </div>
   );
@@ -252,6 +263,7 @@ function LinhaDoServidor({
   credencial: Credencial | undefined;
   servidor: Servidor;
 }) {
+  const { t } = useTranslation();
   const nome = servidor.config.name;
   const [teste, setTeste] = useState<EstadoDoTeste>({ fase: "parado" });
   const [ferramentas, setFerramentas] = useState<Ferramenta[] | null>(null);
@@ -297,7 +309,7 @@ function LinhaDoServidor({
           {servidor.config.scope}
         </Badge>
         <Badge variant={servidor.enabled ? "secondary" : "outline"}>
-          {servidor.enabled ? "habilitado" : "desabilitado"}
+          {t(servidor.enabled ? "settings.servers.enabled" : "settings.servers.disabled")}
         </Badge>
         <Credenciais credencial={credencial} />
         <div className="ml-auto flex items-center gap-1">
@@ -308,7 +320,7 @@ function LinhaDoServidor({
             size="sm"
             variant="ghost"
           >
-            {teste.fase === "testando" ? "testando..." : "testar conexao"}
+            {t(teste.fase === "testando" ? "settings.servers.testing" : "settings.servers.test")}
           </Button>
           <Button
             data-locum-listar={nome}
@@ -317,7 +329,7 @@ function LinhaDoServidor({
             size="sm"
             variant="ghost"
           >
-            {listando ? "listando..." : "listar ferramentas"}
+            {t(listando ? "settings.servers.listing" : "settings.servers.list")}
           </Button>
         </div>
       </div>
@@ -327,7 +339,7 @@ function LinhaDoServidor({
       {ferramentas === null ? null : (
         <div className="flex flex-wrap gap-1" data-locum-ferramentas-de={nome}>
           {ferramentas.length === 0 ? (
-            <span className="text-muted-foreground text-xs">nenhuma ferramenta</span>
+            <span className="text-muted-foreground text-xs">{t("settings.servers.noTools")}</span>
           ) : (
             ferramentas.map((ferramenta) => (
               <Badge
@@ -336,7 +348,10 @@ function LinhaDoServidor({
                 key={ferramenta.name}
                 variant="outline"
               >
-                {ferramenta.name} · {ferramenta.estimatedTokens} tok
+                {t("settings.servers.tool", {
+                  name: ferramenta.name,
+                  tokens: ferramenta.estimatedTokens,
+                })}
               </Badge>
             ))
           )}
@@ -347,12 +362,14 @@ function LinhaDoServidor({
 }
 
 function ResultadoDoTeste({ estado, nome }: { estado: EstadoDoTeste; nome: string }) {
+  const { t } = useTranslation();
+
   if (estado.fase === "parado" || estado.fase === "testando") return null;
 
   if (estado.fase === "recusado") {
     return (
       <p className="text-destructive text-xs" data-locum-ok="nao" data-locum-teste={nome}>
-        a ponte recusou: {estado.erro}
+        {t("settings.servers.refused", { message: estado.erro })}
       </p>
     );
   }
@@ -366,8 +383,11 @@ function ResultadoDoTeste({ estado, nome }: { estado: EstadoDoTeste; nome: strin
       data-locum-teste={nome}
     >
       {teste.ok
-        ? `conectou em ${teste.elapsedMs}ms e expoe ${teste.toolCount} ferramenta(s)`
-        : `nao conectou em ${teste.elapsedMs}ms: ${teste.error ?? "sem motivo"}`}
+        ? t("settings.servers.ok", { count: teste.toolCount, elapsed: teste.elapsedMs })
+        : t("settings.servers.failed", {
+            elapsed: teste.elapsedMs,
+            error: teste.error ?? t("settings.servers.noReason"),
+          })}
     </p>
   );
 }
@@ -375,6 +395,13 @@ function ResultadoDoTeste({ estado, nome }: { estado: EstadoDoTeste; nome: strin
 /* ---------------------------------------------------------------- orcamentos */
 
 function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
+  const { t } = useTranslation();
+  // Teto ausente e teto ausente, e escrever zero ali mentiria sobre o limite.
+  const moeda = (valor: number | null): string =>
+    valor === null
+      ? t("settings.budgets.noCap")
+      : t("settings.budgets.amount", { amount: valor.toFixed(2) });
+
   return (
     <div
       className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-3 text-sm last:border-b-0"
@@ -385,20 +412,25 @@ function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
     >
       <span className="w-40 shrink-0 truncate font-medium">{orcamento.agentId}</span>
       <span className="text-muted-foreground text-xs">
-        v{orcamento.version ?? "?"}
+        {orcamento.version === null
+          ? t("settings.budgets.unknownVersion")
+          : t("settings.budgets.version", { version: orcamento.version })}
       </span>
       <span className="text-xs tabular-nums">
-        por run {moeda(orcamento.perRunUsd)}
+        {t("settings.budgets.perRun", { amount: moeda(orcamento.perRunUsd) })}
       </span>
-      <span className="text-xs tabular-nums">por dia {moeda(orcamento.perDayUsd)}</span>
-      <span className="ml-auto text-muted-foreground text-xs tabular-nums">
-        hoje {orcamento.spentTodayUsd.toFixed(3)} USD em {orcamento.runsToday} execucao(oes)
+      <span className="text-xs tabular-nums">
+        {t("settings.budgets.perDay", { amount: moeda(orcamento.perDayUsd) })}
+      </span>
+      <span
+        className="ml-auto text-muted-foreground text-xs tabular-nums"
+        data-locum-hoje={orcamento.runsToday}
+      >
+        {t("settings.budgets.today", {
+          count: orcamento.runsToday,
+          spent: orcamento.spentTodayUsd.toFixed(3),
+        })}
       </span>
     </div>
   );
-}
-
-/** Teto ausente e teto ausente, e escrever zero ali mentiria sobre o limite. */
-function moeda(valor: number | null): string {
-  return valor === null ? "sem teto" : `${valor.toFixed(2)} USD`;
 }

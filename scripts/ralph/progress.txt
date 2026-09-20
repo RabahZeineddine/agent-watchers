@@ -32,3 +32,4 @@
 2026-09-20  M4c.1 feito      base de i18n com i18next, dicionario em app/locales, idioma pela ponte, plural por Intl.PluralRules e chave ausente estourando
 2026-09-20  M4c.2 feito      bandeja, notificacao, item de login e saida do smoke pelo dicionario; smoke ok
 2026-09-20  M4c.3 feito      inbox e execucoes pelo dicionario, rotulos de severidade e estado num modulo so, smoke conferindo as duas telas nos dois idiomas
+2026-09-20  M4c.4 feito      agents, configuração, barra lateral, paleta, grafo e assistente pelo dicionário; prompt de sistema junto; smoke confere as quatro telas nos dois idiomas

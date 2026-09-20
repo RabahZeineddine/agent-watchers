@@ -6,6 +6,7 @@ import { comContexto, diffJson, type LinhaDoDiff } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type { TelaProps } from "../rotas";
 
 type Versao = ReadResult<"agents.versions">[number];
@@ -33,6 +34,7 @@ export function Agents({ detalhe, navegar }: TelaProps) {
 /* ------------------------------------------------------------------ lista */
 
 function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
+  const { t } = useTranslation();
   const agents = useRead("agents.list");
   const linhas = agents.data ?? [];
 
@@ -46,16 +48,15 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
         data-total={linhas.length}
       >
         {agents.status === "error"
-          ? `a ponte recusou: ${agents.error.message}`
+          ? t("agents.refused", { message: agents.error.message })
           : agents.status === "loading"
-            ? "lendo agents..."
-            : `${linhas.length} agent(s)`}
+            ? t("agents.loading")
+            : t("agents.count", { count: linhas.length })}
       </div>
 
       {agents.status === "ready" && linhas.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          Nenhum agent cadastrado. O comando <code>npm run dev seed</code> grava o
-          agent semente.
+          <Trans components={{ code: <code /> }} i18nKey="agents.empty" />
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
@@ -72,7 +73,7 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
                 {agent.name}
               </span>
               <Badge variant={agent.enabled ? "secondary" : "outline"}>
-                {agent.enabled ? "habilitado" : "desabilitado"}
+                {t(agent.enabled ? "agents.enabled" : "agents.disabled")}
               </Badge>
             </button>
           ))}
@@ -93,19 +94,20 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
  * primeiro.
  */
 function Agent({ agentId, navegar }: { agentId: string; navegar: TelaProps["navegar"] }) {
+  const { t } = useTranslation();
   const versoes = useRead("agents.versions", agentId);
   const maquina = useRead("machine.profile");
   const [escolhida, setEscolhida] = useState<number | null>(null);
   const [contra, setContra] = useState<number | null>(null);
 
   if (versoes.status === "error") {
-    return <Aviso probe="agent">a ponte recusou: {versoes.error.message}</Aviso>;
+    return <Aviso probe="agent">{t("agents.refused", { message: versoes.error.message })}</Aviso>;
   }
   if (versoes.status === "loading") {
-    return <Aviso probe="agent">lendo o historico...</Aviso>;
+    return <Aviso probe="agent">{t("agents.detail.loading")}</Aviso>;
   }
   if (versoes.data.length === 0) {
-    return <Aviso probe="agent">o agent {agentId} nao tem versao gravada</Aviso>;
+    return <Aviso probe="agent">{t("agents.detail.missing", { agentId })}</Aviso>;
   }
 
   const lista = versoes.data;
@@ -126,12 +128,12 @@ function Agent({ agentId, navegar }: { agentId: string; navegar: TelaProps["nave
       <div className="flex items-center gap-3">
         <Button onClick={() => navegar("agents")} size="sm" variant="ghost">
           <ArrowLeft className="size-4" />
-          Agents
+          {t("agents.detail.back")}
         </Button>
         <span className="font-medium text-sm">{atual.spec.name}</span>
         <span className="text-muted-foreground text-xs">{agentId}</span>
         <span className="ml-auto text-muted-foreground text-xs">
-          {lista.length} versao(oes)
+          {t("agents.detail.versions", { count: lista.length })}
         </span>
       </div>
 
@@ -175,6 +177,8 @@ function Historico({
   lista: Versao[];
   marcar: (v: number) => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       {lista.map((versao) => {
@@ -198,7 +202,7 @@ function Historico({
                 {quando(versao.createdAt)}
               </span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
-                {versao.note ?? "sem nota"}
+                {versao.note ?? t("agents.history.noNote")}
               </span>
               {acao === undefined ? null : (
                 <Badge
@@ -216,7 +220,7 @@ function Historico({
               size="sm"
               variant={versao.version === contra ? "secondary" : "ghost"}
             >
-              comparar
+              {t("agents.history.compare")}
             </Button>
           </div>
         );
@@ -293,6 +297,7 @@ function PassoDoSpec({
   previa: Previa | undefined;
   spec: Spec;
 }) {
+  const { t } = useTranslation();
   const ferramentas = passo.type === "model" ? (passo.tools ?? spec.defaultTools) : [];
 
   return (
@@ -301,14 +306,16 @@ function PassoDoSpec({
         <span className="text-muted-foreground tabular-nums">{indice + 1}</span>
         <span className="font-medium">{passo.name}</span>
         <Badge variant="outline">{passo.type}</Badge>
-        {passo.optional ? <Badge variant="outline">opcional</Badge> : null}
+        {passo.optional ? <Badge variant="outline">{t("agents.step.optional")}</Badge> : null}
         {passo.type === "action" ? (
           <Badge variant={passo.mode === "approve" ? "secondary" : "destructive"}>
             {passo.mode}
           </Badge>
         ) : null}
         <span className="ml-auto text-muted-foreground text-xs">
-          {passo.needs.length === 0 ? "sem dependencia" : `depende de ${passo.needs.join(", ")}`}
+          {passo.needs.length === 0
+            ? t("agents.step.noDependency")
+            : t("agents.step.dependsOn", { steps: passo.needs.join(", ") })}
         </span>
       </div>
 
@@ -316,13 +323,17 @@ function PassoDoSpec({
         <Resolucao pedido={passo.model} previa={previa} />
       ) : (
         <p className="mt-2 text-muted-foreground text-xs">
-          Acao <code>{passo.action}</code>, entrada de <code>{passo.input ?? "nenhum passo"}</code>.
+          <Trans
+            components={{ code: <code /> }}
+            i18nKey="agents.step.action"
+            values={{ action: passo.action, input: passo.input ?? t("agents.step.noInput") }}
+          />
         </p>
       )}
 
       {passo.type === "model" && passo.requiresServers.length > 0 ? (
         <p className="mt-1 text-muted-foreground text-xs">
-          Exige {passo.requiresServers.join(", ")}.
+          {t("agents.step.requires", { servers: passo.requiresServers.join(", ") })}
         </p>
       ) : null}
 
@@ -333,10 +344,16 @@ function PassoDoSpec({
 
 /** Pedido contra resolvido, com o motivo da troca quando houver. */
 function Resolucao({ pedido, previa }: { pedido: string; previa: Previa | undefined }) {
+  const { t } = useTranslation();
+
   if (previa === undefined) {
     return (
       <p className="mt-2 text-muted-foreground text-xs" data-locum-modelo={pedido}>
-        Pedido <code>{pedido}</code>, resolvendo nesta maquina...
+        <Trans
+          components={{ code: <code /> }}
+          i18nKey="agents.step.resolving"
+          values={{ model: pedido }}
+        />
       </p>
     );
   }
@@ -344,7 +361,11 @@ function Resolucao({ pedido, previa }: { pedido: string; previa: Previa | undefi
   if (!previa.ok) {
     return (
       <p className="mt-2 text-destructive text-xs" data-locum-modelo={pedido}>
-        Pedido <code>{pedido}</code>, e nesta maquina nao resolve: {previa.error}
+        <Trans
+          components={{ code: <code /> }}
+          i18nKey="agents.step.unresolved"
+          values={{ error: previa.error, model: pedido }}
+        />
       </p>
     );
   }
@@ -356,8 +377,14 @@ function Resolucao({ pedido, previa }: { pedido: string; previa: Previa | undefi
       data-locum-modelo={pedido}
       data-locum-resolvido={used}
     >
-      Pedido <code>{pedido}</code>, roda <code>{used}</code>
-      {substitutionReason === undefined ? "" : ` (${substitutionReason})`}
+      <Trans
+        components={{ code: <code /> }}
+        i18nKey="agents.step.resolved"
+        values={{ model: pedido, used }}
+      />
+      {substitutionReason === undefined
+        ? ""
+        : t("agents.step.substitution", { reason: substitutionReason })}
     </p>
   );
 }
@@ -371,6 +398,7 @@ function Resolucao({ pedido, previa }: { pedido: string; previa: Previa | undefi
  * so quando foi pedido.
  */
 function Ferramentas({ refs }: { refs: { server: string; tool: string; class: string }[] }) {
+  const { t } = useTranslation();
   const [pesos, setPesos] = useState<Map<string, number>>(new Map());
   const [estado, setEstado] = useState<"parado" | "contando" | "erro">("parado");
   const servidores = [...new Set(refs.map((r) => r.server))];
@@ -402,7 +430,7 @@ function Ferramentas({ refs }: { refs: { server: string; tool: string; class: st
             variant={ref.class === "external_write" ? "destructive" : "outline"}
           >
             {ref.server}/{ref.tool}
-            {peso === undefined ? "" : ` · ${peso} tok`}
+            {peso === undefined ? "" : ` · ${t("agents.tools.tokens", { tokens: peso })}`}
           </Badge>
         );
       })}
@@ -413,7 +441,11 @@ function Ferramentas({ refs }: { refs: { server: string; tool: string; class: st
         size="sm"
         variant="ghost"
       >
-        {estado === "erro" ? "nao deu para contar" : estado === "contando" ? "contando..." : "contar tokens"}
+        {estado === "erro"
+          ? t("agents.tools.failed")
+          : estado === "contando"
+            ? t("agents.tools.counting")
+            : t("agents.tools.count")}
       </Button>
     </div>
   );
@@ -429,6 +461,7 @@ function Ferramentas({ refs }: { refs: { server: string; tool: string; class: st
  * tudo esconderia a diferenca no meio do resto.
  */
 function Comparacao({ anterior, atual }: { anterior: Versao | undefined; atual: Versao }) {
+  const { t } = useTranslation();
   const linhas = useMemo(
     () => (anterior === undefined ? [] : comContexto(diffJson(anterior.spec, atual.spec))),
     [anterior, atual],
@@ -438,7 +471,7 @@ function Comparacao({ anterior, atual }: { anterior: Versao | undefined; atual: 
     return (
       <div data-locum-diff="0" data-locum-probe="diff">
         <p className="text-muted-foreground text-sm">
-          Nao ha outra versao para comparar. O spec da v{atual.version} esta abaixo.
+          {t("agents.diff.alone", { version: atual.version })}
         </p>
         <div className="mt-2">
           <CodeBlock code={JSON.stringify(atual.spec, null, 2)} language="json">
@@ -459,11 +492,15 @@ function Comparacao({ anterior, atual }: { anterior: Versao | undefined; atual: 
       data-locum-entrou={mudadas.filter((l) => l.tipo === "entrou").map((l) => l.texto.trim()).join("|")}
     >
       <p className="mb-2 text-muted-foreground text-xs">
-        v{anterior.version} contra v{atual.version}: {mudadas.length} linha(s) diferente(s)
+        {t("agents.diff.summary", {
+          count: mudadas.length,
+          from: anterior.version,
+          to: atual.version,
+        })}
       </p>
 
       {mudadas.length === 0 ? (
-        <p className="text-muted-foreground text-sm">Os dois specs sao identicos.</p>
+        <p className="text-muted-foreground text-sm">{t("agents.diff.identical")}</p>
       ) : (
         <div className="overflow-auto rounded-lg border border-border font-mono text-xs">
           {linhas.map((linha, i) => (

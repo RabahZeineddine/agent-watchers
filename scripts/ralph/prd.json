@@ -384,7 +384,7 @@
       "description": "Mesmo tratamento para as outras telas, a barra lateral, a paleta de comandos e o painel do assistente. O prompt de sistema do assistente também é texto de produto: ele passa a viver no dicionário e a responder no idioma escolhido.",
       "done_when": "Nenhum literal de texto em português sobra nesses arquivos e o assistente responde no idioma escolhido.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

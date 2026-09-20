@@ -51,6 +51,7 @@ que a interface vai usar.
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
 | texto da inbox e das execuções | as duas telas pelo dicionário, com plural de achado, execução e pendência, e os rótulos de severidade e de estado num módulo só |
+| texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
 
 ## Execução verificada
 
@@ -170,6 +171,23 @@ comando e o servidor MCP não falam necessariamente o mesmo da janela. A exceç�
 seria inventar. O processo principal monta a própria instância do i18next, sem
 `react-i18next`, e o que ele compartilha com a janela é o par de arquivos de
 dicionário, não o módulo que cria a instância.
+
+**O prompt de sistema do assistente é texto de produto.** Ele saiu do código e
+foi para o dicionário, em `assistant.system`. A linha que manda responder em
+português é justamente a que precisa mudar quando a janela está em inglês, e
+deixá-la numa constante faria o assistente responder num idioma com a tela em
+volta dele em outro. O prompt é lido a cada envio, e não uma vez por subida,
+porque o idioma do processo principal pode ter mudado desde que o módulo
+carregou.
+
+**O destino da barra lateral guarda a chave, não o título.** `ROTAS` passou a
+carregar `rotulo: "nav.inbox"` no lugar do texto pronto. A barra e o cabeçalho
+leem a mesma chave, então a troca de idioma muda os dois de uma vez e nenhum dos
+dois fica com uma cópia do texto para envelhecer sozinha.
+
+**O marcador do Tailwind ficou sem texto dentro.** O que o smoke mede ali é o
+estilo calculado, e frase nenhuma precisa existir para isso. A que existia era
+texto fora do dicionário sem ninguém para ler.
 
 **Rótulo de severidade e de estado passa por lista conhecida.** A severidade e
 o estado chegam do banco como texto solto, e a guarda de chave ausente está

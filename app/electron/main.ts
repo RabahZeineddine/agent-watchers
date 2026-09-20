@@ -1417,11 +1417,13 @@ type Dicionario = typeof en;
  * que não soubesse disso passaria a exigir o texto errado. O `_zero` é a
  * exceção que o próprio i18next abre para contagem zero, e vem antes das formas.
  */
+type Vars = Record<string, string | number>;
+
 function doDicionario(
   dicionario: Dicionario,
   idioma: string,
   caminho: string,
-  vars: Record<string, string | number> = {},
+  vars: Vars = {},
 ): string {
   const partes = caminho.split(".");
   const folha = partes.pop() ?? "";
@@ -1457,12 +1459,17 @@ interface IdiomaVisto {
   runs: number;
 }
 
-/** O texto que a inbox e a lista de execucoes desenharam, com o que contaram. */
+/** O texto que cada tela desenhou, com o que ela contou. */
 interface TelasVistas {
   inbox: string;
   pendencias: number;
   execucoes: string;
   total: number;
+  agents: string;
+  quantosAgents: number;
+  orcamento: string;
+  execucoesDeHoje: number;
+  gastoDeHoje: string;
 }
 
 /**
@@ -1495,12 +1502,16 @@ async function lerIdioma(window: BrowserWindow): Promise<IdiomaVisto> {
 }
 
 /**
- * O que a inbox e a lista de execucoes escreveram, no idioma corrente.
+ * O que as quatro telas escreveram, no idioma corrente.
  *
- * As duas telas contam coisas, e contagem e onde tradução quebra primeiro: o
+ * Todas elas contam coisas, e contagem e onde tradução quebra primeiro: o
  * plural do português troca a palavra, e um texto montado com "(oes)" no fim
  * passaria por qualquer conferência de marcador. Por isso o exame compara a
  * frase inteira com o dicionário, e não só o número ao lado dela.
+ *
+ * De configuração vem a linha de gasto do dia, e não um título de seção: o
+ * título sairia igual traduzido ou não numa tela onde o resto ficou em
+ * inglês, e a frase com plural não sai.
  */
 async function lerTelas(window: BrowserWindow): Promise<TelasVistas> {
   await irPara(window, "inbox");
@@ -1525,11 +1536,45 @@ async function lerTelas(window: BrowserWindow): Promise<TelasVistas> {
     })()`,
   );
 
+  await irPara(window, "agents");
+  const agents = await esperarProbe<{ texto: string; total: number }>(
+    window,
+    "agents",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agents]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { texto: (probe.textContent ?? "").trim(), total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  await irPara(window, "configuracao");
+  const orcamento = await esperarProbe<{ texto: string; runs: number; gasto: string }>(
+    window,
+    "orcamento",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=configuracao]");
+      if (probe === null || probe.dataset.estado !== "pronto") return null;
+      const linha = document.querySelector("[data-locum-orcamento]");
+      const hoje = linha?.querySelector("[data-locum-hoje]");
+      if (linha === null || hoje === undefined || hoje === null) return null;
+      return {
+        texto: (hoje.textContent ?? "").trim(),
+        runs: Number(hoje.dataset.locumHoje),
+        gasto: linha.dataset.locumGastoHoje,
+      };
+    })()`,
+  );
+
   return {
     inbox: inbox.texto,
     pendencias: inbox.pendencias,
     execucoes: execucoes.texto,
     total: execucoes.total,
+    agents: agents.texto,
+    quantosAgents: agents.total,
+    orcamento: orcamento.texto,
+    execucoesDeHoje: orcamento.runs,
+    gastoDeHoje: orcamento.gasto,
   };
 }
 
@@ -1572,23 +1617,25 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     return lerIdioma(window);
   }
 
-  /** As duas telas conferidas contra o dicionário do idioma que está valendo. */
+  /** As quatro telas conferidas contra o dicionário do idioma que está valendo. */
   async function conferirTelas(dicionario: Dicionario, idioma: string): Promise<TelasVistas> {
     const telas = await lerTelas(window);
-    const esperadoInbox = doDicionario(dicionario, idioma, "inbox.waiting", {
-      count: telas.pendencias,
+    const cobrar = (onde: string, visto: string, caminho: string, vars: Vars): void => {
+      const esperado = doDicionario(dicionario, idioma, caminho, vars);
+      if (visto !== esperado) {
+        throw new Error(
+          `${onde} em ${idioma} escreveu "${visto}" e o dicionario pede "${esperado}"`,
+        );
+      }
+    };
+
+    cobrar("a inbox", telas.inbox, "inbox.waiting", { count: telas.pendencias });
+    cobrar("as execucoes", telas.execucoes, "runs.count", { count: telas.total });
+    cobrar("a lista de agents", telas.agents, "agents.count", { count: telas.quantosAgents });
+    cobrar("o orcamento", telas.orcamento, "settings.budgets.today", {
+      count: telas.execucoesDeHoje,
+      spent: Number(telas.gastoDeHoje).toFixed(3),
     });
-    if (telas.inbox !== esperadoInbox) {
-      throw new Error(
-        `a inbox em ${idioma} escreveu "${telas.inbox}" e o dicionario pede "${esperadoInbox}"`,
-      );
-    }
-    const esperadoRuns = doDicionario(dicionario, idioma, "runs.count", { count: telas.total });
-    if (telas.execucoes !== esperadoRuns) {
-      throw new Error(
-        `as execucoes em ${idioma} escreveram "${telas.execucoes}" e o dicionario pede "${esperadoRuns}"`,
-      );
-    }
     return telas;
   }
 
@@ -1647,7 +1694,12 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
       en: ingles.rodape,
       system: doSistema.idioma,
       fallback: FALLBACK_LANGUAGE,
-      screens: t("smoke.screens", { inbox: telasPt.inbox, runs: telasPt.execucoes }),
+      screens: t("smoke.screens", {
+        agents: telasPt.agents,
+        budget: telasPt.orcamento,
+        inbox: telasPt.inbox,
+        runs: telasPt.execucoes,
+      }),
     });
   } finally {
     // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima
@@ -1671,6 +1723,7 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
 async function checkMainText(): Promise<string> {
   const { trayMenuLabels, trayPendingCount } = await import("./tray.js");
   const { noticeText } = await import("./notify.js");
+  const { promptDoSistema } = await import("./chat.js");
 
   const antes = idiomaAtual();
   const idiomas: [string, Dicionario][] = [
@@ -1689,6 +1742,7 @@ async function checkMainText(): Promise<string> {
 
   const bandeja: string[] = [];
   const avisos: string[] = [];
+  const prompts: string[] = [];
 
   try {
     for (const [idioma, dicionario] of idiomas) {
@@ -1743,11 +1797,22 @@ async function checkMainText(): Promise<string> {
         throw new Error(`o erro do provedor foi reescrito para "${comMensagem.body}"`);
       }
 
+      // O prompt de sistema do assistente e texto de produto, e a linha que
+      // manda responder num idioma e a que decide o idioma da resposta. Sem
+      // isto a tela viraria de idioma e o assistente continuaria respondendo
+      // no anterior.
+      const prompt = promptDoSistema();
+      const esperadoPrompt = doDicionario(dicionario, idioma, "assistant.system");
+      if (prompt !== esperadoPrompt) {
+        throw new Error(`o prompt do assistente em ${idioma} nao saiu do dicionario`);
+      }
+
       bandeja.push(rotulos[2] ?? "");
       avisos.push(texto.title);
+      prompts.push(prompt.split("\n")[1] ?? "");
     }
 
-    if (bandeja[0] === bandeja[1] || avisos[0] === avisos[1]) {
+    if (bandeja[0] === bandeja[1] || avisos[0] === avisos[1] || prompts[0] === prompts[1]) {
       throw new Error(`o texto do processo principal nao mudou de idioma: ${bandeja.join(", ")}`);
     }
   } finally {
@@ -1756,7 +1821,11 @@ async function checkMainText(): Promise<string> {
     await aplicarIdioma(antes);
   }
 
-  return t("smoke.mainText", { tray: bandeja.join(" / "), notification: avisos.join(" / ") });
+  return t("smoke.mainText", {
+    assistant: prompts.join(" / "),
+    notification: avisos.join(" / "),
+    tray: bandeja.join(" / "),
+  });
 }
 
 /**
