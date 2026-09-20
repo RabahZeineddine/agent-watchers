@@ -207,7 +207,9 @@ function BotaoFlutuante({ aoAbrir }: { aoAbrir: () => void }) {
     >
       <MessageSquare className="size-4" aria-hidden />
       {t("assistant.title")}
-      <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">⌘J</kbd>
+      <kbd className="bg-muted rounded px-1 py-0.5 font-mono text-[10px]">
+        {t("assistant.shortcut")}
+      </kbd>
     </button>
   );
 }

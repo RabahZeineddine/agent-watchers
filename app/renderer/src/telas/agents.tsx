@@ -197,7 +197,9 @@ function Historico({
               onClick={() => escolher(versao.version)}
               type="button"
             >
-              <span className="w-12 shrink-0 tabular-nums">v{versao.version}</span>
+              <span className="w-12 shrink-0 tabular-nums">
+                {t("common.version", { version: versao.version })}
+              </span>
               <span className="shrink-0 text-muted-foreground text-xs">
                 {quando(versao.createdAt)}
               </span>

@@ -12,11 +12,13 @@
     "mcp": "tsx src/mcp-server/index.ts",
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "build:main": "node scripts/build-main.mjs",
     "build:renderer": "tsc -p renderer/tsconfig.json --noEmit && vite build --config renderer/vite.config.ts renderer",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron dist/main.cjs",
-    "smoke": "npm run build && electron dist/main.cjs --smoke"
+    "smoke": "npm run build && electron dist/main.cjs --smoke",
+    "verify": "npm run typecheck && npm run check:i18n && npm run build && npm run smoke"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.0",

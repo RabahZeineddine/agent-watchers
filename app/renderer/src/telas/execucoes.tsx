@@ -118,7 +118,10 @@ function LinhaDeExecucao({
     >
       <Estado status={run.status} />
       <span className="w-48 shrink-0 truncate font-medium">
-        {run.agentId} <span className="text-muted-foreground">v{run.agentVersion}</span>
+        {run.agentId}{" "}
+        <span className="text-muted-foreground">
+          {t("common.version", { version: run.agentVersion })}
+        </span>
       </span>
       <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs">
         {run.agentName}
@@ -168,7 +171,10 @@ function Execucao({ navegar, runId }: { navegar: TelaProps["navegar"]; runId: st
         </Button>
         <Estado status={detalhe.status} />
         <span className="font-medium text-sm">
-          {detalhe.agentId} <span className="text-muted-foreground">v{detalhe.agentVersion}</span>
+          {detalhe.agentId}{" "}
+          <span className="text-muted-foreground">
+            {t("common.version", { version: detalhe.agentVersion })}
+          </span>
         </span>
         <span className="text-muted-foreground text-xs">{quando(detalhe.createdAt)}</span>
         <span className="ml-auto text-sm tabular-nums">{dinheiro(t, detalhe)}</span>

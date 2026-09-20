@@ -33,3 +33,4 @@
 2026-09-20  M4c.2 feito      bandeja, notificacao, item de login e saida do smoke pelo dicionario; smoke ok
 2026-09-20  M4c.3 feito      inbox e execucoes pelo dicionario, rotulos de severidade e estado num modulo so, smoke conferindo as duas telas nos dois idiomas
 2026-09-20  M4c.4 feito      agents, configuração, barra lateral, paleta, grafo e assistente pelo dicionário; prompt de sistema junto; smoke confere as quatro telas nos dois idiomas
+2026-09-20  M4c.5 feito      check-i18n varrendo renderer e electron por posição, v{version} e ⌘J para o dicionário

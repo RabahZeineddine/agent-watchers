@@ -52,6 +52,7 @@ que a interface vai usar.
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
 | texto da inbox e das execuções | as duas telas pelo dicionário, com plural de achado, execução e pendência, e os rótulos de severidade e de estado num módulo só |
 | texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
+| guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 
 ## Execução verificada
 
@@ -104,6 +105,8 @@ npm run build:main                    # empacota o processo principal em dist/ma
 npm run build:renderer                # constrói a página em dist/renderer
 npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
+npm run check:i18n                    # acusa texto cravado fora do dicionário
+npm run verify                        # tipos, guarda de i18n, build e smoke
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
@@ -188,6 +191,23 @@ dois fica com uma cópia do texto para envelhecer sozinha.
 **O marcador do Tailwind ficou sem texto dentro.** O que o smoke mede ali é o
 estilo calculado, e frase nenhuma precisa existir para isso. A que existia era
 texto fora do dicionário sem ninguém para ler.
+
+**A guarda de i18n olha a posição, não o formato da string.** Procurar "texto
+que parece prosa" acusaria nome de evento, consulta SQL e caminho de arquivo, e
+o barulho faria a guarda ser desligada na primeira semana. O
+`app/scripts/check-i18n.mjs` lê o TypeScript pelo compilador e só conta literal
+que chega a uma pessoa pelo lugar onde está: conteúdo de JSX, atributo que o
+navegador mostra ou lê em voz alta, e propriedade que o Electron pinta em menu
+ou notificação. Fora dessas quatro posições, literal é identificador até prova
+em contrário, e é daí que saem de graça as exceções de nome de canal, classe de
+CSS e chave de dicionário. O `renderer/components` fica fora da varredura: o
+texto em inglês do shadcn e do AI Elements veio do registry, e reescrevê-lo
+quebraria a próxima atualização do upstream.
+
+**Prefixo de versão e tecla de atalho também são texto.** A guarda achou `v{n}`
+nas telas de agents e de execuções e o `⌘J` no botão do assistente, e os três
+foram para o dicionário em vez de para a lista de exceções. Uma guarda que
+absorve na exceção o que acabou de encontrar não guarda nada.
 
 **Rótulo de severidade e de estado passa por lista conhecida.** A severidade e
 o estado chegam do banco como texto solto, e a guarda de chave ausente está

@@ -395,7 +395,7 @@
       "description": "Um script em app/scripts/check-i18n.mjs que varre renderer e electron atrás de literal de texto voltado a pessoa fora do dicionário, e falha com a lista. Ligar no script de verificação. Reconhecer as exceções óbvias: nome de canal, identificador, classe de CSS e chave de dicionário.",
       "done_when": "O script passa no estado atual e falha quando uma string nova é cravada num componente.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
