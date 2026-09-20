@@ -797,21 +797,27 @@ async function checkRoutes(window: BrowserWindow): Promise<string> {
     throw new Error(`com o hash vazio a janela abriu em ${inicial} e nao em ${esperados[0]}`);
   }
 
+  // O cabeçalho que repetia o nome do destino saiu, porque a barra lateral já
+  // marca onde a pessoa está. Quem responde qual destino está ativo passa a ser
+  // a própria marcação da barra, que é o que alguém usando o aplicativo lê.
   for (const { id, titulo } of barra) {
     await irPara(window, id);
 
     const visto = (await window.webContents.executeJavaScript(
-      `(() => ({
-        titulo: document.querySelector("h1")?.textContent ?? "",
-        marcado: document.querySelector("[data-locum-rota][aria-current=page]")?.dataset.locumRota ?? null,
-      }))()`,
+      `(() => {
+        const ativo = document.querySelector("[data-locum-rota][aria-current=page]");
+        return {
+          marcado: ativo?.dataset.locumRota ?? null,
+          titulo: ativo?.querySelector("span")?.textContent ?? "",
+        };
+      })()`,
     )) as { titulo: string; marcado: string | null };
 
-    if (visto.titulo !== titulo) {
-      throw new Error(`o destino ${id} mostrou o titulo ${visto.titulo} e nao ${titulo}`);
-    }
     if (visto.marcado !== id) {
       throw new Error(`o destino ${id} esta ativo e a barra marca ${visto.marcado}`);
+    }
+    if (visto.titulo !== titulo) {
+      throw new Error(`a barra marca ${id} com o nome ${visto.titulo} e nao ${titulo}`);
     }
   }
 

@@ -214,7 +214,7 @@ function Execucao({ navegar, runId }: { navegar: TelaProps["navegar"]; runId: st
             {t("common.version", { version: detalhe.agentVersion })}
           </span>
         </span>
-        <span className="text-muted-foreground text-xs">{quando(detalhe.createdAt)}</span>
+        <span className="text-muted-foreground text-xs">{quando(t, detalhe.createdAt)}</span>
         <span className="ml-auto text-sm tabular-nums">{dinheiro(t, detalhe)}</span>
       </div>
 
