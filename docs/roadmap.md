@@ -86,6 +86,37 @@ entrando depois para correlacionar deploy, trace e pull request recente.
 **Adaptador `codex exec`.** Plano ChatGPT como terceira via, para a máquina sem
 assinatura Claude.
 
+**Credencial de sessão web e extensão de navegador.** Há uma classe de MCP que
+não usa aplicativo aprovado e sim a sessão do navegador, porque o registro de
+aplicativo não sai. O `sistema-interno-mcp` e o `outro-sistema-mcp` são desse tipo, e ambos
+já são processos stdio locais, então já rodam no Locum sem trabalho novo: basta
+cadastrar e marcar as ferramentas no passo.
+
+O que falta neles não é integração, é ciclo de vida. Sessão web expira, e o
+servidor passa a falhar em silêncio no meio de uma execução. Três coisas
+resolvem, em ordem de valor:
+
+1. **Estado de credencial no cadastro.** `testConnection` já distingue conectado
+   de falho; falta guardar quando a sessão foi vista viva pela última vez, e
+   marcar o servidor como precisando de autenticação em vez de deixar o passo
+   quebrar. Barato, e é o que evita descobrir a expiração pelo achado que não
+   veio.
+2. **Renovação por deep link.** O `locum://` e o cofre do M3 já são a ponta
+   receptora: uma extensão de navegador captura a sessão do domínio e entrega ao
+   aplicativo por deep link, que guarda no keychain e devolve ao servidor MCP por
+   variável de ambiente. Isso troca a cópia manual de cookie por um clique.
+3. **Assistente de criação de MCP.** A extensão observa as chamadas que a página
+   faz e propõe um servidor MCP a partir delas. É a parte mais cara e a menos
+   necessária: gerar o servidor uma vez é trabalho de uma tarde, e renovar a
+   credencial é trabalho de toda semana.
+
+Dois cuidados que essa frente carrega, e não são técnicos. Guardar sessão de
+sistema corporativo num cofre lido por agent autônomo aumenta o que um erro
+alcança, então esses servidores entram com escopo de leitura e a classe de
+escrita externa continua valendo. E o canal entre extensão e aplicativo precisa
+de emparelhamento por segredo, senão qualquer página aberta no navegador
+conversa com o aplicativo.
+
 **O resto.** Jira, deploy, watcher dos próprios pull requests. Cada um é
 configuração mais uma fonte, não código novo.
 
