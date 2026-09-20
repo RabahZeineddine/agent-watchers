@@ -299,10 +299,13 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, keychain com {{secrets}}, notificação com {{notifications}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
+    "updates": "interruptor desligado por padrão, electron-updater nunca carregado, requisições de rede na subida: {{requests}}; ligado, ele é lido sem armar, configuração de publicação {{feed}}",
+    "feedPresent": "presente",
+    "feedAbsent": "ausente",
     "secrets": "segredo cifrado no disco, referência no banco, valor só na conexão",
     "notifications": "aviso montado sem exibir, três críticos num run só, clique apontando para o run",
     "deepLink": "esquema locum {{scheme}}, retorno de OAuth roteado, token no cofre e referência no cadastro",
@@ -320,7 +323,8 @@
     "language": "troca de idioma pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}, telas com {{screens}}, {{picker}}",
     "mainText": "bandeja, notificação e prompt do assistente seguindo o idioma: \"{{tray}}\", \"{{notification}}\" e \"{{assistant}}\"",
     "screens": "inbox escrevendo \"{{inbox}}\", execuções escrevendo \"{{runs}}\", agents escrevendo \"{{agents}}\" e configuração escrevendo \"{{budget}}\", todas batendo com o dicionário nos dois idiomas",
-    "picker": "configuração trocando o idioma por clique, \"{{pt}}\" e \"{{en}}\" sem recarregar, e a bandeja indo junto na mesma batida: \"{{tray}}\""
+    "picker": "configuração trocando o idioma por clique, \"{{pt}}\" e \"{{en}}\" sem recarregar, e a bandeja indo junto na mesma batida: \"{{tray}}\"",
+    "schema": "migrações aplicadas: {{count}}"
   },
   "status": {
     "done": "concluído",
@@ -358,5 +362,9 @@
     "see_run": "ver execução",
     "not_found": "essa pendência não está mais esperando decisão",
     "body_label": "texto do comentário"
+  },
+  "schema": {
+    "created": "esquema criado do zero, migrações aplicadas: {{count}}",
+    "adopted": "banco existente adotado pelas migrações, marcadas como aplicadas: {{count}}"
   }
 }

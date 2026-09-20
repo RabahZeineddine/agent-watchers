@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
 import en from "../locales/en.json";
 import ptBR from "../locales/pt-BR.json";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 // So tipo: o `import type` e apagado no build, e um import de valor vindo de
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
 // apontar o binario do Electron.
@@ -20,14 +20,26 @@ function flagValue(name: string): string | undefined {
   return at < 0 ? undefined : process.argv[at + 1];
 }
 
+/**
+ * Tira um caminho de dentro do asar.
+ *
+ * Empacotado, `__dirname` cai dentro de `app.asar`, que e um arquivo so. Isso
+ * basta para ler JSON e HTML, porque o Electron remenda o `fs`, mas nao para
+ * modulo nativo: `dlopen` e do sistema e nao enxerga caminho la dentro. O que
+ * o `asarUnpack` do empacotamento deixa em `app.asar.unpacked` sai por aqui.
+ */
+function foraDoAsar(caminho: string): string {
+  return caminho.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
 // O nucleo abre o banco no import do modulo, entao o caminho do binding nativo
 // precisa estar no ambiente antes de qualquer import dele. Por isso o acesso ao
 // banco mora num import dinamico la embaixo, e nao no topo do arquivo.
-process.env.LOCUM_SQLITE_BINDING = join(
-  __dirname,
-  "..",
-  "native",
-  "better_sqlite3-electron.node",
+//
+// O nome carrega a arquitetura porque o pacote sai para arm64 e x64, e um
+// `.node` compilado para uma nao carrega na outra.
+process.env.LOCUM_SQLITE_BINDING = foraDoAsar(
+  join(__dirname, "..", "native", `better_sqlite3-electron-${process.arch}.node`),
 );
 
 // Antes de qualquer espera: com o app fechado, o macOS sobe o processo para
@@ -248,6 +260,64 @@ async function checkPower(): Promise<string> {
   }
 
   return t("smoke.power", { minutes: sleep / 60_000 });
+}
+
+/**
+ * Prova que o interruptor desligado não custa uma requisição sequer.
+ *
+ * Ler o código e ver que ele decide não chamar não prova nada: a chamada que
+ * importa é a que um temporizador faria três segundos depois, longe da linha
+ * que alguém leu. Por isso aqui a saída de rede é contada de fora, e o critério
+ * é a contagem, não a intenção.
+ *
+ * A segunda metade liga o interruptor e confere que ele é mesmo lido, pelo
+ * `planUpdater`, que decide sem armar. Não é detalhe: num pacote com dmg o
+ * `app-update.yml` existe, e chamar o `setupUpdater` ligado ali dentro faria o
+ * smoke bater no servidor de releases. A preferência de quem desenvolve volta
+ * ao que era no fim, porque o smoke roda no banco de verdade.
+ */
+async function checkUpdates(): Promise<string> {
+  const { updateService } = await import("../src/services/update-service.js");
+  const { planUpdater, setupUpdater, updaterArmed, espiarRede } = await import("./updater.js");
+
+  const anterior = await updateService.getPreference();
+  const espia = espiarRede();
+
+  const semRede = (momento: string): void => {
+    const vistas = espia.vistas();
+    if (vistas.length === 0) return;
+    const quais = vistas.map((v) => `${v.via} ${v.destino}`).join(", ");
+    throw new Error(`atualização ${momento} saiu para a rede: ${quais}`);
+  };
+
+  try {
+    await updateService.clearPreference();
+    const desligado = await setupUpdater();
+    if (desligado.enabled || desligado.armed || updaterArmed()) {
+      throw new Error("o verificador de atualização armou com o interruptor desligado");
+    }
+    if (desligado.reason !== "disabled") {
+      throw new Error(
+        `sem preferência gravada o motivo deveria ser disabled, veio ${desligado.reason}`,
+      );
+    }
+    semRede("desligada");
+
+    await updateService.setEnabled(true);
+    const ligado = await planUpdater();
+    if (!ligado.enabled) throw new Error("o interruptor ligado não chegou ao verificador");
+    if (ligado.armed || updaterArmed()) throw new Error("o plano do verificador armou sozinho");
+    semRede("ligada");
+
+    return t("smoke.updates", {
+      requests: espia.vistas().length,
+      feed: t(ligado.feed === null ? "smoke.feedAbsent" : "smoke.feedPresent"),
+    });
+  } finally {
+    espia.parar();
+    if (anterior === null) await updateService.clearPreference();
+    else await updateService.setEnabled(anterior);
+  }
 }
 
 /**
@@ -604,7 +674,14 @@ async function checkRenderer(): Promise<string> {
   // A tela de configuracao precisa de um servidor MCP para o botao de testar
   // ter alvo. O de brinquedo nao depende de rede nem de nada instalado, entao
   // conectar nele custa segundos e nao expoe o loop a servidor de terceiro.
-  await ensureFixtureServer(join(__dirname, ".."));
+  // O binario do Electron em modo Node, e nao o `node` do sistema: o pacote
+  // nao pode supor Node instalado na maquina de quem abre o `.app`. O bundle
+  // sai do asar porque quem o le e um processo filho, que nao tem o `fs`
+  // remendado do Electron e nao enxerga caminho la dentro.
+  await ensureFixtureServer({
+    command: [process.execPath, foraDoAsar(join(__dirname, "mcp-fixture-server.mjs"))],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  });
 
   setupBridge({ inboxTarget: pendingInboxTarget });
 
@@ -1660,8 +1737,16 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
         `a preferencia pt-BR deixou a janela em ${portugues.idioma} e o documento em ${portugues.documento}`,
       );
     }
-    if (portugues.estrito !== "true") {
-      throw new Error("fora de app empacotado a guarda de chave ausente devia estar ligada");
+    // A guarda de chave ausente segue `isPackaged`: em desenvolvimento ela
+    // estoura para o buraco aparecer, e no pacote fica desligada para quem
+    // instalou nao levar uma tela quebrada por causa de uma traducao faltando.
+    // Conferir os dois lados importa porque o smoke roda das duas formas, e
+    // exigir sempre ligada reprovaria o `.app` por estar certo.
+    const estritoEsperado = String(!app.isPackaged);
+    if (portugues.estrito !== estritoEsperado) {
+      throw new Error(
+        `a guarda de chave ausente esta ${portugues.estrito} e neste modo devia estar ${estritoEsperado}`,
+      );
     }
     const esperadoPt = doDicionario(ptBR, "pt-BR", "bridge.runs", { count: portugues.runs });
     if (!portugues.rodape.includes(esperadoPt)) {
@@ -2082,6 +2167,23 @@ async function runSecretCommand(): Promise<void> {
  * ausente estoura, como na janela: texto cru num menu da barra do sistema passa
  * despercebido por semanas.
  */
+/**
+ * Cria ou atualiza o esquema antes de qualquer serviço tocar o banco.
+ *
+ * Primeira coisa da subida, antes até do idioma: o dicionário sai de
+ * `settings`, que é tabela, e numa máquina onde o Locum acabou de ser
+ * instalado não existe tabela nenhuma. O `drizzle-kit push` que criava o
+ * esquema é ferramenta de desenvolvimento e não viaja no pacote.
+ *
+ * A pasta vem por caminho explícito porque o migrator lê os `.sql` do disco:
+ * o build copia `drizzle/` para junto do `main.cjs`, e é de lá que ela sai
+ * tanto rodando por `npx electron dist/main.cjs` quanto empacotada.
+ */
+async function migrarEsquema(): Promise<import("../src/db/migrate.js").ResultadoDaMigracao> {
+  const { migrateDb } = await import("../src/db/migrate.js");
+  return migrateDb(join(__dirname, "drizzle"));
+}
+
 async function setupI18n(): Promise<string> {
   const { i18nService } = await import("../src/services/i18n-service.js");
   const { language } = await i18nService.resolve(app.getLocale());
@@ -2150,9 +2252,15 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
 async function main(): Promise<void> {
   await app.whenReady();
 
+  // Antes de tudo que lê o banco, inclusive do idioma, que mora em `settings`.
+  const esquema = await migrarEsquema();
+
   // Antes de qualquer texto: bandeja, notificacao e o proprio smoke falam pelo
   // dicionario, e pedir chave antes disso estoura de proposito.
   await setupI18n();
+
+  if (esquema.criado) console.log(t("schema.created", { count: esquema.disponiveis }));
+  else if (esquema.adotado) console.log(t("schema.adopted", { count: esquema.disponiveis }));
 
   if (flagValue("--set-secret") !== undefined || flagValue("--remove-secret") !== undefined) {
     await runSecretCommand();
@@ -2170,6 +2278,7 @@ async function main(): Promise<void> {
     // continua valendo, porque ela nao pede clique de ninguem para existir.
     app.dock?.hide();
     const agents = await checkCore();
+    const schema = t("smoke.schema", { count: esquema.disponiveis });
 
     const loginItem = await checkLoginItem();
 
@@ -2185,6 +2294,7 @@ async function main(): Promise<void> {
     teardownTray();
 
     const power = await checkPower();
+    const updates = await checkUpdates();
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const deepLink = await checkDeepLink();
@@ -2194,9 +2304,11 @@ async function main(): Promise<void> {
     console.log(
       t("smoke.ok", {
         agents,
+        schema,
         pending,
         loginItem,
         power,
+        updates,
         secrets,
         notifications: avisos,
         deepLink,
@@ -2242,6 +2354,13 @@ async function main(): Promise<void> {
 
   const { setupPower } = await import("./power.js");
   setupPower();
+
+  // Depois de tudo que o Locum precisa para funcionar: atualizar é o único
+  // passo da subida que fala com a internet, e ele não pode atrasar a bandeja
+  // nem a janela. Desligado, que é o padrão, não custa nada.
+  const { setupUpdater } = await import("./updater.js");
+  const atualizacao = await setupUpdater();
+  if (atualizacao.armed) console.log(`atualização: verificando em ${atualizacao.feed}`);
 
   // Antes da janela: o preload chama os canais assim que o documento carrega, e
   // canal ainda nao registrado volta como erro de IPC para o renderer.

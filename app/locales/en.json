@@ -299,10 +299,13 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
+    "updates": "switch off by default, electron-updater never loaded, network requests on startup: {{requests}}; switched on it is read without arming, publish config {{feed}}",
+    "feedPresent": "present",
+    "feedAbsent": "absent",
     "secrets": "secret encrypted on disk, reference in the database, value only in the connection",
     "notifications": "notice built without showing, three criticals in a single run, click pointing to the run",
     "deepLink": "locum scheme {{scheme}}, OAuth callback routed, token in the vault and reference in the registry",
@@ -320,7 +323,8 @@
     "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}, screens with {{screens}}, {{picker}}",
     "mainText": "tray, notification and assistant prompt following the language: \"{{tray}}\", \"{{notification}}\" and \"{{assistant}}\"",
     "screens": "inbox reading \"{{inbox}}\", runs reading \"{{runs}}\", agents reading \"{{agents}}\" and settings reading \"{{budget}}\", all matching the dictionary in both languages",
-    "picker": "settings switching the language by click, \"{{pt}}\" and \"{{en}}\" with no reload, and the tray following in the same beat: \"{{tray}}\""
+    "picker": "settings switching the language by click, \"{{pt}}\" and \"{{en}}\" with no reload, and the tray following in the same beat: \"{{tray}}\"",
+    "schema": "migrations applied: {{count}}"
   },
   "status": {
     "done": "done",
@@ -358,5 +362,9 @@
     "see_run": "see run",
     "not_found": "this item is no longer waiting for a decision",
     "body_label": "comment text"
+  },
+  "schema": {
+    "created": "schema created from scratch, migrations applied: {{count}}",
+    "adopted": "existing database adopted by migrations, marked as applied: {{count}}"
   }
 }

@@ -417,7 +417,7 @@
       "description": "Hoje o esquema nasce de drizzle-kit push, que é ferramenta de desenvolvimento e não existe no aplicativo empacotado: instalado numa máquina limpa, ele subiria sem tabela nenhuma. Gerar migrações com drizzle-kit generate para app/drizzle, embutir a pasta no pacote, e aplicar na subida do processo principal com o migrator do drizzle, antes de qualquer serviço tocar o banco. Banco já existente não pode perder dado.",
       "done_when": "Apagando o banco e subindo o aplicativo, o esquema é criado sozinho e o smoke passa.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -428,7 +428,7 @@
       "description": "Desenhar o ícone em SVG e gerar o .icns. O desenho segue a identidade já escolhida: a régua de severidade do registro. Um retângulo de cantos arredondados no tom ardósia da janela, com uma barra vertical à esquerda em vermelho de severidade ocupando a altura inteira, e duas ou três linhas horizontais curtas representando o registro. Sem letra, sem gradiente, sem brilho. Gerar o iconset pelas ferramentas do próprio sistema, sips e iconutil, e apontar no empacotamento.",
       "done_when": "Existe app/build/icon.icns gerado a partir do SVG versionado, e o script que gera roda de novo sem intervenção.",
       "verify": "npx tsc --noEmit && test -f build/icon.icns && npm run build",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -439,7 +439,7 @@
       "description": "Configurar electron-builder: appId com.rabah.locum, nome do produto Locum, alvo dmg e zip para arm64 e x64, saída em app/release, categoria de produtividade. O módulo nativo better-sqlite3 precisa ser reconstruído para o Electron empacotado e ficar fora do asar, senão o aplicativo instalado não abre. Incluir as pastas de dicionário e de migração no pacote.",
       "done_when": "npm run dist:dir produz um .app que abre, e o conteúdo traz locales, drizzle e o módulo nativo fora do asar.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && test -d release/mac-arm64/Locum.app",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -450,7 +450,7 @@
       "description": "Um script que roda o binário de dentro do .app com --smoke, porque o que passa em desenvolvimento não prova nada sobre o pacote: caminho de recurso, asar e módulo nativo só quebram depois de empacotar.",
       "done_when": "npm run smoke:dist executa o binário empacotado e sai 0.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && npm run smoke:dist",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -461,7 +461,7 @@
       "description": "Ligar electron-updater lendo a configuração de publicação, desligado por padrão e sem nenhuma chamada de rede quando desligado. Sem assinatura da Apple ele não funciona, então o padrão desligado não é preguiça: é o comportamento correto enquanto não houver conta de desenvolvedor.",
       "done_when": "Com o interruptor desligado o aplicativo sobe sem nenhuma requisição de atualização, e o smoke confirma.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -472,7 +472,7 @@
       "description": "Escrever docs/empacotamento.md: como gerar o .dmg, o que acontece ao abrir sem assinatura e como contornar na primeira abertura, o que muda com conta de desenvolvedor Apple, e por que a atualização automática depende dela. Atualizar o README com a seção de instalação.",
       "done_when": "O arquivo existe e cobre os quatro pontos.",
       "verify": "test -f ../docs/empacotamento.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

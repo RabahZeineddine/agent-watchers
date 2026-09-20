@@ -14,6 +14,7 @@ que a interface vai usar.
 | área | estado |
 |---|---|
 | esquema SQLite com 17 tabelas | pronto |
+| migração de esquema no aplicativo | migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
@@ -54,6 +55,10 @@ que a interface vai usar.
 | texto das outras telas | agents, configuração, barra lateral, paleta de comandos, grafo e o painel do assistente pelo dicionário, com o prompt de sistema do assistente junto |
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
+| ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
+| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
+| fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
+| atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 
 ## Execução verificada
 
@@ -77,7 +82,8 @@ não reexecutou os passos concluídos.
 ```bash
 cd app
 npm install
-npm run db:push
+npm run db:push                       # desenvolvimento: empurra o esquema direto
+npm run db:generate                   # gera a migração depois de mexer no schema.ts
 npm run dev seed
 npm run dev demo                      # não precisa de credencial
 npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
@@ -99,6 +105,9 @@ npm run dev secret:unlink provider:anthropic
 npm run dev startup                   # o Locum sobe junto com o login?
 npm run dev startup:on                # passa a subir, valendo na próxima subida
 npm run dev startup:off               # deixa de subir
+npm run dev updates                   # mostra o interruptor da atualização automática
+npm run dev updates:on                # liga a verificação na subida do app
+npm run dev updates:off               # desliga a verificação
 npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
@@ -108,6 +117,10 @@ npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npm run check:i18n                    # acusa texto cravado fora do dicionário
 npm run verify                        # tipos, guarda de i18n, build e smoke
+npm run build:icon                    # regera build/icon.icns a partir do SVG
+npm run dist:dir                      # empacota sem instalador, em release/mac-<arch>/Locum.app
+npm run dist                          # gera o .dmg e o .zip
+npm run smoke:dist                    # roda o binário de dentro do .app e sai 0
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
@@ -533,6 +546,90 @@ de trabalho: o cliente sobe o processo na raiz do repositório, onde não existe
 `node_modules`. Por isso o registro chama `node` com o caminho do `tsx` dentro
 de `app/node_modules`, em vez de `npm run mcp`, que ainda escreveria o cabeçalho
 do script no stdout e corromperia a sessão.
+
+**O esquema do aplicativo vem de migração, o do desenvolvimento vem de push.**
+O `drizzle-kit push` é ferramenta de desenvolvimento e não existe dentro do
+`.app`: numa máquina limpa o Locum subiria sem tabela nenhuma. Por isso o
+processo principal aplica `app/drizzle` na subida, antes de qualquer serviço
+tocar o banco, inclusive antes do idioma, que mora em `settings`. Quem mexer no
+`schema.ts` precisa rodar `npm run db:generate` junto, senão o pacote sobe com
+um esquema mais velho que o código.
+
+**A pasta de migração viaja como arquivo.** O migrator do drizzle lê os `.sql`
+do disco na hora de rodar, então embutir a pasta no pacote do esbuild não
+adianta. O `build:main` copia `app/drizzle` para `app/dist/drizzle`, e o
+processo principal aponta para lá pelo caminho do próprio bundle.
+
+**Banco que nasceu de `push` é adotado, não recriado.** Ele tem as tabelas e
+nenhum registro de migração, e a primeira migração estouraria em `table agents
+already exists`. Na primeira subida com migração, o Locum reconhece o esquema
+já existente e marca as migrações da pasta como aplicadas, sem tocar em dado.
+
+**O módulo nativo precisa sair do asar.** O asar é um arquivo só, e o Electron
+remenda o `fs` para ler de dentro dele: JSON, HTML e os `.sql` da migração
+saem de lá sem ninguém notar. `dlopen` não passa por esse remendo, então um
+`.node` dentro do asar simplesmente não carrega. O `asarUnpack` manda `native/`
+para `app.asar.unpacked`, e o processo principal troca um segmento do caminho
+pelo outro antes de apontar o binding.
+
+**O binário nativo carrega a arquitetura no nome.** O pacote sai para arm64 e
+x64, e um `.node` só serve para a arquitetura em que foi compilado. Com nome
+genérico, empacotar x64 numa máquina arm64 produziria um `.app` que instala e
+não abre. Com a arquitetura no nome, falta a cópia e a subida estoura dizendo
+qual arquivo não existe. Quem for gerar o pacote x64 precisa rodar
+`node scripts/build-main.mjs --arch x64` antes.
+
+**O electron-builder não reconstrói o `node_modules`.** O padrão dele é
+recompilar as dependências nativas para o ABI do Electron, que é justamente o
+que quebraria a linha de comando: ela roda por `tsx`, no Node do sistema, e
+ficaria sem banco. Por isso `npmRebuild: false`, e o ABI do Electron vem da
+segunda cópia que o `build:main` guarda em `native/`.
+
+**Sem certificado da Apple, `identity` vai explícito como nulo.** Deixando o
+padrão, o electron-builder procura identidade no keychain e falha o
+empacotamento por não achar. Assinatura e notarização dependem de conta de
+desenvolvedor, que é decisão do dono do repositório.
+
+**A saída do empacotamento não pode ser `dist`.** É o padrão do
+electron-builder e é onde o esbuild e o Vite já escrevem: sem mudar para
+`release`, o pacote sobrescreveria o que está embrulhando.
+
+**O mapa de origem fica fora do pacote.** São mais de cinco mil arquivos que só
+servem a quem tem o código, e quem tem o código roda por `npm start`. Dentro do
+`.app` eles dobravam o tamanho do asar sem ninguém para abrir.
+
+**O `--smoke` de desenvolvimento passava e o do pacote não.** As duas coisas que
+quebraram são exatamente as que só aparecem depois de empacotar. O servidor de
+brinquedo era alcançado por `tsx` lendo `src/`, e nenhum dos dois entra no
+`.app`: agora ele sai empacotado em `dist/mcp-fixture-server.mjs`, desempacotado
+do asar porque quem o lê é um processo filho, sem o `fs` remendado do Electron.
+E a conferência do i18n exigia a guarda de chave ausente sempre ligada, quando
+ela segue `isPackaged` de propósito: em desenvolvimento estoura para o buraco
+aparecer, e no pacote fica desligada para quem instalou não levar tela quebrada
+por uma tradução faltando.
+
+**O servidor de brinquedo sobe pelo próprio binário do Electron.** Com
+`ELECTRON_RUN_AS_NODE`, e não pelo `node` do sistema: o pacote não pode supor
+Node instalado na máquina de quem abre o `.app`.
+
+**A atualização automática não serve sem assinatura da Apple.** O macOS recusa
+instalar pacote não assinado vindo do updater, então ligar a verificação hoje
+só gastaria rede para descobrir uma versão que nunca entra. Por isso o
+interruptor nasce desligado e, desligado, o `electron-updater` sequer é
+importado: um módulo carregado "só para consultar" deixa temporizador de pé, e
+é assim que um verificador acaba batendo num servidor que ninguém autorizou. O
+smoke prova isso contando o que sai pelo `http`, pelo `https` e pelo `net` do
+Electron, porque ler o código e ver que ele decide não chamar não prova nada
+sobre o que um temporizador faz três segundos depois.
+
+**O `app-update.yml` só nasce com alvo `dmg` ou `zip`.** O electron-builder
+escreve a configuração de publicação no pacote no `onAfterPack`, e no macOS ele
+pula quando os alvos são só `dir`. Então `npm run dist:dir` produz um `.app` sem
+feed, e o verificador ligado ali dentro responde `no-feed` em vez de armar. Vale
+para o smoke do pacote: ele exercita o caminho desligado de verdade, e o caminho
+ligado só até a decisão, pelo `planUpdater`, que nunca arma. Chamar o
+`setupUpdater` ligado dentro de um pacote com dmg faria o smoke bater no
+servidor de releases.
 
 ## Próximos passos
 

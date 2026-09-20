@@ -35,3 +35,9 @@
 2026-09-20  M4c.4 feito      agents, configuração, barra lateral, paleta, grafo e assistente pelo dicionário; prompt de sistema junto; smoke confere as quatro telas nos dois idiomas
 2026-09-20  M4c.5 feito      check-i18n varrendo renderer e electron por posição, v{version} e ⌘J para o dicionário
 2026-09-20  M4c.6 feito      seleção de idioma na configuração, troca sem recarregar a janela, bandeja e notificação junto
+2026-09-20  M5.1  feito      migrações em app/drizzle aplicadas na subida do processo principal, banco de push adotado sem recriar tabela, smoke em banco vazio e em banco com dado
+2026-09-20  M5.2  feito      ícone da régua de severidade, SVG versionado e .icns por sips e iconutil
+2026-09-20  M5.3  feito      empacotamento por electron-builder, native fora do asar com arquitetura no nome, npmRebuild desligado, .app abrindo em banco limpo
+2026-09-20  M5.4  feito      smoke:dist contra o .app, fixture empacotado e guarda de i18n seguindo isPackaged
+2026-09-20  M5.5  feito      atualização automática atrás de interruptor, desligada por padrão, smoke contando requisição de rede
+2026-09-20  M5.6  feito      docs/empacotamento.md com build, Gatekeeper, conta Apple e updater, README com instalação

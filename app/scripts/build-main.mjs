@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,7 +13,17 @@ const bindingSource = join(
   "Release",
   "better_sqlite3.node",
 );
-const bindingTarget = join(appDir, "native", "better_sqlite3-electron.node");
+/**
+ * Para qual arquitetura reconstruir o binario nativo.
+ *
+ * O pacote sai para arm64 e x64, e um `.node` so serve para a arquitetura em
+ * que foi compilado. O nome carrega a arquitetura para que as duas copias
+ * caibam lado a lado, e para que empacotar x64 sem ter gerado a copia falhe na
+ * subida em vez de instalar um aplicativo que nao abre.
+ */
+const archFlag = process.argv.indexOf("--arch");
+const arch = archFlag < 0 ? process.arch : process.argv[archFlag + 1];
+const bindingTarget = join(appDir, "native", `better_sqlite3-electron-${arch}.node`);
 
 function run(command, args) {
   execFileSync(command, args, { cwd: appDir, stdio: "inherit" });
@@ -30,12 +40,32 @@ function ensureElectronBinding() {
   if (existsSync(bindingTarget)) return;
 
   mkdirSync(dirname(bindingTarget), { recursive: true });
-  run("npx", ["electron-rebuild", "-f", "-w", "better-sqlite3"]);
+  run("npx", ["electron-rebuild", "-f", "-w", "better-sqlite3", "--arch", arch]);
   copyFileSync(bindingSource, bindingTarget);
   run("npm", ["rebuild", "better-sqlite3"]);
 }
 
 ensureElectronBinding();
+
+/**
+ * As migracoes viajam como arquivo, ao lado do bundle.
+ *
+ * O migrator do drizzle le os `.sql` do disco na hora de rodar, entao embutir
+ * a pasta no pacote do esbuild nao adiantaria. Copiar para `dist/` faz o
+ * caminho ser o mesmo rodando por `npx electron dist/main.cjs` e dentro do
+ * `.app`, onde `dist/` inteiro entra como recurso.
+ */
+function copyMigrations() {
+  const source = join(appDir, "drizzle");
+  if (!existsSync(join(source, "meta", "_journal.json"))) {
+    throw new Error("nao achei app/drizzle, rode npm run db:generate");
+  }
+  const target = join(appDir, "dist", "drizzle");
+  rmSync(target, { recursive: true, force: true });
+  cpSync(source, target, { recursive: true });
+}
+
+copyMigrations();
 
 await build({
   entryPoints: [join(appDir, "electron", "main.ts")],
@@ -66,4 +96,28 @@ await build({
   target: "node22",
   sourcemap: true,
   external: ["electron"],
+});
+
+/**
+ * O servidor de brinquedo tambem sai empacotado.
+ *
+ * Ele e alvo do smoke, e ate aqui era alcancado por `tsx` lendo `src/`. Nenhum
+ * dos dois entra no `.app`: `tsx` e dependencia de desenvolvimento e `src/`
+ * fica de fora do pacote de proposito. Empacotado junto, o mesmo caminho serve
+ * rodando do repositorio e de dentro do `.app`.
+ *
+ * Aqui `packages: "external"` nao vale, pelo mesmo motivo do preload: o
+ * processo sobe fora do `node_modules` do projeto, entao o que ele importa
+ * precisa estar dentro do arquivo.
+ */
+await build({
+  entryPoints: [join(appDir, "src", "fixtures", "mcp-fixture-server.ts")],
+  outfile: join(appDir, "dist", "mcp-fixture-server.mjs"),
+  bundle: true,
+  platform: "node",
+  // Ao contrario do main e do preload, este sai como modulo ES: o servidor tem
+  // `await` no topo para abrir o transporte, e `cjs` nao aceita.
+  format: "esm",
+  target: "node22",
+  sourcemap: true,
 });

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp-server/index.ts",
     "review": "tsx src/cli.ts review",
@@ -15,9 +16,13 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "build:main": "node scripts/build-main.mjs",
     "build:renderer": "tsc -p renderer/tsconfig.json --noEmit && vite build --config renderer/vite.config.ts renderer",
+    "build:icon": "node scripts/build-icon.mjs",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron dist/main.cjs",
+    "dist:dir": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never",
     "smoke": "npm run build && electron dist/main.cjs --smoke",
+    "smoke:dist": "node scripts/smoke-dist.mjs",
     "verify": "npm run typecheck && npm run check:i18n && npm run build && npm run smoke"
   },
   "dependencies": {
@@ -36,6 +41,7 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "drizzle-orm": "^0.44.0",
+    "electron-updater": "^6.8.9",
     "i18next": "^26.4.2",
     "lucide-react": "^1.47.0",
     "motion": "^13.4.0",
@@ -60,6 +66,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "drizzle-kit": "^0.31.0",
     "electron": "^40.10.6",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.20.0",
@@ -79,5 +86,7 @@
     "better-sqlite3@12.11.1": true,
     "electron@40.10.6": true
   },
-  "main": "dist/main.cjs"
+  "main": "dist/main.cjs",
+  "description": "Locum, revisor de pull request que roda na sua máquina.",
+  "author": "Rabah Zeineddine"
 }
