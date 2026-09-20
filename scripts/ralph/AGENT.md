@@ -61,6 +61,18 @@ publicar sem o clique de uma pessoa, e segredo nunca entra em banco, log ou
 arquivo solto. A emenda 6 do ADR 0002 explica por que a regra é "nada sai sem
 uma pessoa ter dito que sai", e não "não existe ferramenta de aprovar".
 
+**Interface, no marco M4a.** A verificação continua sendo `--smoke`, agora
+carregando a página construída e conferindo o resultado por `executeJavaScript`.
+Nunca abra janela visível nem espere clique: o loop roda sem ninguém olhando.
+
+**A inbox e o chat não são deste marco.** Eles são feitos junto com o dono do
+projeto, porque hierarquia do que aparece primeiro é gosto, não critério. Se uma
+story parecer pedir isso, deixe espaço reservado e siga.
+
+**O catálogo de canais do renderer é escrito à mão.** Nunca derive a lista
+varrendo o contrato da ponte: a emenda 5 do ADR 0003 existe porque um catálogo
+derivado entregaria `approvals.decide` a qualquer modelo que rode na janela.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
