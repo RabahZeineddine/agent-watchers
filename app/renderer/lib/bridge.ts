@@ -28,11 +28,16 @@ import type {
  * `startup.set`, `mcp.test` e `mcp.tools`, que escrevem ou sobem processo e
  * nao cabem num hook que dispara sozinho ao montar a tela. O que dessas a
  * janela ja pode pedir esta em `ACTION_CHANNELS`, logo abaixo.
+ *
+ * `credentials.overview` esta aqui e nao la porque ela nao abre o cofre: ela
+ * responde endereco e se ha valor guardado, que e o que a tela de configuracao
+ * mostra. Valor de segredo nao tem canal, em lista nenhuma.
  */
 export const READ_CHANNELS = [
   "agents.list",
   "agents.get",
   "agents.versions",
+  "agents.budgets",
   "runs.list",
   "runs.get",
   "runs.findings",
@@ -42,6 +47,7 @@ export const READ_CHANNELS = [
   "providers.list",
   "providers.fallbacks",
   "providers.preview",
+  "credentials.overview",
   "metrics.report",
   "machine.profile",
   "triggers.list",
@@ -64,13 +70,14 @@ export type ReadChannel = (typeof READ_CHANNELS)[number];
  * na inbox, e chega ao processo principal por um caminho que a inbox monta,
  * nao por um catalogo que qualquer tela enxerga.
  *
- * `mcp.tools` esta aqui, e nao na lista de leitura, porque contar o peso de
- * uma ferramenta sobe o servidor que a expoe. Numa tela que lista agents isso
- * significaria subir todo servidor citado por um spec so de abrir o destino;
- * atras de um clique, sobe o que alguem pediu e so quando pediu.
+ * `mcp.test` e `mcp.tools` estao aqui, e nao na lista de leitura, porque as
+ * duas sobem o servidor que vao examinar. Numa tela que lista cadastros isso
+ * significaria subir todo servidor registrado so de abrir o destino; atras de
+ * um clique, sobe o que alguem pediu e so quando pediu.
  */
 export const ACTION_CHANNELS = [
   "runs.rerunStep",
+  "mcp.test",
   "mcp.tools",
 ] as const satisfies readonly BridgeChannel[];
 

@@ -27,3 +27,4 @@
 2026-09-19  M4a.4 feito      barra lateral com quatro destinos, rota por hash com fallback para inbox, paleta pelo atalho sem comando, smoke navega e confere o destino ativo
 2026-09-19  M4a.5 feito      tela de execucoes com lista virtualizada e linha do tempo dos passos, fixture de run planta sem gastar assinatura, botao de reexecutar por passo
 2026-09-19  M4a.6 feito      tela de agents com historico de versoes e comparacao de spec, previa de modelo por passo, fixture planta a versao antiga sem afrouxar o topo
+2026-09-19  M4a.7 feito      tela de configuracao com provedores, substituicao, servidores MCP e orcamentos, teste do fixture respondendo no clique

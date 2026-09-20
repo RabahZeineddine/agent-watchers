@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { AgentBudgetPatch, AgentSpec, type ActionMode } from "../config/types.js";
+import { today } from "../executor/budget.js";
 
 type Db = typeof defaultDb;
 
@@ -23,6 +24,19 @@ export interface AgentVersion extends Omit<AgentVersionRow, "spec"> {
   spec: AgentSpec;
   /** Vazio quando nada foi rebaixado. */
   downgrades: ActionDowngrade[];
+}
+
+/** Teto de gasto de um agent, com o que ja foi consumido hoje. */
+export interface AgentBudgetView {
+  agentId: string;
+  name: string;
+  enabled: boolean;
+  /** Versao de onde o teto saiu, ou nulo em agent sem versao gravada. */
+  version: number | null;
+  perRunUsd: number | null;
+  perDayUsd: number | null;
+  spentTodayUsd: number;
+  runsToday: number;
 }
 
 /**
@@ -56,6 +70,54 @@ export class AgentService {
   async getLatestVersion(agentId: string): Promise<AgentVersion | undefined> {
     const row = await this.latestRow(agentId);
     return row ? parseVersion(row) : undefined;
+  }
+
+  /**
+   * O teto de gasto de cada agent e quanto ja foi gasto hoje.
+   *
+   * O teto sai da versao do topo, porque e de la que o executor le, e o gasto
+   * sai de `usage_daily`, que e onde ele acumula. Juntar os dois e o que
+   * responde a pergunta que interessa a quem administra, que nao e "qual o
+   * limite" nem "quanto gastei", e sim "quanto falta".
+   *
+   * Sao tres consultas e nao uma por agent: perguntar pela versao do topo
+   * dentro de um laco releria a tabela inteira a cada volta, e quem chama isto
+   * quer a lista, nunca uma linha so.
+   */
+  async budgets(): Promise<AgentBudgetView[]> {
+    const rows = await this.db.select().from(schema.agents);
+    const versions = await this.db
+      .select()
+      .from(schema.agentVersions)
+      .orderBy(desc(schema.agentVersions.version));
+    const usage = await this.db
+      .select()
+      .from(schema.usageDaily)
+      .where(eq(schema.usageDaily.day, today()));
+
+    // As versoes chegam da mais nova para a mais velha, entao a primeira de
+    // cada agent e a do topo e as seguintes nao substituem.
+    const topo = new Map<string, AgentVersionRow>();
+    for (const version of versions) {
+      if (!topo.has(version.agentId)) topo.set(version.agentId, version);
+    }
+    const gasto = new Map(usage.map((u) => [u.agentId, u]));
+
+    return rows.map((agent) => {
+      const version = topo.get(agent.id);
+      const budget = version ? AgentSpec.parse(version.spec).budget : {};
+      const hoje = gasto.get(agent.id);
+      return {
+        agentId: agent.id,
+        name: agent.name,
+        enabled: agent.enabled,
+        version: version?.version ?? null,
+        perRunUsd: budget.perRunUsd ?? null,
+        perDayUsd: budget.perDayUsd ?? null,
+        spentTodayUsd: hoje?.costUsd ?? 0,
+        runsToday: hoje?.runs ?? 0,
+      };
+    });
   }
 
   /**

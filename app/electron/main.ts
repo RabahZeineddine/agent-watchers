@@ -577,6 +577,7 @@ async function checkRenderer(): Promise<string> {
   const { runService } = await import("../src/services/run-service.js");
   const { ensureDemoRun } = await import("../src/fixtures/demo-run.js");
   const { ensureAgentHistory } = await import("../src/fixtures/agent-history.js");
+  const { ensureFixtureServer } = await import("../src/fixtures/mcp-fixture.js");
 
   // Banco vazio faz a tela de execucoes passar sem provar nada: lista vazia e
   // detalhe inexistente batem com servico vazio por acidente. O fixture planta
@@ -586,6 +587,10 @@ async function checkRenderer(): Promise<string> {
   // A tela de agents compara duas versoes, e um banco novo so tem uma. O
   // fixture planta a que falta sem rodar nada, e deixa o spec canonico no topo.
   await ensureAgentHistory();
+  // A tela de configuracao precisa de um servidor MCP para o botao de testar
+  // ter alvo. O de brinquedo nao depende de rede nem de nada instalado, entao
+  // conectar nele custa segundos e nao expoe o loop a servidor de terceiro.
+  await ensureFixtureServer(join(__dirname, ".."));
 
   setupBridge({ inboxTarget: pendingInboxTarget });
 
@@ -622,6 +627,7 @@ async function checkRenderer(): Promise<string> {
     // Antes das execucoes de proposito: o `checkRuns` deixa a janela no detalhe
     // de um run, que e onde a verificacao do destaque procura o bloco de codigo.
     const agents = await checkAgents(window);
+    const configuracao = await checkConfig(window);
 
     const execucoes = await checkRuns(window, fixture);
     // O bloco de codigo mora no detalhe de uma execucao, que e quem vai usa-lo
@@ -648,7 +654,7 @@ async function checkRenderer(): Promise<string> {
 
     return (
       "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
-      `${rotas} navegando, ${paleta}, ${agents}, ${execucoes}, ` +
+      `${rotas} navegando, ${paleta}, ${agents}, ${configuracao}, ${execucoes}, ` +
       `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
       `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
     );
@@ -994,6 +1000,171 @@ async function checkAgents(window: BrowserWindow): Promise<string> {
 }
 
 /**
+ * Confere a tela de configuracao.
+ *
+ * As quatro secoes sao comparadas contra os mesmos servicos que a janela leu
+ * pela ponte, e nao contra numeros escritos deste lado: uma tabela repetida
+ * aqui passaria a concordar consigo mesma no dia em que a tela mudasse.
+ *
+ * O botao de testar conexao e clicado, ao contrario do de reexecutar passo.
+ * A diferenca nao e de gosto: reexecutar solta o executor de verdade e gasta
+ * assinatura, enquanto testar sobe o servidor de brinquedo, que e local e nao
+ * fala com ninguem. E e o unico jeito de provar o que a story pede, que e o
+ * teste respondendo na interface e nao so o canal existindo.
+ *
+ * O que nao aparece em lugar nenhum e valor de segredo, e a verificacao cobra
+ * isso: o marcador de credencial carrega a referencia e se ha algo guardado,
+ * e mais nada.
+ */
+async function checkConfig(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { providerService } = await import("../src/services/provider-service.js");
+  const { FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
+
+  await irPara(window, "configuracao");
+  const tela = await esperarProbe<{
+    maquina: string;
+    provedores: string;
+    fallbacks: number;
+    servidores: string;
+    orcamentos: string;
+  }>(
+    window,
+    "configuracao",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=configuracao]");
+      if (probe === null || probe.dataset.estado !== "pronto") return null;
+      return {
+        maquina: probe.dataset.locumMaquina,
+        provedores: probe.dataset.locumProvedores,
+        fallbacks: Number(probe.dataset.locumFallbacks),
+        servidores: probe.dataset.locumServidores,
+        orcamentos: probe.dataset.locumOrcamentos,
+      };
+    })()`,
+  );
+
+  if (tela.maquina !== machineId) {
+    throw new Error(`a tela diz estar em "${tela.maquina}" e a maquina e "${machineId}"`);
+  }
+
+  const provedores = providerService.listProviders();
+  if (tela.provedores !== provedores.map((p) => p.name).join(",")) {
+    throw new Error(
+      `a tela listou os provedores ${tela.provedores} e o servico tem ${provedores.length}`,
+    );
+  }
+
+  // Disponibilidade por provider, e nao so a contagem: uma tela que mostrasse
+  // todo mundo como indisponivel teria a mesma lista e diria outra coisa.
+  const disponiveis = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-provider]")).map((e) => ({
+      nome: e.dataset.locumProvider,
+      disponivel: e.dataset.locumDisponivel,
+    }))`,
+  )) as { nome: string; disponivel: string }[];
+  for (const [i, provedor] of provedores.entries()) {
+    const naTela = disponiveis[i];
+    const esperado = provedor.available ? "sim" : "nao";
+    if (naTela === undefined || naTela.disponivel !== esperado) {
+      throw new Error(
+        `o provider ${provedor.name} aparece como "${naTela?.disponivel ?? "ausente"}" e o servico diz "${esperado}"`,
+      );
+    }
+  }
+
+  const fallbacks = await providerService.getFallbacks(machineId);
+  const linhasDeFallback = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-fallback]")).map((e) => e.dataset.locumFallback)`,
+  )) as string[];
+  const esperadas = fallbacks.map((f) => `${f.fromModel}>${f.toModel}`);
+  if (tela.fallbacks !== fallbacks.length || linhasDeFallback.join("|") !== esperadas.join("|")) {
+    throw new Error(
+      `a tabela de substituicao desenhou ${linhasDeFallback.join("|")} e o servico tem ${esperadas.join("|")}`,
+    );
+  }
+
+  const servidores = await mcpService.list();
+  if (tela.servidores !== servidores.map((s) => s.config.name).join(",")) {
+    throw new Error(
+      `a tela listou os servidores ${tela.servidores} e o servico tem ${servidores.length}`,
+    );
+  }
+  if (!tela.servidores.split(",").includes(FIXTURE_SERVER)) {
+    throw new Error(`o servidor de brinquedo ${FIXTURE_SERVER} nao apareceu na tela`);
+  }
+
+  const orcamentos = await agentService.budgets();
+  if (tela.orcamentos !== orcamentos.map((o) => o.agentId).join(",")) {
+    throw new Error(
+      `a tela listou os orcamentos de ${tela.orcamentos} e o servico tem ${orcamentos.length}`,
+    );
+  }
+
+  // Segredo nao tem como chegar na tela, porque nao ha canal que o devolva. O
+  // que da para conferir daqui e que o marcador nao guarda nada alem do
+  // endereco e do sim ou nao, e e isso que esta sendo olhado.
+  const credenciais = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-credencial]")).map((e) => ({
+      ref: e.dataset.locumCredencial,
+      guardado: e.dataset.locumGuardado,
+    }))`,
+  )) as { ref: string; guardado: string }[];
+  for (const credencial of credenciais) {
+    if (credencial.guardado !== "sim" && credencial.guardado !== "nao") {
+      throw new Error(`a credencial ${credencial.ref} mostrou "${credencial.guardado}"`);
+    }
+  }
+
+  // O clique, que e o ponto da story. Ele sobe o servidor de brinquedo, que e
+  // local: nao ha rede, nao ha assinatura e nao ha nada publicado.
+  const clicou = (await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector('[data-locum-testar="${FIXTURE_SERVER}"]');
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  )) as boolean;
+  if (!clicou) throw new Error(`a tela nao ofereceu botao de testar ${FIXTURE_SERVER}`);
+
+  // Subir o processo e esperar a primeira resposta leva mais que uma leitura
+  // de banco, e o tsx ainda compila o fixture antes de responder.
+  const resultado = await esperarProbe<{ ok: string; ferramentas: number }>(
+    window,
+    `teste de ${FIXTURE_SERVER}`,
+    `(() => {
+      const probe = document.querySelector('[data-locum-teste="${FIXTURE_SERVER}"]');
+      if (probe === null) return null;
+      return { ok: probe.dataset.locumOk, ferramentas: Number(probe.dataset.locumFerramentas) };
+    })()`,
+    60_000,
+  );
+
+  const doServico = await mcpService.testConnection(FIXTURE_SERVER);
+  if (resultado.ok !== (doServico.ok ? "sim" : "nao")) {
+    throw new Error(
+      `a tela disse "${resultado.ok}" para a conexao e o servico disse "${doServico.ok ? "sim" : "nao"}"` +
+        (doServico.error === undefined ? "" : `: ${doServico.error}`),
+    );
+  }
+  if (!doServico.ok) throw new Error(`o servidor de brinquedo nao conectou: ${doServico.error}`);
+  if (resultado.ferramentas !== doServico.toolCount) {
+    throw new Error(
+      `a tela contou ${resultado.ferramentas} ferramenta(s) e o servico contou ${doServico.toolCount}`,
+    );
+  }
+
+  return (
+    `${provedores.length} provedor(es), ${fallbacks.length} substituicao(oes), ` +
+    `${servidores.length} servidor(es) com ${FIXTURE_SERVER} respondendo ` +
+    `${resultado.ferramentas} ferramenta(s) na interface, e ${orcamentos.length} orcamento(s)`
+  );
+}
+
+/**
  * Confere a lista de execucoes e o detalhe de uma delas.
  *
  * Os dois lados sao comparados contra o mesmo servico, e nao contra numeros
@@ -1087,13 +1258,20 @@ async function checkRuns(window: BrowserWindow, runId: string): Promise<string> 
   );
 }
 
-/** Gira ate o marcador responder com algo que nao seja nulo. */
+/**
+ * Gira ate o marcador responder com algo que nao seja nulo.
+ *
+ * O limite entra por parametro porque nem toda espera e da mesma natureza:
+ * uma leitura de banco responde em milissegundos, e um teste de conexao MCP
+ * sobe um processo antes de responder.
+ */
 async function esperarProbe<T>(
   window: BrowserWindow,
   nome: string,
   script: string,
+  limiteMs = 20_000,
 ): Promise<T> {
-  const limite = Date.now() + 20_000;
+  const limite = Date.now() + limiteMs;
 
   while (Date.now() < limite) {
     const visto = (await window.webContents.executeJavaScript(script)) as T | null;
@@ -1101,7 +1279,7 @@ async function esperarProbe<T>(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
-  throw new Error(`o marcador ${nome} nao ficou pronto dentro de 20s`);
+  throw new Error(`o marcador ${nome} nao ficou pronto dentro de ${limiteMs / 1000}s`);
 }
 
 /**

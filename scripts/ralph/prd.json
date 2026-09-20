@@ -329,7 +329,7 @@
       "description": "Provedores com disponibilidade nesta maquina, tabela de substituicao de modelo, servidores MCP com testar conexao e listar ferramentas com contagem de tokens, e orcamentos. Segredo nunca aparece na tela: so a referencia e o estado de estar guardado ou nao.",
       "done_when": "A tela lista provedores e servidores e o teste de conexao do fixture responde na interface.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

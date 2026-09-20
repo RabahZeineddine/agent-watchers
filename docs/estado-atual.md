@@ -39,13 +39,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 23 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 25 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
+| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
 
 ## Execução verificada
 
@@ -362,6 +363,38 @@ a exigência da story, que são estes quatro destinos.
 depois do `loadFile` pegaria a tela no estado de leitura pendente. O estado vai
 no próprio marcador justamente para a espera saber a hora, em vez de dormir um
 tempo arbitrário.
+
+**A tabela `budgets` não é onde o orçamento mora.** Ela existe no esquema e
+ninguém escreve nela: o teto que o executor lê antes de cada passo está no
+`budget` do spec do agent, e por isso mexer nele grava versão nova, pelo
+`AgentService.setBudget`. Quem monta tela de orçamento tirando da tabela
+mostraria vazio para sempre. O `AgentService.budgets()` cruza a versão do topo
+com `usage_daily`, que é onde o gasto acumula.
+
+**Credencial se acha por quem aponta, não por nome.** A tela de configuração
+poderia adivinhar que o provider `anthropic` usa a referência
+`provider/anthropic`, e acertaria hoje. Quem escolhe a referência, porém, é
+quem liga os dois, e nada impede dois cadastros apontarem para a mesma. Por
+isso o `credentials.overview` devolve os usuários de cada referência e a tela
+indexa por `kind:name`. O que ele nunca devolve é valor: o cofre só se abre no
+caminho de quem vai conectar, e a janela não é esse caminho.
+
+**O único clique do smoke é testar conexão.** O botão de reexecutar passo
+continua sendo só conferido por existir, porque clicar solta o executor de
+verdade. Testar conexão é diferente: o alvo é o `mcp-fixture-server.ts`, que é
+local, não fala com ninguém e custa o tempo de subir um `tsx`. E é o único
+jeito de provar o que a story pede, que é o teste respondendo na interface, e
+não o canal existindo. Por isso `mcp.test` entrou em `ACTION_CHANNELS`, ao lado
+de `mcp.tools`, e pelo mesmo motivo dela: as duas sobem o servidor que vão
+examinar, e numa leitura que dispara ao montar a tela isso subiria todo
+cadastro de uma vez.
+
+**O cadastro do fixture carrega caminho absoluto.** `src/fixtures/mcp-fixture.ts`
+registra o servidor de brinquedo com `node` mais o caminho inteiro do `tsx` e do
+fixture, pelo mesmo motivo do `.mcp.json`: o cadastro não tem campo para
+diretório de trabalho, e quem sobe o processo usa o `cwd` de quem chamou, que é
+`app/` para o smoke e a raiz do repositório para um cliente externo. O registro
+é por nome, então subir o smoke de novo sobrescreve em vez de acumular linha.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
