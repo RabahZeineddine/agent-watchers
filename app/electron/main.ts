@@ -564,6 +564,10 @@ async function checkBridge(): Promise<string> {
  * O `checkBridge` prova o caminho com `about:blank` e chamada solta; aqui o que
  * esta sendo provado e a pagina de verdade lendo por conta propria, com o hook
  * no meio, e os valores que ela exibiu conferidos contra os mesmos servicos.
+ *
+ * A navegacao entre os quatro destinos entra pelo mesmo caminho do clique, que
+ * e escrever o hash, porque o loop roda sem ninguem olhando e nao ha clique
+ * para dar.
  */
 async function checkRenderer(): Promise<string> {
   if (!existsSync(RENDERER)) throw new Error(`renderer nao foi construido em ${RENDERER}`);
@@ -589,19 +593,26 @@ async function checkRenderer(): Promise<string> {
         const probe = document.querySelector("[data-locum-probe=tailwind]");
         return {
           raiz: document.getElementById("root")?.childElementCount ?? 0,
-          titulo: document.querySelector("h1")?.textContent ?? "",
+          marca: document.querySelector("[data-locum-probe=marca]")?.textContent ?? "",
           folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
         };
       })()`,
-    )) as { raiz: number; titulo: string; folha: string };
+    )) as { raiz: number; marca: string; folha: string };
 
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
     if (visto.raiz === 0) throw new Error("a raiz #root ficou vazia, o React nao montou");
-    if (visto.titulo !== "Locum") throw new Error(`a pagina montou com o titulo ${visto.titulo}`);
+    if (visto.marca !== "Locum") throw new Error(`a barra lateral montou com a marca ${visto.marca}`);
     if (visto.folha !== "none") {
       throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
     }
 
+    const rotas = await checkRoutes(window);
+    const paleta = await checkPalette(window);
+
+    // O bloco de codigo mora na tela de execucoes, que e quem vai usa-lo de
+    // verdade. O `checkRoutes` devolve a janela ao destino padrao, entao a ida
+    // ate la e explicita.
+    await irPara(window, "execucoes");
     const destacado = await esperarDestaque(window);
     const ponte = await esperarPonte(window);
 
@@ -622,6 +633,7 @@ async function checkRenderer(): Promise<string> {
 
     return (
       "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
+      `${rotas} navegando, ${paleta}, ` +
       `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
       `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
     );
@@ -669,6 +681,129 @@ async function esperarPonte(
   }
 
   throw new Error(`as leituras da janela ficaram em "${ultimo}" por 20s`);
+}
+
+/**
+ * Poe a janela num destino e espera a tela trocar.
+ *
+ * A navegacao e por hash porque nao existe servidor atras da pagina, e escrever
+ * o hash e exatamente o que o clique na barra lateral faz: o caminho exercitado
+ * aqui e o mesmo que uma pessoa usa.
+ */
+async function irPara(window: BrowserWindow, id: string): Promise<void> {
+  await window.webContents.executeJavaScript(`(location.hash = "#/${id}", null)`);
+
+  const limite = Date.now() + 10_000;
+  let ultimo = "sem marcador";
+
+  while (Date.now() < limite) {
+    const ativo = (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+    )) as string | null;
+
+    if (ativo === id) return;
+    if (ativo !== null) ultimo = ativo;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`a janela ficou em "${ultimo}" depois de pedir o destino ${id}`);
+}
+
+/**
+ * Confere os quatro destinos e que navegar entre eles troca a tela.
+ *
+ * Os identificadores e os titulos saem da propria barra lateral, e nao de uma
+ * copia deste lado: uma lista repetida aqui passaria a concordar com ela mesma
+ * no dia em que o catalogo do renderer mudasse. O que fica escrito deste lado e
+ * so a exigencia da story, que sao estes quatro destinos.
+ */
+async function checkRoutes(window: BrowserWindow): Promise<string> {
+  const esperados = ["inbox", "execucoes", "agents", "configuracao"];
+
+  const barra = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-rota]")).map((b) => ({
+      id: b.dataset.locumRota,
+      titulo: b.querySelector("span")?.textContent ?? "",
+    }))`,
+  )) as { id: string; titulo: string }[];
+
+  const ids = barra.map((r) => r.id);
+  if (ids.join(",") !== esperados.join(",")) {
+    throw new Error(`a barra lateral oferece ${ids.join(",")} e nao ${esperados.join(",")}`);
+  }
+
+  const inicial = (await window.webContents.executeJavaScript(
+    `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+  )) as string | null;
+  if (inicial !== esperados[0]) {
+    throw new Error(`com o hash vazio a janela abriu em ${inicial} e nao em ${esperados[0]}`);
+  }
+
+  for (const { id, titulo } of barra) {
+    await irPara(window, id);
+
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => ({
+        titulo: document.querySelector("h1")?.textContent ?? "",
+        marcado: document.querySelector("[data-locum-rota][aria-current=page]")?.dataset.locumRota ?? null,
+      }))()`,
+    )) as { titulo: string; marcado: string | null };
+
+    if (visto.titulo !== titulo) {
+      throw new Error(`o destino ${id} mostrou o titulo ${visto.titulo} e nao ${titulo}`);
+    }
+    if (visto.marcado !== id) {
+      throw new Error(`o destino ${id} esta ativo e a barra marca ${visto.marcado}`);
+    }
+  }
+
+  // Um destino desconhecido nao pode deixar a janela em branco: quem chegar por
+  // hash velho, ou por deep link de uma versao anterior, cai no padrao.
+  await irPara(window, esperados[0] as string);
+  await window.webContents.executeJavaScript(`(location.hash = "#/nao-existe", null)`);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const desconhecido = (await window.webContents.executeJavaScript(
+    `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+  )) as string | null;
+  if (desconhecido !== esperados[0]) {
+    throw new Error(`hash desconhecido levou a janela para ${desconhecido}`);
+  }
+
+  return `${barra.length} destino(s)`;
+}
+
+/**
+ * Confere que o atalho abre a paleta de comandos e que Escape a fecha.
+ *
+ * Ela ainda nao tem comando nenhum dentro, entao o que esta sendo provado e o
+ * atalho: o ouvinte de teclado esta no ar e o estado da paleta responde a ele.
+ */
+async function checkPalette(window: BrowserWindow): Promise<string> {
+  const estado = async (): Promise<string | null> =>
+    (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-probe=paleta]")?.dataset.aberta ?? null`,
+    )) as string | null;
+
+  const tecla = async (script: string): Promise<void> => {
+    await window.webContents.executeJavaScript(script);
+    // O estado e do React, que pinta no proximo quadro: perguntar na mesma
+    // linha pegaria o valor anterior.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  };
+
+  if ((await estado()) !== "nao") throw new Error("a paleta nasceu aberta");
+
+  await tecla(
+    `(document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })), null)`,
+  );
+  if ((await estado()) !== "sim") throw new Error("o atalho nao abriu a paleta de comandos");
+
+  await tecla(
+    `(document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })), null)`,
+  );
+  if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
+
+  return "paleta abrindo e fechando pelo atalho";
 }
 
 /**

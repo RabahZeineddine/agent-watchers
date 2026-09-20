@@ -43,6 +43,7 @@ que a interface vai usar.
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
+| layout e roteamento | barra lateral com os quatro destinos, rota por hash, paleta de comandos pelo atalho, ainda sem comando |
 
 ## Execução verificada
 
@@ -278,6 +279,22 @@ janela leu e o que o serviço devolve é verdadeira por acidente quando os dois
 lados são zero: uma ponte que respondesse `[]` sempre passaria igual. Por isso o
 banco do worktree precisa do `seed`, e por isso o marcador carrega os
 identificadores dos agents, e não só a contagem.
+
+**Roteamento por hash porque não há servidor.** A página é um arquivo no disco,
+carregado por `file://`. Caminho escrito pelo History API até navegaria, mas a
+primeira recarga pediria ao sistema de arquivos um `dist/renderer/agents` que
+nunca existiu. O hash fica fora do caminho, então recarregar e voltar pelo
+histórico caem no mesmo lugar sem nada atrás respondendo. Hash desconhecido não
+deixa a janela em branco: cai no destino padrão, que é a inbox, e o smoke prova
+isso porque hash velho chega de deep link e de janela restaurada.
+
+**O smoke navega escrevendo o hash.** É o mesmo caminho do clique na barra
+lateral, que também só escreve o hash e deixa o `hashchange` mandar de volta.
+Por isso a barra nunca discorda da tela: existe uma fonte só, e é o endereço.
+Os identificadores e os títulos que o smoke confere saem da própria barra, não
+de uma cópia do lado do processo principal, que passaria a concordar consigo
+mesma no dia em que o catálogo do renderer mudasse. O que fica escrito lá é só
+a exigência da story, que são estes quatro destinos.
 
 **A página lê ao montar, então o smoke precisa da ponte no ar.** O
 `checkRenderer` passou a chamar `setupBridge` e `trustWindow` antes do

@@ -296,7 +296,7 @@
       "description": "Barra lateral com quatro destinos: inbox, execucoes, agents, configuracao. Roteamento sem servidor, adequado a arquivo local. Atalho de teclado abrindo uma paleta de comandos, ainda sem acoes. Inbox pode ficar como espaco reservado: ela e feita depois, junto com o dono do projeto.",
       "done_when": "As quatro rotas navegam e o smoke confirma o destino ativo mudando.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
