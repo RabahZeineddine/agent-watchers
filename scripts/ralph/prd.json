@@ -241,7 +241,7 @@
       "description": "Registrar o protocolo locum:// para receber retorno de OAuth de servidor MCP remoto. Tratar a abertura tanto com o app ja rodando quanto com o app fechado. Guardar o token pelo caminho do M3.5, nunca em arquivo solto.",
       "done_when": "O protocolo aparece registrado e uma URL de teste e roteada para o tratador.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

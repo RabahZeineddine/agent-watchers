@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron";
+import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +21,11 @@ process.env.LOCUM_SQLITE_BINDING = join(
   "native",
   "better_sqlite3-electron.node",
 );
+
+// Antes de qualquer espera: com o app fechado, o macOS sobe o processo para
+// entregar a URL, e o `open-url` sai logo no lancamento. Ouvinte registrado
+// depois do `whenReady` chega tarde e perde justamente a URL que subiu o app.
+captureDeepLinks({ singleInstance: !smoke });
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -67,6 +73,35 @@ function openInbox(runId: string): void {
 /** O ultimo run para onde um clique de notificacao mandou. */
 export function pendingInboxTarget(): string | null {
   return inboxTarget;
+}
+
+/**
+ * O que fazer com uma `locum://` vinda do sistema.
+ *
+ * A leitura e a regra moram no servico; aqui so sobra dizer ao usuario o que
+ * aconteceu e trazer a janela de volta, que e o fim natural de um retorno de
+ * navegador. Nem o codigo nem o token aparecem no log.
+ */
+async function handleDeepLink(url: string): Promise<void> {
+  const { deepLinkService, parseDeepLink } = await import("../src/services/deep-link-service.js");
+
+  const route = parseDeepLink(url);
+  if (route.kind === "unknown") {
+    console.log(`deep link: url descartada, ${route.reason}`);
+    return;
+  }
+  if (route.kind === "oauth-error") {
+    deepLinkService.cancelAuthorization(route.server);
+    console.log(`deep link: autorizacao de ${route.server} recusada, ${route.error}`);
+    return;
+  }
+
+  const result = await deepLinkService.completeOAuth(route);
+  console.log(
+    `deep link: ${result.server} autorizado, credencial em ${result.credentialRef}` +
+      (result.hasRefresh ? ", com refresh guardado" : ""),
+  );
+  showWindow();
 }
 
 /** Confere que o nucleo carrega e que o banco responde a uma consulta. */
@@ -260,6 +295,122 @@ async function checkNotifications(): Promise<string> {
   return "aviso montado sem exibir, tres criticos num run so, clique aponta para o run";
 }
 
+/**
+ * Prova que o esquema `locum://` chega ao tratador e que o token que vem de um
+ * retorno de OAuth termina no cofre, com o cadastro guardando so a referencia.
+ *
+ * A troca do codigo pelo token e de mentira: nao ha servidor de autorizacao
+ * para conversar, e o smoke roda sozinho no loop de verificacao, onde chamada
+ * de rede so traria intermitencia. O que esta sendo provado e o caminho de
+ * dentro, do `open-url` ate o `credential_ref`.
+ *
+ * O cadastro e o segredo de teste sao sorteados na hora e apagados no fim: o
+ * smoke roda no banco de verdade de quem desenvolve.
+ */
+async function checkDeepLink(): Promise<string> {
+  const { emitDeepLink, registerProtocol, setupDeepLink, teardownDeepLink } = await import(
+    "./deep-link.js"
+  );
+  const { installSecretBackend } = await import("./safe-storage.js");
+  const { DeepLinkService, parseDeepLink, OAUTH_REDIRECT_URI } = await import(
+    "../src/services/deep-link-service.js"
+  );
+  const { McpService } = await import("../src/services/mcp-service.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+
+  if (!installSecretBackend()) throw new Error("keychain indisponivel para o safeStorage");
+
+  const protocolo = await registerProtocol();
+  if (protocolo.scheme !== "locum") throw new Error("o esquema registrado nao e locum");
+
+  const mcp = new McpService();
+  const deepLink = new DeepLinkService(mcp);
+  const nome = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const token = `token-de-teste-${randomUUID()}`;
+
+  const rotas: string[] = [];
+  const falhas: string[] = [];
+  setupDeepLink(async (url) => {
+    const rota = parseDeepLink(url);
+    rotas.push(rota.kind);
+    if (rota.kind !== "oauth-callback") return;
+    try {
+      await deepLink.completeOAuth(rota, () => Promise.resolve({ accessToken: token }));
+    } catch (error: unknown) {
+      falhas.push(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  try {
+    await mcp.register({
+      name: nome,
+      transport: "http",
+      url: "https://exemplo.invalido/mcp",
+      headers: { Authorization: "${credential}" },
+    });
+
+    const pedido = await deepLink.beginAuthorization({
+      server: nome,
+      authorizeUrl: "https://exemplo.invalido/authorize",
+      tokenUrl: "https://exemplo.invalido/token",
+      clientId: "locum-smoke",
+    });
+    const autorizacao = new URL(pedido.url);
+    if (autorizacao.searchParams.get("code_challenge_method") !== "S256") {
+      throw new Error("o pedido de autorizacao saiu sem PKCE");
+    }
+    if (autorizacao.searchParams.get("redirect_uri") !== `${OAUTH_REDIRECT_URI}?server=${nome}`) {
+      throw new Error("o pedido de autorizacao aponta para outro retorno");
+    }
+    if (!deepLink.isAwaitingCallback(nome)) throw new Error("a autorizacao nao ficou pendente");
+
+    // URL de fora, que nao e do Locum: cai como desconhecida e nao mexe em nada.
+    emitDeepLink("https://exemplo.invalido/nao-e-nosso");
+    const retorno = `locum://oauth/callback?server=${nome}&code=codigo-de-teste&state=${encodeURIComponent(pedido.state)}`;
+    emitDeepLink(retorno);
+    // O tratador e assincrono e o emissor do Electron nao espera por ele.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    if (falhas.length > 0) throw new Error(`o retorno falhou: ${falhas.join(", ")}`);
+    if (rotas.join(",") !== "unknown,oauth-callback") {
+      throw new Error(`as rotas vistas foram ${JSON.stringify(rotas)}`);
+    }
+
+    const cadastro = await mcp.get(nome);
+    if (cadastro?.credentialRef !== `mcp/${nome}`) {
+      throw new Error("a referencia da credencial nao ficou no cadastro");
+    }
+    if (cadastro.config.headers?.Authorization !== "${credential}") {
+      throw new Error("o cadastro deixou de guardar o marcador");
+    }
+
+    const paraConectar = (await mcp.enabledConfigs()).find((c) => c.name === nome);
+    if (paraConectar?.headers?.Authorization !== `Bearer ${token}`) {
+      throw new Error("o token nao chegou no cabecalho da conexao");
+    }
+    if (readFileSync(secretService.pathFor(`mcp/${nome}`)).includes(token)) {
+      throw new Error("o cofre gravou o token em claro");
+    }
+
+    // Retorno repetido com o mesmo state: o pendente ja foi consumido.
+    emitDeepLink(retorno);
+    await new Promise((resolve) => setImmediate(resolve));
+    if (falhas.length !== 1 || !falhas[0]?.includes("nenhuma autorizacao pendente")) {
+      throw new Error(`o state usado duas vezes nao foi recusado: ${JSON.stringify(falhas)}`);
+    }
+  } finally {
+    teardownDeepLink();
+    await mcp.remove(nome);
+    deepLink.cancelAuthorization(nome);
+    secretService.remove(`mcp/${nome}`);
+  }
+
+  return (
+    `esquema locum ${protocolo.registered ? "registrado" : "nao aceito fora de app empacotado"}, ` +
+    "retorno de OAuth roteado, token no cofre e referencia no cadastro"
+  );
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -332,11 +483,13 @@ async function main(): Promise<void> {
     const power = await checkPower();
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
+    const deepLink = await checkDeepLink();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
-        `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}`,
+        `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
+        `deep link com ${deepLink}`,
     );
     app.exit(0);
     return;
@@ -348,6 +501,16 @@ async function main(): Promise<void> {
   if (!installSecretBackend()) {
     console.log("keychain indisponivel, credenciais vem so do ambiente");
   }
+
+  // Depois do cofre, porque o retorno de OAuth guarda token, e antes da janela,
+  // para que a URL que subiu o app nao fique esperando na fila.
+  const { registerProtocol, setupDeepLink } = await import("./deep-link.js");
+  const protocolo = await registerProtocol();
+  if (!protocolo.registered) {
+    console.log("deep link: o sistema nao deu o esquema locum:// ao Locum, ver docs/estado-atual.md");
+  }
+  const esperando = setupDeepLink(handleDeepLink);
+  if (esperando > 0) console.log(`deep link: ${esperando} url(s) esperavam desde a subida`);
 
   const { applyPreference } = await import("./login-item.js");
   const startup = await applyPreference();

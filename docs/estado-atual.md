@@ -34,9 +34,10 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
-| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada e eventos de energia batendo o agendador, sem interface ainda |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth, sem interface ainda |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
+| deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
 | interface | não começou |
 
 ## Execução verificada
@@ -144,6 +145,29 @@ subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de
 uma semana desligado despejaria uma pilha de avisos de coisa velha. O acumulado
 tem lugar próprio, que é a contagem na bandeja. Por isso a memória do que já foi
 avisado é de sessão e não vai para o banco.
+
+**Dono do esquema `locum://` fora de app empacotado.** Ao contrário do item de
+login, o `setAsDefaultProtocolClient` funciona rodando por `npx electron`, e o
+`isDefaultProtocolClient` volta verdadeiro. O que fica registrado no sistema,
+porém, é o binário do Electron, não o Locum: enquanto não houver empacotamento,
+abrir um `locum://` acorda o Electron sem o `dist/main.cjs`. O empacotamento
+precisa declarar `CFBundleURLTypes` no `Info.plist`, porque a chamada em tempo
+de execução não substitui a declaração do bundle.
+
+**A URL do deep link é entrada de fora.** Qualquer programa da máquina abre um
+`locum://`, então nada do que vem nela é confiável: a leitura nunca estoura, o
+que não bate vira rota desconhecida e é descartado, e o motivo registrado no log
+não repete a consulta, que é por onde o `code` viaja. O `state` é comparado em
+tempo constante e consumido antes da troca do código, para que um segundo
+retorno com o mesmo `state` não valha nada.
+
+**Onde o token de OAuth cabe.** O que vai para o cofre é o valor pronto do
+cabeçalho, `Bearer <token>`, e não o token cru: a substituição de `${credential}`
+troca o valor inteiro da entrada de `headers`, então não sobra lugar para montar
+o prefixo depois. O par `state` mais `code_verifier` também mora no cofre, e não
+em memória, porque o macOS pode ter fechado o Locum enquanto a pessoa autorizava
+no navegador e a abertura do `locum://` sobe um processo novo, que não lembra de
+nada.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

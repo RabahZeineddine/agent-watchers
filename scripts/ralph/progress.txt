@@ -19,3 +19,4 @@
 2026-09-19  M3.4  feito      eventos de energia ligados ao agendador, resume bate onWake e o sono vai para o log, smoke simula suspend e resume
 2026-09-19  M3.5  feito      SecretService com safeStorage, credential_ref aponta e o segredo fica cifrado fora do banco
 2026-09-19  M3.6  feito      notificacao nativa por run, NoticeService agrupa criticos e falha, clique aponta a inbox, smoke monta sem exibir
+2026-09-19  M3.7  feito      deep link locum registrado, retorno de OAuth com PKCE e state no cofre, token vira cabecalho e o cadastro guarda so a referencia
