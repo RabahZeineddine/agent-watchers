@@ -79,6 +79,15 @@ story parecer pedir isso, deixe espaço reservado e siga.
 varrendo o contrato da ponte: a emenda 5 do ADR 0003 existe porque um catálogo
 derivado entregaria `approvals.decide` a qualquer modelo que rode na janela.
 
+**Empacotamento, no marco M5.** O que passa em desenvolvimento não prova nada
+sobre o pacote: caminho de recurso, asar e módulo nativo só quebram depois de
+empacotar. Story do M5 que toque no pacote é verificada contra o `.app` gerado,
+e não só contra o `npm run build`.
+
+**Nada de assinatura da Apple.** Não gerar certificado, não configurar
+notarização, não publicar em servidor de atualização. Depende de conta que o
+dono do repositório pode não ter, e é decisão dele.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
