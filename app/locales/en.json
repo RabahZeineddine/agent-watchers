@@ -7,6 +7,43 @@
     "runs_one": "{{count}} run",
     "runs_other": "{{count}} runs"
   },
+  "findings": {
+    "count_one": "{{count}} finding",
+    "count_other": "{{count}} findings",
+    "general": "general"
+  },
+  "inbox": {
+    "title": "Inbox",
+    "waiting_zero": "nothing waiting for you",
+    "waiting_one": "{{count}} waiting for you",
+    "waiting_other": "{{count}} waiting for you",
+    "failures_one": "{{count}} run failed",
+    "failures_other": "{{count}} runs failed",
+    "summary_one": "{{count}} finding · {{problem}}",
+    "summary_other": "{{count}} findings · {{problem}}",
+    "approve": "Approve",
+    "edit": "Edit",
+    "discard": "Discard",
+    "collapse": "less",
+    "expand_one": "see the {{count}}",
+    "expand_other": "see all {{count}}",
+    "age": {
+      "now": "just now",
+      "hours": "{{hours}}h ago",
+      "days": "{{days}}d ago"
+    },
+    "empty": {
+      "title": "Nothing waiting for you",
+      "body": "The watchers keep running. When something needs your decision, it shows up here and in the tray."
+    },
+    "shortcuts": {
+      "move": "move",
+      "open": "open",
+      "approve": "approve",
+      "edit": "edit",
+      "discard": "discard"
+    }
+  },
   "loginItem": {
     "applied": "start at login: preference {{preference}}, system {{status}}"
   },
@@ -21,6 +58,50 @@
       "body_one": "One critical finding is in the queue waiting for a decision.",
       "body_other": "{{count}} critical findings are in the queue waiting for a decision."
     }
+  },
+  "runs": {
+    "title": "Runs",
+    "loading": "reading runs...",
+    "refused": "the bridge refused: {{message}}",
+    "count_one": "{{count}} run",
+    "count_other": "{{count}} runs",
+    "empty": "No runs yet. The <code>npm run dev demo</code> command creates one from the synthetic event.",
+    "money": "{{cost}} / {{estimate}} USD",
+    "detail": {
+      "loading": "reading the run...",
+      "missing": "run {{runId}} does not exist anymore"
+    },
+    "rerun": {
+      "title": "rerun {{step}}",
+      "refused": "the rerun was refused"
+    },
+    "step": {
+      "action": "action",
+      "substituted": "(substituted)",
+      "seconds": "{{seconds}}s",
+      "tokens": "{{tokens}} tok",
+      "cost": "{{cost}} USD",
+      "input": "Input",
+      "output": "Output",
+      "reasoning": {
+        "trigger": "How the step was resolved",
+        "requested": "Requested model: `{{model}}`",
+        "used": "Used model: `{{model}}`",
+        "none": "none",
+        "substitution": "Reason for the substitution: {{reason}}",
+        "noSubstitution": "No substitution on this machine.",
+        "skills": "Skills: {{skills}}",
+        "noSkills": "No skill selected.",
+        "attempt_one": "Attempt {{attempt}}, {{count}} input token and {{completion}} output.",
+        "attempt_other": "Attempt {{attempt}}, {{count}} input tokens and {{completion}} output."
+      }
+    }
+  },
+  "severity": {
+    "critical": "critical",
+    "high": "high",
+    "medium": "medium",
+    "low": "low"
   },
   "smoke": {
     "ok": "smoke ok: database opened, agents: {{agents}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
@@ -41,8 +122,20 @@
     "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}",
     "runs": "list with runs: {{runs}} and drawn rows: {{rows}}, detail with steps: {{steps}} and findings: {{findings}} and a rerun button on each, {{graph}}",
     "graph": "graph with nodes: {{nodes}} and edges: {{edges}}, states {{states}}",
-    "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}",
-    "mainText": "tray and notification following the language: \"{{tray}}\" and \"{{notification}}\""
+    "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}, screens with {{screens}}",
+    "mainText": "tray and notification following the language: \"{{tray}}\" and \"{{notification}}\"",
+    "screens": "inbox reading \"{{inbox}}\" and runs reading \"{{runs}}\", both matching the dictionary in both languages"
+  },
+  "status": {
+    "done": "done",
+    "running": "running",
+    "queued": "queued",
+    "pending": "pending",
+    "paused": "paused",
+    "awaiting_approval": "awaiting approval",
+    "skipped": "skipped",
+    "failed": "failed",
+    "cancelled": "cancelled"
   },
   "tray": {
     "pending_zero": "Nothing waiting for approval",

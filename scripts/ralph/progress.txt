@@ -31,3 +31,4 @@
 2026-09-19  M4a.8 feito      grafo da execucao com canvas, node, edge e controls do AI Elements, arranjo por needs do spec e estado por cor, smoke confere 4 nos e 3 arestas
 2026-09-20  M4c.1 feito      base de i18n com i18next, dicionario em app/locales, idioma pela ponte, plural por Intl.PluralRules e chave ausente estourando
 2026-09-20  M4c.2 feito      bandeja, notificacao, item de login e saida do smoke pelo dicionario; smoke ok
+2026-09-20  M4c.3 feito      inbox e execucoes pelo dicionario, rotulos de severidade e estado num modulo so, smoke conferindo as duas telas nos dois idiomas

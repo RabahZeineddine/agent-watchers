@@ -7,6 +7,43 @@
     "runs_one": "{{count}} execução",
     "runs_other": "{{count}} execuções"
   },
+  "findings": {
+    "count_one": "{{count}} achado",
+    "count_other": "{{count}} achados",
+    "general": "geral"
+  },
+  "inbox": {
+    "title": "Inbox",
+    "waiting_zero": "nada esperando você",
+    "waiting_one": "{{count}} esperando você",
+    "waiting_other": "{{count}} esperando você",
+    "failures_one": "{{count}} execução falhou",
+    "failures_other": "{{count}} execuções falharam",
+    "summary_one": "{{count}} achado · {{problem}}",
+    "summary_other": "{{count}} achados · {{problem}}",
+    "approve": "Aprovar",
+    "edit": "Editar",
+    "discard": "Descartar",
+    "collapse": "menos",
+    "expand_one": "ver o {{count}}",
+    "expand_other": "ver os {{count}}",
+    "age": {
+      "now": "agora",
+      "hours": "há {{hours}}h",
+      "days": "há {{days}}d"
+    },
+    "empty": {
+      "title": "Nada esperando você",
+      "body": "Os watchers continuam rodando. Quando algo precisar da sua decisão, aparece aqui e na bandeja."
+    },
+    "shortcuts": {
+      "move": "mover",
+      "open": "abrir",
+      "approve": "aprovar",
+      "edit": "editar",
+      "discard": "descartar"
+    }
+  },
   "loginItem": {
     "applied": "início no login: preferência {{preference}}, sistema {{status}}"
   },
@@ -21,6 +58,50 @@
       "body_one": "Um achado crítico está na fila esperando decisão.",
       "body_other": "{{count}} achados críticos estão na fila esperando decisão."
     }
+  },
+  "runs": {
+    "title": "Execuções",
+    "loading": "lendo execuções...",
+    "refused": "a ponte recusou: {{message}}",
+    "count_one": "{{count}} execução",
+    "count_other": "{{count}} execuções",
+    "empty": "Nenhuma execução ainda. O comando <code>npm run dev demo</code> cria uma a partir do evento sintético.",
+    "money": "{{cost}} / {{estimate}} USD",
+    "detail": {
+      "loading": "lendo a execução...",
+      "missing": "a execução {{runId}} não existe mais"
+    },
+    "rerun": {
+      "title": "reexecutar {{step}}",
+      "refused": "a reexecução foi recusada"
+    },
+    "step": {
+      "action": "ação",
+      "substituted": "(substituído)",
+      "seconds": "{{seconds}}s",
+      "tokens": "{{tokens}} tok",
+      "cost": "{{cost}} USD",
+      "input": "Entrada",
+      "output": "Saída",
+      "reasoning": {
+        "trigger": "Como o passo foi resolvido",
+        "requested": "Modelo pedido: `{{model}}`",
+        "used": "Modelo usado: `{{model}}`",
+        "none": "nenhum",
+        "substitution": "Motivo da substituição: {{reason}}",
+        "noSubstitution": "Sem substituição nesta máquina.",
+        "skills": "Skills: {{skills}}",
+        "noSkills": "Nenhuma skill selecionada.",
+        "attempt_one": "Tentativa {{attempt}}, {{count}} token de entrada e {{completion}} de saída.",
+        "attempt_other": "Tentativa {{attempt}}, {{count}} tokens de entrada e {{completion}} de saída."
+      }
+    }
+  },
+  "severity": {
+    "critical": "crítico",
+    "high": "alto",
+    "medium": "médio",
+    "low": "baixo"
   },
   "smoke": {
     "ok": "smoke ok: banco abriu, agents: {{agents}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, keychain com {{secrets}}, notificação com {{notifications}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
@@ -41,8 +122,20 @@
     "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}",
     "runs": "lista com execuções: {{runs}} e linhas desenhadas: {{rows}}, detalhe com passos: {{steps}} e achados: {{findings}} e botão de reexecutar em cada, {{graph}}",
     "graph": "grafo com nós: {{nodes}} e arestas: {{edges}}, estados {{states}}",
-    "language": "idioma trocando pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}",
-    "mainText": "bandeja e notificação seguindo o idioma: \"{{tray}}\" e \"{{notification}}\""
+    "language": "troca de idioma pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}, telas com {{screens}}",
+    "mainText": "bandeja e notificação seguindo o idioma: \"{{tray}}\" e \"{{notification}}\"",
+    "screens": "inbox escrevendo \"{{inbox}}\" e execuções escrevendo \"{{runs}}\", as duas batendo com o dicionário nos dois idiomas"
+  },
+  "status": {
+    "done": "concluído",
+    "running": "rodando",
+    "queued": "na fila",
+    "pending": "pendente",
+    "paused": "pausado",
+    "awaiting_approval": "aguardando aprovação",
+    "skipped": "pulado",
+    "failed": "falhou",
+    "cancelled": "cancelado"
   },
   "tray": {
     "pending_zero": "Nada aguardando aprovação",

@@ -373,7 +373,7 @@
       "description": "Mover todo texto visível dessas duas telas para o dicionário, incluindo plural de achado, execução e pendência, e os rótulos de severidade. Manter o sentido das mensagens: a inbox tem frases que explicam estado, e traduzir para algo genérico esvazia a tela.",
       "done_when": "Nenhum literal de texto em português sobra nos dois arquivos.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

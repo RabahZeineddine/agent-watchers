@@ -1457,6 +1457,14 @@ interface IdiomaVisto {
   runs: number;
 }
 
+/** O texto que a inbox e a lista de execucoes desenharam, com o que contaram. */
+interface TelasVistas {
+  inbox: string;
+  pendencias: number;
+  execucoes: string;
+  total: number;
+}
+
 /**
  * O que a janela aplicou de idioma, junto do rodapé que ela desenhou.
  *
@@ -1484,6 +1492,45 @@ async function lerIdioma(window: BrowserWindow): Promise<IdiomaVisto> {
       };
     })()`,
   );
+}
+
+/**
+ * O que a inbox e a lista de execucoes escreveram, no idioma corrente.
+ *
+ * As duas telas contam coisas, e contagem e onde tradução quebra primeiro: o
+ * plural do português troca a palavra, e um texto montado com "(oes)" no fim
+ * passaria por qualquer conferência de marcador. Por isso o exame compara a
+ * frase inteira com o dicionário, e não só o número ao lado dela.
+ */
+async function lerTelas(window: BrowserWindow): Promise<TelasVistas> {
+  await irPara(window, "inbox");
+  const inbox = await esperarProbe<{ texto: string; pendencias: number }>(
+    window,
+    "inbox",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=inbox]");
+      if (probe === null) return null;
+      return { texto: (probe.textContent ?? "").trim(), pendencias: Number(probe.dataset.pendencias) };
+    })()`,
+  );
+
+  await irPara(window, "execucoes");
+  const execucoes = await esperarProbe<{ texto: string; total: number }>(
+    window,
+    "execucoes",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucoes]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { texto: (probe.textContent ?? "").trim(), total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  return {
+    inbox: inbox.texto,
+    pendencias: inbox.pendencias,
+    execucoes: execucoes.texto,
+    total: execucoes.total,
+  };
 }
 
 /** Recarrega a página e espera ela terminar de carregar. */
@@ -1525,6 +1572,26 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     return lerIdioma(window);
   }
 
+  /** As duas telas conferidas contra o dicionário do idioma que está valendo. */
+  async function conferirTelas(dicionario: Dicionario, idioma: string): Promise<TelasVistas> {
+    const telas = await lerTelas(window);
+    const esperadoInbox = doDicionario(dicionario, idioma, "inbox.waiting", {
+      count: telas.pendencias,
+    });
+    if (telas.inbox !== esperadoInbox) {
+      throw new Error(
+        `a inbox em ${idioma} escreveu "${telas.inbox}" e o dicionario pede "${esperadoInbox}"`,
+      );
+    }
+    const esperadoRuns = doDicionario(dicionario, idioma, "runs.count", { count: telas.total });
+    if (telas.execucoes !== esperadoRuns) {
+      throw new Error(
+        `as execucoes em ${idioma} escreveram "${telas.execucoes}" e o dicionario pede "${esperadoRuns}"`,
+      );
+    }
+    return telas;
+  }
+
   try {
     const portugues = await preferir("pt-BR");
     if (portugues.idioma !== "pt-BR" || portugues.documento !== "pt-BR") {
@@ -1539,6 +1606,7 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     if (!portugues.rodape.includes(esperadoPt)) {
       throw new Error(`o rodape em pt-BR ficou "${portugues.rodape}" e devia trazer "${esperadoPt}"`);
     }
+    const telasPt = await conferirTelas(ptBR, "pt-BR");
 
     const ingles = await preferir("en");
     if (ingles.idioma !== "en" || ingles.preferencia !== "en") {
@@ -1550,6 +1618,13 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     }
     if (ingles.rodape === portugues.rodape) {
       throw new Error(`o texto nao mudou de idioma, ficou "${ingles.rodape}" nos dois`);
+    }
+    const telasEn = await conferirTelas(en, "en");
+    // Dicionário igual nos dois idiomas passaria pelas conferências acima sem
+    // ninguém ter traduzido nada. A lista de execuções é a que prova: o plural
+    // do português troca a palavra, e o da inbox pode coincidir com zero item.
+    if (telasEn.execucoes === telasPt.execucoes) {
+      throw new Error(`a lista de execucoes ficou "${telasEn.execucoes}" nos dois idiomas`);
     }
 
     // Sem preferencia, quem manda e a maquina, e o exame confere contra o que o
@@ -1572,6 +1647,7 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
       en: ingles.rodape,
       system: doSistema.idioma,
       fallback: FALLBACK_LANGUAGE,
+      screens: t("smoke.screens", { inbox: telasPt.inbox, runs: telasPt.execucoes }),
     });
   } finally {
     // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima

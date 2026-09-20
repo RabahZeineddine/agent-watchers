@@ -50,6 +50,7 @@ que a interface vai usar.
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
+| texto da inbox e das execuções | as duas telas pelo dicionário, com plural de achado, execução e pendência, e os rótulos de severidade e de estado num módulo só |
 
 ## Execução verificada
 
@@ -169,6 +170,18 @@ comando e o servidor MCP não falam necessariamente o mesmo da janela. A exceç�
 seria inventar. O processo principal monta a própria instância do i18next, sem
 `react-i18next`, e o que ele compartilha com a janela é o par de arquivos de
 dicionário, não o módulo que cria a instância.
+
+**Rótulo de severidade e de estado passa por lista conhecida.** A severidade e
+o estado chegam do banco como texto solto, e a guarda de chave ausente está
+ligada fora de app empacotado: um valor novo gravado lá atrás derrubaria a tela
+inteira em vez de aparecer cru. O `app/renderer/lib/rotulos.ts` confere contra a
+lista antes de consultar o dicionário, e devolve o valor como veio quando não
+reconhece. Sem tradução é ruim; tela em branco é pior.
+
+**O crachá de estado guarda o valor cru no marcador.** O texto do crachá segue o
+idioma, mas `data-locum-estado` continua com o que o serviço devolveu. O smoke
+compara os dois lados, e comparar contra o texto da tela faria a verificação
+depender do idioma da máquina que roda o loop.
 
 **Notificação é sobre o que chegou agora.** A primeira leitura da fila na
 subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de
