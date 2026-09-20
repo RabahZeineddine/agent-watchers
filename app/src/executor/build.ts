@@ -25,6 +25,17 @@ export async function buildExecutor(): Promise<Executor> {
   const runtimes = new Map<string, Runtime>([["native", new NativeRuntime(providerService.entries())]]);
   if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
-  const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
+  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate: buildGate(), machineId });
+}
+
+/**
+ * A porta unica de saida, com os handlers que sabem publicar.
+ *
+ * Mora aqui porque quem decide fora do executor, hoje a linha de comando e a
+ * ponte da janela, precisa da mesma montagem. Montar o mapa em cada chamador
+ * abriria caminho para um deles registrar um handler diferente sem ninguem
+ * notar, e a gate so vale como porta unica se ela for sempre a mesma porta.
+ */
+export function buildGate(): ApprovalGate {
+  return new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
 }

@@ -49,3 +49,21 @@ await build({
   // deixa empacotar, e o resto o Electron resolve por node_modules mesmo.
   packages: "external",
 });
+
+/**
+ * O preload sai num pacote proprio, e aqui `packages: "external"` nao vale.
+ *
+ * Ele roda em sandbox, onde nao existe resolucao por node_modules: o que nao
+ * estiver dentro do arquivo nao carrega. Como o preload so importa `electron`,
+ * que o sandbox fornece, basta marcar esse.
+ */
+await build({
+  entryPoints: [join(appDir, "electron", "preload.ts")],
+  outfile: join(appDir, "dist", "preload.cjs"),
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node22",
+  sourcemap: true,
+  external: ["electron"],
+});

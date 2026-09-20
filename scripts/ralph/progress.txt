@@ -20,3 +20,4 @@
 2026-09-19  M3.5  feito      SecretService com safeStorage, credential_ref aponta e o segredo fica cifrado fora do banco
 2026-09-19  M3.6  feito      notificacao nativa por run, NoticeService agrupa criticos e falha, clique aponta a inbox, smoke monta sem exibir
 2026-09-19  M3.7  feito      deep link locum registrado, retorno de OAuth com PKCE e state no cofre, token vira cabecalho e o cadastro guarda so a referencia
+2026-09-19  M3.8  feito      ponte tipada com preload em sandbox, 22 canais sobre os servicos, decisao segue na gate

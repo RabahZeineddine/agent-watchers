@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const smoke = process.argv.includes("--smoke");
@@ -29,19 +29,26 @@ captureDeepLinks({ singleInstance: !smoke });
 
 let mainWindow: BrowserWindow | null = null;
 
-function createWindow(): BrowserWindow {
+/** O preload sai do mesmo build que o main e fica ao lado dele em dist/. */
+const PRELOAD = join(__dirname, "preload.cjs");
+
+function createWindow(options: { show?: boolean } = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1100,
     height: 760,
     show: false,
     titleBarStyle: "hiddenInset",
     webPreferences: {
+      preload: PRELOAD,
+      // A janela nao tem Node nenhum. Tudo que ela alcanca do sistema passa
+      // pelos canais do preload, e `sandbox` garante que nem um import solto
+      // no renderer devolva `require`.
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
     },
   });
-  window.once("ready-to-show", () => window.show());
+  if (options.show !== false) window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     mainWindow = null;
   });
@@ -411,6 +418,87 @@ async function checkDeepLink(): Promise<string> {
   );
 }
 
+/**
+ * Prova que a janela fala com os servicos pela ponte, e so por ela.
+ *
+ * A janela sobe com `show: false` e carrega `about:blank`, que e o minimo para
+ * o preload rodar: preload so executa quando um documento carrega, entao
+ * conferir o arquivo no disco nao provaria nada. Nada aparece na tela, que e o
+ * que o smoke exige.
+ *
+ * O que esta sendo provado e o caminho inteiro: o preload expoe a ponte, o
+ * canal atravessa o IPC, o servico responde, e o valor que volta bate com o
+ * que o mesmo servico devolve deste lado.
+ */
+async function checkBridge(): Promise<string> {
+  const { bridgeChannelCount, setupBridge, teardownBridge, trustWindow } = await import(
+    "./bridge.js"
+  );
+  const { BRIDGE_GLOBAL } = await import("./bridge-contract.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+
+  if (!existsSync(PRELOAD)) throw new Error(`preload nao foi construido em ${PRELOAD}`);
+
+  const canais = setupBridge({ inboxTarget: pendingInboxTarget });
+  if (canais !== bridgeChannelCount()) throw new Error("canal registrado a menos");
+
+  const window = createWindow({ show: false });
+  trustWindow(window);
+
+  try {
+    await window.loadURL("about:blank");
+
+    const visto = (await window.webContents.executeJavaScript(
+      `({
+        ponte: typeof globalThis.${BRIDGE_GLOBAL},
+        agentes: typeof globalThis.${BRIDGE_GLOBAL}?.agents?.list,
+        decidir: typeof globalThis.${BRIDGE_GLOBAL}?.approvals?.decide,
+        require: typeof globalThis.require,
+        process: typeof globalThis.process,
+      })`,
+    )) as Record<string, string>;
+
+    if (visto["ponte"] !== "object") throw new Error("o preload nao pendurou a ponte na janela");
+    if (visto["agentes"] !== "function") throw new Error("a ponte subiu sem os canais");
+    if (visto["decidir"] !== "function") throw new Error("a inbox ficou sem o canal de decisao");
+    if (visto["require"] !== "undefined" || visto["process"] !== "undefined") {
+      throw new Error("a janela enxerga Node, nodeIntegration ou sandbox saiu do lugar");
+    }
+
+    const daPonte = (await window.webContents.executeJavaScript(
+      `globalThis.${BRIDGE_GLOBAL}.agents.list().then((a) => a.map((x) => x.id))`,
+    )) as string[];
+    const doServico = (await agentService.list()).map((a) => a.id);
+    if (daPonte.join(",") !== doServico.join(",")) {
+      throw new Error("a lista que veio pela ponte nao bate com a do servico");
+    }
+
+    const pendentes = (await window.webContents.executeJavaScript(
+      `globalThis.${BRIDGE_GLOBAL}.approvals.listPending().then((p) => p.length)`,
+    )) as number;
+    if (pendentes !== (await countPending())) {
+      throw new Error("a fila vista pela ponte nao bate com a do servico");
+    }
+
+    // Decisao sobre pendencia que nao existe: a gate recusa, e e ela quem
+    // recusa. A ponte nao tem o que dizer sobre publicar. O Electron registra
+    // sozinho todo erro de handler de IPC, entao a recusa esperada vai aparecer
+    // no log logo abaixo: e o teste passando, nao o smoke quebrando.
+    console.log("ponte: a proxima linha de erro e a recusa esperada da gate");
+    const recusa = (await window.webContents.executeJavaScript(
+      `globalThis.${BRIDGE_GLOBAL}.approvals.decide("nao-existe", "approved").then(() => "passou", (e) => String(e.message))`,
+    )) as string;
+    if (!recusa.includes("nao encontrada")) {
+      throw new Error(`decisao sobre pendencia inexistente devolveu ${recusa}`);
+    }
+  } finally {
+    window.destroy();
+    teardownBridge();
+  }
+
+  return `${canais} canais no ar, janela sem Node, valores batendo com os servicos`;
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -484,12 +572,13 @@ async function main(): Promise<void> {
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const deepLink = await checkDeepLink();
+    const ponte = await checkBridge();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
         `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
-        `deep link com ${deepLink}`,
+        `deep link com ${deepLink}, ponte com ${ponte}`,
     );
     app.exit(0);
     return;
@@ -527,10 +616,19 @@ async function main(): Promise<void> {
   const { setupPower } = await import("./power.js");
   setupPower();
 
+  // Antes da janela: o preload chama os canais assim que o documento carrega, e
+  // canal ainda nao registrado volta como erro de IPC para o renderer.
+  const { setupBridge, trustWindow } = await import("./bridge.js");
+  setupBridge({ inboxTarget: pendingInboxTarget });
+
   mainWindow = createWindow();
+  trustWindow(mainWindow);
 
   app.on("activate", () => {
-    if (mainWindow === null) mainWindow = createWindow();
+    if (mainWindow === null) {
+      mainWindow = createWindow();
+      trustWindow(mainWindow);
+    }
   });
 }
 

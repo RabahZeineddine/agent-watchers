@@ -252,7 +252,7 @@
       "description": "contextBridge com preload, expondo a camada de servico ao renderer por canais tipados. Sem nodeIntegration na janela. A ponte nao expoe aprovar nem publicar como chamada livre: a decisao continua passando pela ApprovalGate, e a ponte so encaminha o clique de uma pessoa.",
       "done_when": "O preload expoe a ponte, a janela nao tem nodeIntegration, e a ponte compila contra os tipos dos servicos.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

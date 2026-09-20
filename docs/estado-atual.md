@@ -38,7 +38,8 @@ executor que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| interface | não começou |
+| ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| interface | a janela ainda não carrega nada |
 
 ## Execução verificada
 
@@ -168,6 +169,25 @@ o prefixo depois. O par `state` mais `code_verifier` também mora no cofre, e n�
 em memória, porque o macOS pode ter fechado o Locum enquanto a pessoa autorizava
 no navegador e a abertura do `locum://` sobe um processo novo, que não lembra de
 nada.
+
+**Preload só roda quando um documento carrega.** Conferir que o
+`dist/preload.cjs` existe não prova ponte nenhuma: enquanto a janela não chama
+`loadURL`, o preload nem é executado e `window.locum` não existe. Por isso o
+smoke sobe uma janela com `show: false`, carrega `about:blank`, e pergunta ao
+próprio renderer o que ele enxerga. Nada aparece na tela e o caminho inteiro é
+exercitado, do `contextBridge` até o serviço.
+
+**`packages: "external"` não vale para o preload.** No sandbox não existe
+resolução por `node_modules`: o que não estiver dentro do arquivo não carrega. O
+pacote do preload sai com tudo embutido e só `electron` como externo, que é o
+único módulo que o sandbox fornece. Por isso o contrato da ponte, que os dois
+lados importam, não tem import de valor vindo de `src/`: um só arrastaria o
+núcleo e o `better-sqlite3` para dentro do preload.
+
+**Erro de handler de IPC sempre vai para o log.** O Electron registra toda
+rejeição de `ipcMain.handle`, e o smoke prova de propósito que decidir sobre uma
+pendência inexistente é recusado. A linha de erro que aparece depois do aviso
+`ponte: a proxima linha de erro e a recusa esperada da gate` é o teste passando.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

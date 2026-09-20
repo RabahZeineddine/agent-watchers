@@ -1,6 +1,5 @@
-import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
-import { buildExecutor } from "./executor/build.js";
+import { buildExecutor, buildGate } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
 import { executionService } from "./services/execution-service.js";
@@ -13,7 +12,7 @@ import { runService, type RunSummary } from "./services/run-service.js";
 import { secretService } from "./services/secret-service.js";
 import { startupService } from "./services/startup-service.js";
 import { triggerService } from "./services/trigger-service.js";
-import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
+import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
 
@@ -443,8 +442,7 @@ async function main(): Promise<void> {
     case "approve":
     case "reject": {
       if (!arg) throw new Error(`uso: ${cmd} <approval-id>`);
-      const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-      await gate.decide(arg, cmd === "approve" ? "approved" : "rejected");
+      await buildGate().decide(arg, cmd === "approve" ? "approved" : "rejected");
       console.log(`${arg} ${cmd === "approve" ? "aprovado e publicado" : "rejeitado"}`);
       break;
     }
