@@ -48,6 +48,7 @@ export const READ_CHANNELS = [
   "providers.fallbacks",
   "providers.preview",
   "credentials.overview",
+  "chat.status",
   "metrics.report",
   "machine.profile",
   "triggers.list",
@@ -79,6 +80,13 @@ export const ACTION_CHANNELS = [
   "runs.rerunStep",
   "mcp.test",
   "mcp.tools",
+  // Buscar catálogo bate na rede de cada provedor, então fica atrás de um
+  // clique e não do carregamento da tela.
+  "providers.models",
+  "providers.allModels",
+  "chat.setModel",
+  "chat.send",
+  "chat.cancel",
 ] as const satisfies readonly BridgeChannel[];
 
 export type ActionChannel = (typeof ACTION_CHANNELS)[number];

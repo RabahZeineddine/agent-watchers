@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { call, read, useRead } from "@/lib/bridge";
+import { call, useRead } from "@/lib/bridge";
 import { cn } from "@/lib/utils";
 import { Check, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -31,7 +31,7 @@ export function EscolhaDoModelo() {
   const buscar = useCallback(async () => {
     setCarregando(true);
     try {
-      setCatalogos(await read("providers.allModels"));
+      setCatalogos(await call("providers.allModels"));
     } finally {
       setCarregando(false);
     }
