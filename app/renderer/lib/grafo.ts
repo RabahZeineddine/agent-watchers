@@ -28,8 +28,8 @@ export interface ArestaDoGrafo {
   target: string;
 }
 
-export const LARGURA_DO_NO = 232;
-export const ALTURA_DO_NO = 108;
+export const LARGURA_DO_NO = 248;
+export const ALTURA_DO_NO = 132;
 
 const VAO_X = 88;
 const VAO_Y = 40;

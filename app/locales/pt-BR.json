@@ -200,7 +200,7 @@
       "input": "Entrada",
       "output": "Saída",
       "reasoning": {
-        "trigger": "Como o passo foi resolvido",
+        "trigger": "Modelo e substituição",
         "requested": "Modelo pedido: `{{model}}`",
         "used": "Modelo usado: `{{model}}`",
         "none": "nenhum",

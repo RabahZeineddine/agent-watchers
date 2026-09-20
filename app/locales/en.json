@@ -200,7 +200,7 @@
       "input": "Input",
       "output": "Output",
       "reasoning": {
-        "trigger": "How the step was resolved",
+        "trigger": "Model and fallback",
         "requested": "Requested model: `{{model}}`",
         "used": "Used model: `{{model}}`",
         "none": "none",
