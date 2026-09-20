@@ -208,7 +208,7 @@
       "description": "Escutar powerMonitor resume e suspend. Ao acordar, chamar uma batida do agendador, que ja anda por cursor e recupera a janela perdida. Registrar no log quanto tempo a maquina ficou dormindo.",
       "done_when": "Sob --smoke os ouvintes estao registrados e uma batida simulada de resume chama o agendador uma vez.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

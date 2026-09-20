@@ -28,7 +28,7 @@ export interface TrayHandlers {
  * maquina, e gravar isso apagaria a diferenca entre "o dono pausou agora" e
  * "este gatilho esta desabilitado", que e outra coisa e mora na tabela de
  * gatilhos. Quem dispara trabalho no processo principal consulta esta funcao
- * antes de comecar; hoje ninguem dispara, porque o agendador so entra no M3.4.
+ * antes de comecar: hoje e a batida de acordar, em electron/power.ts.
  */
 export function isPaused(): boolean {
   return paused;

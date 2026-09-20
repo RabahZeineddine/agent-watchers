@@ -79,6 +79,49 @@ async function checkLoginItem(): Promise<string> {
   return `preferencia ${decision}, sistema ${state.status}`;
 }
 
+/**
+ * Prova que os ouvintes de energia estao no ar e que um resume chega ao
+ * agendador. A batida de verdade nao entra: ela criaria run, e o smoke roda
+ * sozinho no loop de verificacao, onde gastar assinatura por engano nao tem
+ * quem perceba. Por isso o `onWake` aqui so conta.
+ */
+async function checkPower(): Promise<string> {
+  const { emitPowerEvent, powerListenerCount, setupPower, teardownPower } = await import(
+    "./power.js"
+  );
+
+  const before = powerListenerCount();
+  const beats: (number | null)[] = [];
+  let clock = Date.parse("2026-09-19T01:00:00Z");
+
+  setupPower({ onWake: (slept) => void beats.push(slept), now: () => clock });
+
+  const after = powerListenerCount();
+  if (after.suspend !== before.suspend + 1 || after.resume !== before.resume + 1) {
+    throw new Error("ouvintes de energia nao ficaram registrados");
+  }
+
+  const sleep = 90 * 60_000;
+  emitPowerEvent("suspend");
+  clock += sleep;
+  emitPowerEvent("resume");
+
+  if (beats.length !== 1) {
+    throw new Error(`um resume bateu no agendador ${beats.length} vez(es)`);
+  }
+  if (beats[0] !== sleep) {
+    throw new Error(`resume mediu ${String(beats[0])}ms de sono e o esperado era ${sleep}ms`);
+  }
+
+  teardownPower();
+  const cleaned = powerListenerCount();
+  if (cleaned.suspend !== before.suspend || cleaned.resume !== before.resume) {
+    throw new Error("ouvinte de energia sobrou depois do teardown");
+  }
+
+  return "suspend e resume registrados, uma batida depois de 90min de sono";
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -111,9 +154,12 @@ async function main(): Promise<void> {
     }
     teardownTray();
 
+    const power = await checkPower();
+
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
-        `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}`,
+        `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
+        `energia com ${power}`,
     );
     app.exit(0);
     return;
@@ -126,6 +172,10 @@ async function main(): Promise<void> {
   }
 
   await setupTray({ openWindow: showWindow });
+
+  const { setupPower } = await import("./power.js");
+  setupPower();
+
   mainWindow = createWindow();
 
   app.on("activate", () => {

@@ -28,13 +28,13 @@ executor que a interface vai usar.
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
-| agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; falta o evento de energia do M3 |
+| agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
 | camada de serviço, dez serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
-| agendador por cursor | pronto, falta o evento de energia do M3 |
-| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências e início no login por preferência guardada, sem interface ainda |
+| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada e eventos de energia batendo o agendador, sem interface ainda |
 | interface | não começou |
 
 ## Execução verificada
@@ -140,8 +140,9 @@ O agendador não tem relógio próprio. Ele é batido de fora, hoje pelo comando
 `tick`, e devolve em `nextDueAt` quando quer a próxima batida, para quem chama
 armar um temporizador só. Cada gatilho tem seu cursor de tempo na tabela
 `cursors`, então sono da máquina não perde janela: a primeira batida depois de
-acordar já encontra o gatilho vencido. O `onWake()` existe esperando o evento de
-energia do M3.
+acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
+principal do Electron, em `app/electron/power.ts`, no `resume` do
+`powerMonitor`, e o tempo que a máquina passou dormindo vai para o log.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as
