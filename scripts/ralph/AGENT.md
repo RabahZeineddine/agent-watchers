@@ -51,6 +51,16 @@ de atribuição.
 **Comentário só onde o porquê não é óbvio.** O padrão do repositório é explicar
 decisão e armadilha, não narrar o que a linha faz.
 
+**Electron, no marco M3.** A verificação é sempre por `--smoke`, que sobe sem
+mostrar janela e sai com código 0. Não tente abrir interface gráfica: o loop
+roda sem ninguém olhando e uma janela aberta trava a iteração. Se a story
+parecer exigir interação visual, marque bloqueada.
+
+**A ponte e o keychain não abrem exceção.** Nada que você escrever pode permitir
+publicar sem o clique de uma pessoa, e segredo nunca entra em banco, log ou
+arquivo solto. A emenda 6 do ADR 0002 explica por que a regra é "nada sai sem
+uma pessoa ter dito que sai", e não "não existe ferramenta de aprovar".
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
