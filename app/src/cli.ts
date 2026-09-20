@@ -12,6 +12,7 @@ import { reconcileService } from "./services/reconcile-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
 import { secretService } from "./services/secret-service.js";
 import { startupService } from "./services/startup-service.js";
+import { updateService } from "./services/update-service.js";
 import { triggerService } from "./services/trigger-service.js";
 import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
@@ -280,6 +281,28 @@ async function startup(decision: boolean | null): Promise<void> {
 }
 
 /**
+ * Estado do interruptor da atualização automática.
+ *
+ * Como o do login, a linha de comando só mexe no que está guardado: quem fala
+ * com o verificador é o processo do Electron. Desligado é o padrão, e vai
+ * continuar sendo enquanto o pacote não for assinado, porque atualização que o
+ * macOS recusa instalar não vale a chamada de rede que a descobriu.
+ */
+async function updates(decision: boolean | null): Promise<void> {
+  if (decision !== null) await updateService.setEnabled(decision);
+
+  const { preference, enabled } = await updateService.state();
+  if (preference === null) {
+    console.log("atualização automática: não decidido, e o padrão é desligado");
+    return;
+  }
+  console.log(
+    `atualização automática: ${enabled ? "ligada" : "desligada"}` +
+      (decision === null ? "" : ", valendo na próxima vez que o Locum subir"),
+  );
+}
+
+/**
  * O que esta guardado no cofre e quem aponta para la.
  *
  * Nenhum valor sai impresso, e pela linha de comando nem daria: o keychain so
@@ -391,6 +414,15 @@ async function main(): Promise<void> {
     case "startup:off":
       await startup(false);
       break;
+    case "updates":
+      await updates(null);
+      break;
+    case "updates:on":
+      await updates(true);
+      break;
+    case "updates:off":
+      await updates(false);
+      break;
     case "secrets":
       await secrets();
       break;
@@ -487,6 +519,9 @@ async function main(): Promise<void> {
           "  startup                  mostra se o Locum sobe junto com o login",
           "  startup:on               passa a subir no login a partir da proxima subida",
           "  startup:off              deixa de subir no login",
+          "  updates                  mostra se a atualização automática está ligada",
+          "  updates:on               liga a verificação de atualização na subida do app",
+          "  updates:off              desliga a verificação de atualização",
           "  secrets                  credenciais guardadas no cofre e quem aponta para elas",
           "  secret:link <provider|mcp>:<nome> <escopo/nome>",
           "  secret:unlink <provider|mcp>:<nome>",

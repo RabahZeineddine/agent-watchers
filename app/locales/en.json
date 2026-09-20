@@ -299,10 +299,13 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
+    "updates": "switch off by default, electron-updater never loaded, network requests on startup: {{requests}}; switched on it is read without arming, publish config {{feed}}",
+    "feedPresent": "present",
+    "feedAbsent": "absent",
     "secrets": "secret encrypted on disk, reference in the database, value only in the connection",
     "notifications": "notice built without showing, three criticals in a single run, click pointing to the run",
     "deepLink": "locum scheme {{scheme}}, OAuth callback routed, token in the vault and reference in the registry",

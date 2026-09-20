@@ -58,6 +58,7 @@ que a interface vai usar.
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
 | empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
+| atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 
 ## Execução verificada
 
@@ -104,6 +105,9 @@ npm run dev secret:unlink provider:anthropic
 npm run dev startup                   # o Locum sobe junto com o login?
 npm run dev startup:on                # passa a subir, valendo na próxima subida
 npm run dev startup:off               # deixa de subir
+npm run dev updates                   # mostra o interruptor da atualização automática
+npm run dev updates:on                # liga a verificação na subida do app
+npm run dev updates:off               # desliga a verificação
 npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
@@ -607,6 +611,25 @@ por uma tradução faltando.
 **O servidor de brinquedo sobe pelo próprio binário do Electron.** Com
 `ELECTRON_RUN_AS_NODE`, e não pelo `node` do sistema: o pacote não pode supor
 Node instalado na máquina de quem abre o `.app`.
+
+**A atualização automática não serve sem assinatura da Apple.** O macOS recusa
+instalar pacote não assinado vindo do updater, então ligar a verificação hoje
+só gastaria rede para descobrir uma versão que nunca entra. Por isso o
+interruptor nasce desligado e, desligado, o `electron-updater` sequer é
+importado: um módulo carregado "só para consultar" deixa temporizador de pé, e
+é assim que um verificador acaba batendo num servidor que ninguém autorizou. O
+smoke prova isso contando o que sai pelo `http`, pelo `https` e pelo `net` do
+Electron, porque ler o código e ver que ele decide não chamar não prova nada
+sobre o que um temporizador faz três segundos depois.
+
+**O `app-update.yml` só nasce com alvo `dmg` ou `zip`.** O electron-builder
+escreve a configuração de publicação no pacote no `onAfterPack`, e no macOS ele
+pula quando os alvos são só `dir`. Então `npm run dist:dir` produz um `.app` sem
+feed, e o verificador ligado ali dentro responde `no-feed` em vez de armar. Vale
+para o smoke do pacote: ele exercita o caminho desligado de verdade, e o caminho
+ligado só até a decisão, pelo `planUpdater`, que nunca arma. Chamar o
+`setupUpdater` ligado dentro de um pacote com dmg faria o smoke bater no
+servidor de releases.
 
 ## Próximos passos
 

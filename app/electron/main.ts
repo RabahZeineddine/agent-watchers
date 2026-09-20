@@ -263,6 +263,64 @@ async function checkPower(): Promise<string> {
 }
 
 /**
+ * Prova que o interruptor desligado não custa uma requisição sequer.
+ *
+ * Ler o código e ver que ele decide não chamar não prova nada: a chamada que
+ * importa é a que um temporizador faria três segundos depois, longe da linha
+ * que alguém leu. Por isso aqui a saída de rede é contada de fora, e o critério
+ * é a contagem, não a intenção.
+ *
+ * A segunda metade liga o interruptor e confere que ele é mesmo lido, pelo
+ * `planUpdater`, que decide sem armar. Não é detalhe: num pacote com dmg o
+ * `app-update.yml` existe, e chamar o `setupUpdater` ligado ali dentro faria o
+ * smoke bater no servidor de releases. A preferência de quem desenvolve volta
+ * ao que era no fim, porque o smoke roda no banco de verdade.
+ */
+async function checkUpdates(): Promise<string> {
+  const { updateService } = await import("../src/services/update-service.js");
+  const { planUpdater, setupUpdater, updaterArmed, espiarRede } = await import("./updater.js");
+
+  const anterior = await updateService.getPreference();
+  const espia = espiarRede();
+
+  const semRede = (momento: string): void => {
+    const vistas = espia.vistas();
+    if (vistas.length === 0) return;
+    const quais = vistas.map((v) => `${v.via} ${v.destino}`).join(", ");
+    throw new Error(`atualização ${momento} saiu para a rede: ${quais}`);
+  };
+
+  try {
+    await updateService.clearPreference();
+    const desligado = await setupUpdater();
+    if (desligado.enabled || desligado.armed || updaterArmed()) {
+      throw new Error("o verificador de atualização armou com o interruptor desligado");
+    }
+    if (desligado.reason !== "disabled") {
+      throw new Error(
+        `sem preferência gravada o motivo deveria ser disabled, veio ${desligado.reason}`,
+      );
+    }
+    semRede("desligada");
+
+    await updateService.setEnabled(true);
+    const ligado = await planUpdater();
+    if (!ligado.enabled) throw new Error("o interruptor ligado não chegou ao verificador");
+    if (ligado.armed || updaterArmed()) throw new Error("o plano do verificador armou sozinho");
+    semRede("ligada");
+
+    return t("smoke.updates", {
+      requests: espia.vistas().length,
+      feed: t(ligado.feed === null ? "smoke.feedAbsent" : "smoke.feedPresent"),
+    });
+  } finally {
+    espia.parar();
+    if (anterior === null) await updateService.clearPreference();
+    else await updateService.setEnabled(anterior);
+  }
+}
+
+/**
  * Prova que o segredo vai e volta pelo keychain, que o que fica no disco esta
  * cifrado, e que o cadastro guarda so a referencia.
  *
@@ -2236,6 +2294,7 @@ async function main(): Promise<void> {
     teardownTray();
 
     const power = await checkPower();
+    const updates = await checkUpdates();
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const deepLink = await checkDeepLink();
@@ -2249,6 +2308,7 @@ async function main(): Promise<void> {
         pending,
         loginItem,
         power,
+        updates,
         secrets,
         notifications: avisos,
         deepLink,
@@ -2294,6 +2354,13 @@ async function main(): Promise<void> {
 
   const { setupPower } = await import("./power.js");
   setupPower();
+
+  // Depois de tudo que o Locum precisa para funcionar: atualizar é o único
+  // passo da subida que fala com a internet, e ele não pode atrasar a bandeja
+  // nem a janela. Desligado, que é o padrão, não custa nada.
+  const { setupUpdater } = await import("./updater.js");
+  const atualizacao = await setupUpdater();
+  if (atualizacao.armed) console.log(`atualização: verificando em ${atualizacao.feed}`);
 
   // Antes da janela: o preload chama os canais assim que o documento carrega, e
   // canal ainda nao registrado volta como erro de IPC para o renderer.

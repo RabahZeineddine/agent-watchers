@@ -461,7 +461,7 @@
       "description": "Ligar electron-updater lendo a configuração de publicação, desligado por padrão e sem nenhuma chamada de rede quando desligado. Sem assinatura da Apple ele não funciona, então o padrão desligado não é preguiça: é o comportamento correto enquanto não houver conta de desenvolvedor.",
       "done_when": "Com o interruptor desligado o aplicativo sobe sem nenhuma requisição de atualização, e o smoke confirma.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

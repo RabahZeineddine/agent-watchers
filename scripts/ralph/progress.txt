@@ -39,3 +39,4 @@
 2026-09-20  M5.2  feito      ícone da régua de severidade, SVG versionado e .icns por sips e iconutil
 2026-09-20  M5.3  feito      empacotamento por electron-builder, native fora do asar com arquitetura no nome, npmRebuild desligado, .app abrindo em banco limpo
 2026-09-20  M5.4  feito      smoke:dist contra o .app, fixture empacotado e guarda de i18n seguindo isPackaged
+2026-09-20  M5.5  feito      atualização automática atrás de interruptor, desligada por padrão, smoke contando requisição de rede

@@ -57,6 +57,20 @@ mac:
         - arm64
         - x64
 
+# De onde o electron-updater leria a atualização, se alguém ligasse o
+# interruptor. Estar aqui não liga nada: o electron-builder grava isto como
+# `app-update.yml` dentro do pacote, e quem decide consultá-lo é a preferência
+# em `settings`, desligada por padrão. Sem esta seção não haveria o que ler, e
+# o interruptor ligado não teria para onde apontar.
+#
+# Publicar continua sendo outra coisa, e não acontece por acaso: o
+# electron-builder só sobe arquivo com `--publish`, e o script `dist` passa
+# `never` de propósito.
+publish:
+  - provider: github
+    owner: RabahZeineddine
+    repo: agent-watchers
+
 # O `setAsDefaultProtocolClient` do M3.7 basta rodando do código, mas o
 # aplicativo instalado é registrado pelo Info.plist: sem esta entrada o
 # `locum://` do retorno de OAuth não chegaria ao app já fechado.
