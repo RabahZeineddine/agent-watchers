@@ -21,12 +21,16 @@ ALVO="${1:-}"
 MAX_ITERATIONS="${2:-12}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PRD_FILE="$SCRIPT_DIR/prd.json"
-PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
-
 ORIGEM="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WORKTREE="$(dirname "$ORIGEM")/locum-loop"
 TRONCO="main"
+
+# O agente edita a copia que esta no worktree, porque e de la que ele roda. Ler
+# a copia da arvore principal fazia a contagem de pendentes nunca baixar, e o
+# marco so terminava por esgotar o teto de iteracoes.
+PRD_FILE="$WORKTREE/scripts/ralph/prd.json"
+PROGRESS_FILE="$WORKTREE/scripts/ralph/progress.txt"
+[ -d "$WORKTREE" ] || { PRD_FILE="$SCRIPT_DIR/prd.json"; PROGRESS_FILE="$SCRIPT_DIR/progress.txt"; }
 
 command -v jq >/dev/null || { echo "ABORTADO: jq nao instalado."; exit 64; }
 
@@ -52,6 +56,13 @@ estado() {
   done
   echo ""
 }
+
+# Depois do merge, a copia do worktree some junto com ele, e o status volta a
+# ler a arvore principal.
+if [ ! -f "$PRD_FILE" ]; then
+  PRD_FILE="$SCRIPT_DIR/prd.json"
+  PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+fi
 
 if [ "$ALVO" = "status" ]; then
   estado
