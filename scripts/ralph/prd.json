@@ -186,7 +186,7 @@
       "description": "Icone na bandeja com contagem de aprovacoes pendentes lida do ApprovalService, menu com abrir, pausar tudo, e sair. A contagem atualiza quando a fila muda. Sob --smoke, criar a bandeja, conferir que existe, e sair.",
       "done_when": "Sob --smoke a bandeja e criada e a contagem bate com listPending().",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

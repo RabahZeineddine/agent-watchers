@@ -34,7 +34,7 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, falta o evento de energia do M3 |
-| casca Electron | processo principal com `--smoke`, sem interface ainda |
+| casca Electron | processo principal com `--smoke` e bandeja com contagem de pendencias, sem interface ainda |
 | interface | não começou |
 
 ## Execução verificada

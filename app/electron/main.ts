@@ -34,6 +34,13 @@ function createWindow(): BrowserWindow {
   return window;
 }
 
+/** Traz a janela para frente, criando uma se nao houver. */
+function showWindow(): void {
+  if (mainWindow === null) mainWindow = createWindow();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
 /** Confere que o nucleo carrega e que o banco responde a uma consulta. */
 async function checkCore(): Promise<number> {
   const { db, schema } = await import("../src/db/index.js");
@@ -41,19 +48,45 @@ async function checkCore(): Promise<number> {
   return rows.length;
 }
 
+/** Quantas pendencias a fila tem, lida direto do servico. */
+async function countPending(): Promise<number> {
+  const { approvalService } = await import("../src/services/approval-service.js");
+  return (await approvalService.listPending()).length;
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
 
+  // O nucleo abre o banco no import, entao tudo que fala com ele entra por
+  // import dinamico, depois da variavel de ambiente do binding.
+  const { setupTray, teardownTray, trayPendingCount } = await import("./tray.js");
+
   if (smoke) {
     // Sem dock e sem janela: o loop de verificacao roda sem ninguem olhando, e
-    // uma janela aberta travaria a iteracao esperando um clique.
+    // uma janela aberta travaria a iteracao esperando um clique. A bandeja
+    // continua valendo, porque ela nao pede clique de ninguem para existir.
     app.dock?.hide();
     const agents = await checkCore();
-    console.log(`smoke ok: banco abriu, ${agents} agent(s) cadastrado(s)`);
+
+    const tray = await setupTray({ openWindow: showWindow });
+    const pending = await countPending();
+    if (tray.isDestroyed()) throw new Error("bandeja nao sobreviveu a criacao");
+    if (trayPendingCount() !== pending) {
+      throw new Error(
+        `bandeja marca ${trayPendingCount()} pendencia(s) e a fila tem ${pending}`,
+      );
+    }
+    teardownTray();
+
+    console.log(
+      `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
+        `bandeja criada com ${pending} pendencia(s)`,
+    );
     app.exit(0);
     return;
   }
 
+  await setupTray({ openWindow: showWindow });
   mainWindow = createWindow();
 
   app.on("activate", () => {
