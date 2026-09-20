@@ -1,3 +1,15 @@
-# Locum, progresso do loop
-Inicio: Sat Sep 19 19:17:13 -03 2026
----
+2026-09-19  M1.1  feito      AgentService criado, seed do cli consome upsert, tsc limpo e seed idempotente
+2026-09-19  M1.2  feito      McpService le e grava mcp_servers, cli ganhou mcp:register, executor sem constante
+2026-09-19  M1.3  feito      testConnection e listTools no McpService, cli ganhou mcp:tools e mcp:test, fixture lista as quatro
+2026-09-19  M1.4  feito      ProviderService com fallback sem ciclo e resolvePreview, cli ganhou providers
+2026-09-19  M1.5  feito      RunService com list, get, findings e rerunStep, cli ganhou runs e rerun
+2026-09-19  M1.6  feito      ApprovalService com listPending e get, inbox do cli consome o servico, decisao segue na gate
+2026-09-19  M2.1  feito      esqueleto do servidor MCP no ar por stdio, tools/list responde locum_health lendo o mesmo banco
+2026-09-19  M2.2  feito      nove ferramentas de leitura no servidor MCP, MachineService e MetricsService novos, tsc limpo
+2026-09-19  M2.3  feito      sete ferramentas de configuracao no servidor MCP, TriggerService novo, zod formatado no erro
+2026-09-19  M2.4  feito      run_agent e rerun_step no servidor MCP, ExecutionService novo, 19 ferramentas, tsc limpo
+2026-09-19  M2.5  feito      .mcp.json na raiz sobe o servidor com node e tsx de app/node_modules, tools/list devolve as 19
+2026-09-19  M2.6  feito      docs/mcp-server.md cobre as 19 ferramentas e a fronteira de aprovacao do ADR 0002
+2026-09-19  N.1   feito      reconciliador cruza review humano com achados, grava finding_outcomes e review_signals, tsc limpo
+2026-09-19  N.2   feito      agregacao de finding_outcomes em agent_metrics por versao mais skills, cli ganhou metrics
+2026-09-19  N.3   feito      agendador por cursor de tempo, sem relogio proprio, guarda de cadencia e guarda de evento por run, cli ganhou tick e triggers

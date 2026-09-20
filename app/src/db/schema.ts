@@ -251,6 +251,8 @@ export const mcpServers = sqliteTable("mcp_servers", {
   /** stdio | http | sse */
   transport: text("transport").notNull(),
   command: text("command", { mode: "json" }),
+  /** Variaveis de ambiente do processo stdio. Segredo vai por credentialRef. */
+  env: text("env", { mode: "json" }),
   url: text("url"),
   headers: text("headers", { mode: "json" }),
   credentialRef: text("credential_ref"),

@@ -1,0 +1,271 @@
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { db as defaultDb, schema } from "../db/index.js";
+import { AgentSpec } from "../config/types.js";
+import { buildExecutor } from "../executor/build.js";
+
+type Db = typeof defaultDb;
+
+export type RunRow = typeof schema.runs.$inferSelect;
+export type StepRow = typeof schema.steps.$inferSelect;
+
+/** O minimo do executor que este servico usa, para poder trocar em teste. */
+export interface StepRunner {
+  execute(runId: string): Promise<"done" | "paused" | "failed">;
+}
+
+export interface RunFilter {
+  status?: string | string[];
+  agentId?: string;
+  limit?: number;
+}
+
+/** Run com o agent que rodou, que e o que a lista precisa mostrar. */
+export interface RunSummary extends RunRow {
+  agentId: string;
+  agentName: string;
+  agentVersion: number;
+}
+
+export interface RunDetail extends RunSummary {
+  /** A versao exata que executou, nao a mais recente do agent. */
+  spec: AgentSpec;
+  steps: StepRow[];
+}
+
+/** Achado de um run, ja normalizado, venha da tabela ou da saida do passo. */
+export interface RunFinding {
+  severity: string;
+  file?: string;
+  line?: number;
+  category?: string;
+  problem: string;
+  fix?: string;
+  state: string;
+}
+
+/**
+ * Leitura de execucoes e reexecucao de passo. Linha de comando, servidor MCP e
+ * interface passam por aqui, porque zerar um passo sem zerar quem depende dele
+ * deixa o run com saida velha alimentando passo novo, e essa regra nao pode
+ * viver em tres lugares.
+ */
+export class RunService {
+  constructor(
+    private readonly db: Db = defaultDb,
+    private readonly makeRunner: () => Promise<StepRunner> = buildExecutor,
+  ) {}
+
+  async list(filter: RunFilter = {}): Promise<RunSummary[]> {
+    const conditions = [];
+    if (filter.status !== undefined) {
+      conditions.push(
+        Array.isArray(filter.status)
+          ? inArray(schema.runs.status, filter.status)
+          : eq(schema.runs.status, filter.status),
+      );
+    }
+    if (filter.agentId !== undefined) {
+      conditions.push(eq(schema.agentVersions.agentId, filter.agentId));
+    }
+
+    const rows = await this.db
+      .select({
+        run: schema.runs,
+        agentId: schema.agents.id,
+        agentName: schema.agents.name,
+        agentVersion: schema.agentVersions.version,
+      })
+      .from(schema.runs)
+      .innerJoin(schema.agentVersions, eq(schema.runs.agentVersionId, schema.agentVersions.id))
+      .innerJoin(schema.agents, eq(schema.agentVersions.agentId, schema.agents.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(schema.runs.createdAt))
+      .limit(filter.limit ?? 20);
+
+    return rows.map((r) => ({ ...r.run, agentId: r.agentId, agentName: r.agentName, agentVersion: r.agentVersion }));
+  }
+
+  async get(runId: string): Promise<RunDetail | undefined> {
+    const [row] = await this.db
+      .select({
+        run: schema.runs,
+        agentId: schema.agents.id,
+        agentName: schema.agents.name,
+        agentVersion: schema.agentVersions.version,
+        spec: schema.agentVersions.spec,
+      })
+      .from(schema.runs)
+      .innerJoin(schema.agentVersions, eq(schema.runs.agentVersionId, schema.agentVersions.id))
+      .innerJoin(schema.agents, eq(schema.agentVersions.agentId, schema.agents.id))
+      .where(eq(schema.runs.id, runId));
+    if (!row) return undefined;
+
+    return {
+      ...row.run,
+      agentId: row.agentId,
+      agentName: row.agentName,
+      agentVersion: row.agentVersion,
+      spec: AgentSpec.parse(row.spec),
+      steps: await this.steps(runId),
+    };
+  }
+
+  async steps(runId: string): Promise<StepRow[]> {
+    return this.db
+      .select()
+      .from(schema.steps)
+      .where(eq(schema.steps.runId, runId))
+      .orderBy(asc(schema.steps.idx));
+  }
+
+  /**
+   * Achados do run. A tabela `findings` so e preenchida quando o reconciliador
+   * roda, entao antes disso o achado vive na saida do passo que o produziu e e
+   * de la que ele sai.
+   */
+  async findings(runId: string): Promise<RunFinding[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.findings)
+      .where(eq(schema.findings.runId, runId))
+      .orderBy(asc(schema.findings.createdAt));
+
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        severity: r.severity,
+        file: r.file ?? undefined,
+        line: r.line ?? undefined,
+        category: r.category ?? undefined,
+        problem: r.body,
+        state: r.state,
+      }));
+    }
+
+    return (await this.steps(runId)).flatMap((step) => fromStepOutput(step.output));
+  }
+
+  /**
+   * Zera o passo e todos que dependem dele, direta ou indiretamente, e executa
+   * o run de novo. O executor retoma do primeiro passo que nao esta `done`,
+   * entao zerar e tudo que separa uma reexecucao de uma retomada.
+   *
+   * O custo dos passos zerados sai do total do run, senao o valor gasto conta
+   * duas vezes. O contador diario nao e mexido: ele registra dinheiro que saiu,
+   * e a reexecucao gasta de novo.
+   *
+   * Com `wait` falso a reexecucao fica correndo atras e o retorno e `queued`,
+   * que e o que serve para um cliente MCP: o pipeline leva minutos e o desfecho
+   * fica no banco de qualquer jeito.
+   */
+  async rerunStep(
+    runId: string,
+    stepKey: string,
+    options: { wait?: boolean } = {},
+  ): Promise<"queued" | "done" | "paused" | "failed"> {
+    const detail = await this.get(runId);
+    if (!detail) throw new Error(`run ${runId} nao encontrado`);
+
+    const affected = dependents(detail.spec, stepKey);
+    const targets = detail.steps.filter((s) => affected.has(s.stepKey));
+    await this.reset(detail, targets);
+
+    const runner = await this.makeRunner();
+    if (options.wait === false) {
+      void runner.execute(runId).catch(() => undefined);
+      return "queued";
+    }
+    return runner.execute(runId);
+  }
+
+  private async reset(run: RunRow, targets: StepRow[]): Promise<void> {
+    if (targets.length > 0) {
+      const ids = targets.map((s) => s.id);
+
+      await this.db
+        .update(schema.steps)
+        .set({
+          status: "pending",
+          // A tentativa e historico do passo, e continua contando.
+          modelUsed: null,
+          substitutionReason: null,
+          skillsUsed: null,
+          toolsUsed: null,
+          output: null,
+          promptTokens: 0,
+          completionTokens: 0,
+          costUsd: 0,
+          startedAt: null,
+          endedAt: null,
+          error: null,
+        })
+        .where(inArray(schema.steps.id, ids));
+
+      // Aprovacao presa ao passo antigo nao pode ficar na inbox: aprovar
+      // publicaria um texto que o run acabou de descartar.
+      await this.db
+        .update(schema.approvals)
+        .set({ status: "expired", decidedAt: Math.floor(Date.now() / 1000) })
+        .where(and(inArray(schema.approvals.stepId, ids), eq(schema.approvals.status, "pending")));
+    }
+
+    const billable = targets.filter((s) => s.billable).reduce((acc, s) => acc + s.costUsd, 0);
+    const total = targets.reduce((acc, s) => acc + s.costUsd, 0);
+
+    await this.db
+      .update(schema.runs)
+      .set({
+        status: "queued",
+        costUsd: Math.max(0, run.costUsd - billable),
+        estimateUsd: Math.max(0, run.estimateUsd - total),
+        endedAt: null,
+        error: null,
+      })
+      .where(eq(schema.runs.id, run.id));
+  }
+}
+
+/** O passo pedido mais o fecho transitivo de quem depende dele. */
+function dependents(spec: AgentSpec, stepKey: string): Set<string> {
+  if (!spec.steps.some((s) => s.key === stepKey)) {
+    throw new Error(`passo "${stepKey}" nao existe na versao que este run executou`);
+  }
+
+  const out = new Set([stepKey]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const step of spec.steps) {
+      if (out.has(step.key)) continue;
+      if (step.needs.some((need) => out.has(need))) {
+        out.add(step.key);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+function fromStepOutput(output: unknown): RunFinding[] {
+  if (output === null || typeof output !== "object") return [];
+  const raw = (output as { findings?: unknown }).findings;
+  if (!Array.isArray(raw)) return [];
+
+  return raw.flatMap((item) => {
+    if (item === null || typeof item !== "object") return [];
+    const f = item as Record<string, unknown>;
+    if (typeof f.problem !== "string" || typeof f.severity !== "string") return [];
+    return [
+      {
+        severity: f.severity,
+        file: typeof f.file === "string" ? f.file : undefined,
+        line: typeof f.line === "number" ? f.line : undefined,
+        category: typeof f.category === "string" ? f.category : undefined,
+        problem: f.problem,
+        fix: typeof f.fix === "string" ? f.fix : undefined,
+        state: "open",
+      },
+    ];
+  });
+}
+
+export const runService = new RunService();

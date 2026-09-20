@@ -68,6 +68,27 @@ export type Step = z.infer<typeof Step>;
 export type ModelStep = z.infer<typeof ModelStep>;
 export type ActionStep = z.infer<typeof ActionStep>;
 
+/**
+ * Teto de gasto do agent. Teto ausente e sem teto, nao teto zero, e por isso
+ * os dois campos sao opcionais em vez de terem default numerico.
+ */
+export const AgentBudget = z.object({
+  perRunUsd: z.number().positive().optional(),
+  perDayUsd: z.number().positive().optional(),
+});
+export type AgentBudget = z.infer<typeof AgentBudget>;
+
+/**
+ * Alteracao parcial de orcamento. `null` apaga o teto e ausente deixa como
+ * esta, porque quem edita um teto so costuma mandar o campo que mexeu, e sem
+ * essa distincao nao haveria como voltar para sem teto.
+ */
+export const AgentBudgetPatch = z.object({
+  perRunUsd: z.number().positive().nullable().optional(),
+  perDayUsd: z.number().positive().nullable().optional(),
+});
+export type AgentBudgetPatch = z.infer<typeof AgentBudgetPatch>;
+
 export const AgentSpec = z.object({
   id: z.string(),
   name: z.string(),
@@ -75,9 +96,7 @@ export const AgentSpec = z.object({
   defaultTools: z.array(ToolRef).default([]),
   skills: z.array(SkillRule).default([]),
   steps: z.array(Step).min(1),
-  budget: z
-    .object({ perRunUsd: z.number().positive().optional(), perDayUsd: z.number().positive().optional() })
-    .default({}),
+  budget: AgentBudget.default({}),
 });
 export type AgentSpec = z.infer<typeof AgentSpec>;
 
@@ -107,3 +126,93 @@ export function topoSort(steps: Step[]): Step[] {
   for (const s of steps) visit(s.key, []);
   return out;
 }
+
+/** Transporte do servidor MCP. `stdio` sobe processo, os outros falam por rede. */
+export const McpTransport = z.enum(["stdio", "http", "sse"]);
+export type McpTransport = z.infer<typeof McpTransport>;
+
+/**
+ * Cadastro de um servidor MCP. Mora aqui, e nao no registro, porque a mesma
+ * validacao vale para a linha de comando, para o servidor MCP proprio e para a
+ * tela de configuracao.
+ */
+export const McpServerConfig = z
+  .object({
+    name: z.string().min(1),
+    transport: McpTransport,
+    /** Executavel e argumentos, ja separados. So para `stdio`. */
+    command: z.array(z.string().min(1)).min(1).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    url: z.url().optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    /**
+     * `write` nao libera escrita externa sem aprovacao: a fila continua valendo.
+     * Serve para separar o que so le do que muda estado em algum lugar.
+     */
+    scope: z.enum(["read", "write"]).default("read"),
+    idleTimeoutMs: z.number().int().positive().default(300_000),
+  })
+  .superRefine((cfg, ctx) => {
+    if (cfg.transport === "stdio" && !cfg.command) {
+      ctx.addIssue({ code: "custom", message: "transporte stdio exige command", path: ["command"] });
+    }
+    if (cfg.transport !== "stdio" && !cfg.url) {
+      ctx.addIssue({ code: "custom", message: `transporte ${cfg.transport} exige url`, path: ["url"] });
+    }
+  });
+export type McpServerConfig = z.infer<typeof McpServerConfig>;
+/** O que se passa para cadastrar, antes dos defaults do zod. */
+export type McpServerInput = z.input<typeof McpServerConfig>;
+
+/* --------------------------------------------------------------- gatilhos */
+
+/**
+ * Configuracao de um gatilho, por tipo.
+ *
+ * O tipo aparece dentro da configuracao e tambem numa coluna propria da
+ * tabela. A repeticao e de proposito: a coluna e o que permite filtrar sem
+ * abrir o JSON, e o campo interno e o que discrimina a uniao aqui. O servico
+ * grava a coluna a partir do valor ja validado, entao os dois nao divergem.
+ *
+ * `everyMinutes` e cadencia desejada, nao promessa de pontualidade. Quem
+ * executa e o agendador do N.3, que anda por cursor porque o Mac dorme e uma
+ * janela fixa perderia o intervalo inteiro.
+ */
+export const ScheduleTrigger = z.object({
+  kind: z.literal("schedule"),
+  everyMinutes: z.number().int().min(1),
+});
+
+export const WebhookTrigger = z.object({
+  kind: z.literal("webhook"),
+  /** Caminho local que recebe a chamada. Segredo do emissor mora no keychain. */
+  path: z.string().min(1),
+});
+
+export const PollTrigger = z.object({
+  kind: z.literal("poll"),
+  /** Fonte cadastrada, hoje so `github`. */
+  source: z.string().min(1),
+  /** Expressao aplicada ao nome do repositorio, como no comando `poll`. */
+  repoMatch: z.string().min(1),
+  everyMinutes: z.number().int().min(1).default(15),
+});
+
+export const McpPollTrigger = z.object({
+  kind: z.literal("mcp-poll"),
+  /** Servidor MCP cadastrado, no papel de cliente. */
+  server: z.string().min(1),
+  tool: z.string().min(1),
+  args: z.record(z.string(), z.unknown()).default({}),
+  everyMinutes: z.number().int().min(1).default(15),
+});
+
+export const TriggerConfig = z.discriminatedUnion("kind", [
+  ScheduleTrigger,
+  WebhookTrigger,
+  PollTrigger,
+  McpPollTrigger,
+]);
+export type TriggerConfig = z.infer<typeof TriggerConfig>;
+/** O que se passa para cadastrar, antes dos defaults do zod. */
+export type TriggerConfigInput = z.input<typeof TriggerConfig>;

@@ -1,0 +1,205 @@
+import { randomUUID } from "node:crypto";
+import { desc, eq } from "drizzle-orm";
+import { db as defaultDb, schema } from "../db/index.js";
+import { AgentBudgetPatch, AgentSpec, type ActionMode } from "../config/types.js";
+
+type Db = typeof defaultDb;
+
+export type AgentRow = typeof schema.agents.$inferSelect;
+export type AgentVersionRow = typeof schema.agentVersions.$inferSelect;
+
+/** Quem esta gravando. Agent nao sobe modo de passo de acao; pessoa sobe. */
+export type Actor = "human" | "agent";
+
+/** Passo de acao que teve o modo rebaixado na gravacao. */
+export interface ActionDowngrade {
+  step: string;
+  from: ActionMode;
+  to: "approve";
+}
+
+/** Linha de versao com o spec ja validado, que e como o resto do sistema usa. */
+export interface AgentVersion extends Omit<AgentVersionRow, "spec"> {
+  spec: AgentSpec;
+  /** Vazio quando nada foi rebaixado. */
+  downgrades: ActionDowngrade[];
+}
+
+/**
+ * Cadastro de agents. Linha de comando, servidor MCP e interface passam por
+ * aqui, porque a regra de versao imutavel precisa valer para os tres.
+ */
+export class AgentService {
+  constructor(private readonly db: Db = defaultDb) {}
+
+  async list(): Promise<AgentRow[]> {
+    return this.db.select().from(schema.agents);
+  }
+
+  async get(agentId: string): Promise<AgentRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId));
+    return row;
+  }
+
+  async listVersions(agentId: string): Promise<AgentVersion[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.agentVersions)
+      .where(eq(schema.agentVersions.agentId, agentId))
+      .orderBy(desc(schema.agentVersions.version));
+    return rows.map(parseVersion);
+  }
+
+  async getLatestVersion(agentId: string): Promise<AgentVersion | undefined> {
+    const row = await this.latestRow(agentId);
+    return row ? parseVersion(row) : undefined;
+  }
+
+  /**
+   * Grava o spec como versao nova. Spec identico ao topo devolve a versao que
+   * ja existe: reeditar sem mudar nada nao pode inflar o historico nem
+   * desconectar os runs antigos da versao que eles executaram.
+   *
+   * O `actor` decide se o spec pode subir o modo de um passo de acao. Um agent
+   * nao pode: `approve` e o teto do que ele grava, e qualquer `draft` ou `auto`
+   * que ele mande e rebaixado, com o rebaixamento devolvido na resposta.
+   *
+   * Sem essa trava o ADR 0002 seria contornavel em dois passos. O servidor MCP
+   * nao expoe aprovacao, mas expoe `upsert_agent` e `run_agent`: gravar um passo
+   * de acao em `auto` e mandar rodar publicaria sem clique nenhum. A regra nao e
+   * "nao existe ferramenta de aprovar", e sim "nada sai sem uma pessoa ter dito
+   * que sai", e e essa que precisa valer.
+   */
+  async upsert(
+    spec: AgentSpec,
+    note?: string,
+    actor: Actor = "agent",
+  ): Promise<AgentVersion> {
+    const parsed = AgentSpec.parse(spec);
+    const latest = await this.latestRow(parsed.id);
+    const guarded = actor === "human" ? { spec: parsed, downgrades: [] } : demoteActions(parsed, latest?.spec);
+
+    return this.write(guarded, latest, note);
+  }
+
+  private async write(
+    guarded: { spec: AgentSpec; downgrades: ActionDowngrade[] },
+    latest: AgentVersionRow | undefined,
+    note?: string,
+  ): Promise<AgentVersion> {
+    const parsed = guarded.spec;
+    if (latest && sameSpec(latest.spec, parsed)) {
+      return { ...parseVersion(latest), downgrades: guarded.downgrades };
+    }
+
+    await this.db
+      .insert(schema.agents)
+      .values({ id: parsed.id, name: parsed.name })
+      .onConflictDoUpdate({
+        target: schema.agents.id,
+        set: { name: parsed.name },
+      });
+
+    const [inserted] = await this.db
+      .insert(schema.agentVersions)
+      .values({
+        id: randomUUID(),
+        agentId: parsed.id,
+        version: (latest?.version ?? 0) + 1,
+        spec: parsed as unknown as object,
+        note: note ?? null,
+      })
+      .returning();
+
+    return { ...parseVersion(inserted!), downgrades: guarded.downgrades };
+  }
+
+  /**
+   * Ajusta o teto de gasto gravando versao nova.
+   *
+   * O orcamento mora no spec porque e de la que o executor le antes de cada
+   * passo. Mexer nele e mexer no spec, entao vale a mesma regra de versao
+   * imutavel: run antigo continua apontando para o teto sob o qual ele rodou.
+   */
+  async setBudget(
+    agentId: string,
+    patch: AgentBudgetPatch,
+    note?: string,
+  ): Promise<AgentVersion> {
+    const parsed = AgentBudgetPatch.parse(patch);
+    const latest = await this.getLatestVersion(agentId);
+    if (!latest) throw new Error(`agent "${agentId}" nao cadastrado`);
+
+    const budget = { ...latest.spec.budget };
+    for (const key of ["perRunUsd", "perDayUsd"] as const) {
+      const value = parsed[key];
+      if (value === undefined) continue;
+      if (value === null) delete budget[key];
+      else budget[key] = value;
+    }
+
+    // Mexer no orcamento nao mexe em passo de acao, entao nao ha o que rebaixar.
+    return this.upsert({ ...latest.spec, budget }, note ?? "orcamento ajustado", "human");
+  }
+
+  private async latestRow(agentId: string): Promise<AgentVersionRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(schema.agentVersions)
+      .where(eq(schema.agentVersions.agentId, agentId))
+      .orderBy(desc(schema.agentVersions.version))
+      .limit(1);
+    return row;
+  }
+}
+
+function parseVersion(row: AgentVersionRow): AgentVersion {
+  return { ...row, spec: AgentSpec.parse(row.spec), downgrades: [] };
+}
+
+/**
+ * Rebaixa para `approve` todo passo de acao que suba o modo em relacao ao que
+ * ja estava gravado. Modo que a versao anterior ja tinha para aquele mesmo
+ * passo passa: significa que uma pessoa autorizou antes, e reeditar outra parte
+ * do spec nao pode derrubar essa autorizacao.
+ */
+function demoteActions(
+  spec: AgentSpec,
+  stored: AgentSpec | unknown,
+): { spec: AgentSpec; downgrades: ActionDowngrade[] } {
+  const previous = new Map<string, ActionMode>();
+  const parsedStored = stored === undefined ? undefined : AgentSpec.safeParse(stored);
+  if (parsedStored?.success) {
+    for (const step of parsedStored.data.steps) {
+      if (step.type === "action") previous.set(step.key, step.mode);
+    }
+  }
+
+  const downgrades: ActionDowngrade[] = [];
+  const steps = spec.steps.map((step) => {
+    if (step.type !== "action" || step.mode === "approve") return step;
+    if (previous.get(step.key) === step.mode) return step;
+
+    downgrades.push({ step: step.key, from: step.mode, to: "approve" });
+    return { ...step, mode: "approve" as const };
+  });
+
+  return { spec: { ...spec, steps }, downgrades };
+}
+
+/**
+ * O lado gravado passa pelo zod antes da comparacao porque o JSON so bate se as
+ * duas pontas tiverem a mesma ordem de chaves, e a ordem vem do parse. Spec
+ * gravado por uma versao antiga do schema pode nao passar, e ai conta como
+ * diferente, que e o desfecho certo: vale gravar de novo.
+ */
+function sameSpec(stored: unknown, spec: AgentSpec): boolean {
+  const normalized = AgentSpec.safeParse(stored);
+  if (!normalized.success) return false;
+  return JSON.stringify(normalized.data) === JSON.stringify(spec);
+}
+
+export const agentService = new AgentService();

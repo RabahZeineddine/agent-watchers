@@ -1,122 +1,48 @@
-import { randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
-import { db, schema } from "./db/index.js";
 import { ApprovalGate } from "./approval/gate.js";
-import { Executor } from "./executor/executor.js";
-import { McpRegistry, type McpServerConfig } from "./mcp/registry.js";
-import { claudeCodeAvailable } from "./providers/registry.js";
-import { ClaudeCodeRuntime } from "./runtimes/claude-code.js";
-import { NativeRuntime } from "./runtimes/native.js";
-import type { Runtime } from "./runtimes/types.js";
-import { fetchPr, githubReviewHandler, pollOpenPullRequests, type Finding } from "./sources/github.js";
+import { McpTransport } from "./config/types.js";
+import { buildExecutor } from "./executor/build.js";
+import { agentService } from "./services/agent-service.js";
+import { approvalService } from "./services/approval-service.js";
+import { executionService } from "./services/execution-service.js";
+import { machineId } from "./services/machine-service.js";
+import { metricsService, type VersionMetrics } from "./services/metrics-service.js";
+import { mcpService } from "./services/mcp-service.js";
+import { providerService } from "./services/provider-service.js";
+import { reconcileService } from "./services/reconcile-service.js";
+import { runService, type RunSummary } from "./services/run-service.js";
+import { triggerService } from "./services/trigger-service.js";
+import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
+import { scheduler, type TickResult } from "./triggers/scheduler.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
-import { demoPr } from "./seed/demo-event.js";
 
-const machineId = process.env.MACHINE_ID ?? "default";
-
-/** v1 sem UI: cadastro de MCP vem daqui. Na v3 vem da tela de configuracao. */
-const mcpServers: McpServerConfig[] = [];
-
-function buildExecutor(): Executor {
-  const configs = new Map(mcpServers.map((c) => [c.name, c]));
-  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
-  if (claudeCodeAvailable()) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
-
-  const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-  return new Executor({ mcp: McpRegistry.fromList(mcpServers), runtimes, gate, machineId });
-}
-
+/** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
-  const [existing] = await db
-    .select()
-    .from(schema.agentVersions)
-    .where(eq(schema.agentVersions.agentId, prReviewSpec.id))
-    .orderBy(desc(schema.agentVersions.version))
-    .limit(1);
-
-  if (existing && JSON.stringify(existing.spec) === JSON.stringify(prReviewSpec)) return existing.id;
-
-  await db
-    .insert(schema.agents)
-    .values({ id: prReviewSpec.id, name: prReviewSpec.name })
-    .onConflictDoNothing();
-
-  const id = randomUUID();
-  await db.insert(schema.agentVersions).values({
-    id,
-    agentId: prReviewSpec.id,
-    version: (existing?.version ?? 0) + 1,
-    spec: prReviewSpec as unknown as object,
-    note: "seed",
-  });
+  const version = await agentService.upsert(prReviewSpec, "seed", "human");
 
   if (machineId !== "minha-maquina") {
     for (const f of fallbacksSemAssinatura) {
-      await db
-        .insert(schema.modelFallbacks)
-        .values({ id: randomUUID(), machineId, ...f })
-        .onConflictDoNothing();
+      await providerService.setFallback(machineId, f.fromModel, f.toModel, f.order);
     }
   }
-  return id;
+  return version.id;
 }
 
-async function review(target: string): Promise<void> {
-  const match = target.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-  if (!match) throw new Error('alvo invalido, use "owner/repo#123"');
-  const [, owner, repo, num] = match;
+/** Roda o pipeline num alvo, real ou sintetico, e imprime o resultado. */
+async function start(target: string): Promise<void> {
+  await seed();
+  const started = await executionService.start({ target });
+  console.log(`run ${started.runId} (${started.source} ${started.repo}#${started.pull})`);
 
-  const versionId = await seed();
-  const ctx = await fetchPr(owner!, repo!, Number(num));
-
-  const eventId = randomUUID();
-  await db
-    .insert(schema.events)
-    .values({
-      id: eventId,
-      source: "github",
-      externalId: `pr:${ctx.repo}#${ctx.pull}:sha:${ctx.headSha}`,
-      payload: ctx as object,
-    })
-    .onConflictDoNothing();
-
-  const executor = buildExecutor();
-  const runId = await executor.createRun(versionId, eventId);
-  console.log(`run ${runId} iniciado para ${ctx.repo}#${ctx.pull}`);
-
-  const status = await executor.execute(runId);
-  await printRun(runId);
-  console.log(`\nstatus: ${status}`);
-}
-
-/** Fumaca sem credencial: evento sintetico com defeito plantado no diff. */
-async function demo(): Promise<void> {
-  const versionId = await seed();
-  const eventId = randomUUID();
-  await db
-    .insert(schema.events)
-    .values({
-      id: eventId,
-      source: "demo",
-      externalId: `demo:${Date.now()}`,
-      payload: demoPr as object,
-    })
-    .onConflictDoNothing();
-
-  const executor = buildExecutor();
-  const runId = await executor.createRun(versionId, eventId);
-  console.log(`run ${runId} (evento sintetico ${demoPr.repo}#${demoPr.pull})`);
-  const status = await executor.execute(runId);
-  await printRun(runId);
-  console.log(`\nstatus: ${status}`);
+  await printRun(started.runId);
+  console.log(`\nstatus: ${started.status}`);
 }
 
 async function printRun(runId: string): Promise<void> {
-  const rows = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
-  const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+  const run = await runService.get(runId);
+  if (!run) throw new Error(`run ${runId} nao encontrado`);
 
   console.log("");
-  for (const s of rows.sort((a, b) => a.idx - b.idx)) {
+  for (const s of run.steps) {
     const model = s.modelUsed ?? "acao";
     const sub = s.substitutionReason ? ` (substituido)` : "";
     const secs = s.startedAt && s.endedAt ? `${s.endedAt - s.startedAt}s` : "-";
@@ -126,13 +52,12 @@ async function printRun(runId: string): Promise<void> {
     if (s.error) console.log(`     erro: ${s.error}`);
   }
   console.log(
-    `\ncusto do run: ${(run?.costUsd ?? 0).toFixed(3)} USD cobrado` +
-      ` · ${(run?.estimateUsd ?? 0).toFixed(3)} USD equivalente (assinatura nao cobra)`,
+    `\ncusto do run: ${run.costUsd.toFixed(3)} USD cobrado` +
+      ` \u00b7 ${run.estimateUsd.toFixed(3)} USD equivalente (assinatura nao cobra)`,
   );
-  if (run?.error) console.log(`motivo da parada: ${run.error}`);
+  if (run.error) console.log(`motivo da parada: ${run.error}`);
 
-  const audit = rows.find((s) => s.stepKey === "audit");
-  const findings = (audit?.output as { findings?: Finding[] } | null)?.findings ?? [];
+  const findings = await runService.findings(runId);
   if (findings.length > 0) {
     console.log(`\nachados (${findings.length}):`);
     for (const f of findings) {
@@ -141,24 +66,199 @@ async function printRun(runId: string): Promise<void> {
   }
 }
 
-async function inbox(): Promise<void> {
-  const rows = await db
-    .select()
-    .from(schema.approvals)
-    .where(eq(schema.approvals.status, "pending"));
+/** Ultimas execucoes, opcionalmente so as de um status. */
+async function runs(status?: string): Promise<void> {
+  const rows = await runService.list(status ? { status } : {});
+  if (rows.length === 0) {
+    console.log(status ? `nenhum run com status ${status}` : "nenhum run registrado");
+    return;
+  }
+  for (const r of rows) console.log(formatRun(r));
+}
 
+function formatRun(run: RunSummary): string {
+  const quando = new Date(run.createdAt * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const agent = `${run.agentId} v${run.agentVersion}`;
+  return `${run.id}  ${quando}  ${agent.padEnd(20)} ${run.status.padEnd(10)} ${run.costUsd.toFixed(3)} USD`;
+}
+
+/**
+ * O que roda nesta maquina, a tabela de substituicao e onde cada passo do
+ * agent semente cairia hoje.
+ */
+async function providers(): Promise<void> {
+  for (const p of providerService.listProviders()) {
+    const via = p.subscription ? "assinatura" : "api";
+    const motivo = p.available
+      ? ""
+      : p.requires.length > 0
+        ? `faltam ${p.requires.join(", ")}`
+        : "binario claude ausente ou sessao expirada";
+    console.log(` ${p.available ? " " : "-"} ${p.name.padEnd(12)} ${via.padEnd(10)} ${motivo}`);
+  }
+
+  const fallbacks = await providerService.getFallbacks(machineId);
+  console.log(`\nsubstituicoes de ${machineId}:`);
+  if (fallbacks.length === 0) console.log("  nenhuma");
+  for (const f of fallbacks) console.log(`  ${f.fromModel} -> ${f.toModel} (ordem ${f.order})`);
+
+  const modelos = [
+    ...new Set(prReviewSpec.steps.filter((s) => s.type === "model").map((s) => s.model)),
+  ];
+  console.log("\npassos do agent semente:");
+  for (const modelo of modelos) {
+    const preview = await providerService.resolvePreview(modelo, machineId);
+    console.log(
+      preview.ok
+        ? `  ${modelo} -> ${preview.resolution.used}${preview.resolution.substitutionReason ? " (substituido)" : ""}`
+        : `  ${modelo} -> sem saida: ${preview.error}`,
+    );
+  }
+}
+
+/** Cruza o review humano com os achados do run e imprime o gabarito. */
+async function reconcile(runId: string, force: boolean): Promise<void> {
+  const report = await reconcileService.reconcileRun(runId, { force });
+  console.log(`${report.prKey}  ${report.state}`);
+  if (report.skipped) {
+    console.log(`nada gravado: ${report.skipped}`);
+    return;
+  }
+  console.log(`${report.findingCount} achado(s), ${report.signalCount} sinal(is) humano(s)`);
+  for (const [estado, quantos] of Object.entries(report.outcomes)) {
+    if (quantos > 0) console.log(`  ${estado.padEnd(20)} ${quantos}`);
+  }
+  console.log(`  ${"nao visto pelo agent".padEnd(20)} ${report.unmatchedSignals}`);
+}
+
+/**
+ * Recalcula as janelas a partir do gabarito e imprime precisao por versao.
+ *
+ * Agrega antes de imprimir porque a tabela e derivada: sem recalcular, o
+ * numero na tela seria o da ultima vez que alguem rodou isto.
+ */
+async function metrics(agentId?: string): Promise<void> {
+  const versions = await metricsService.aggregate(agentId ? { agentId } : {});
+  if (versions.length === 0) {
+    console.log("nenhuma janela medida: rode reconcile para gravar os desfechos");
+  }
+  for (const v of versions) console.log(formatVersion(v));
+
+  const usage = await metricsService.usage(agentId ? { agentId, days: 7 } : { days: 7 });
+  if (usage.length > 0) {
+    console.log("\ngasto dos ultimos 7 dias:");
+    for (const u of usage) {
+      console.log(`  ${u.day}  ${u.agentId.padEnd(20)} ${u.costUsd.toFixed(3)} USD  ${u.runs} run(s)`);
+    }
+  }
+}
+
+function formatVersion(v: VersionMetrics): string {
+  const janela = [v.windowStart, v.windowEnd]
+    .map((t) => new Date(t * 1000).toISOString().slice(0, 10))
+    .join(" a ");
+  const skills = v.skillSet.length > 0 ? v.skillSet.map((s) => s.name).join("+") : "sem skill";
+  return (
+    `${v.agentId} v${v.version}`.padEnd(22) +
+    ` ${janela}  ${String(v.findingCount).padStart(3)} achado(s)` +
+    `  precisao ${pct(v.precision)}  concordancia ${pct(v.agreement)}` +
+    `  ${String(v.missed).padStart(3)} nao visto(s)  ${skills}`
+  );
+}
+
+/** Sem desfecho que sustente a fracao, mostrar zero mentiria. */
+function pct(value: number | null): string {
+  return value === null ? "  n/d" : `${(value * 100).toFixed(0).padStart(3)}%`;
+}
+
+async function inbox(): Promise<void> {
+  const rows = await approvalService.listPending();
   if (rows.length === 0) {
     console.log("nada pendente");
     return;
   }
   for (const r of rows) {
-    console.log(`${r.id}  ${r.kind}  run ${r.runId}`);
+    console.log(`${r.id}  ${r.kind}  ${r.agentId} v${r.agentVersion} / ${r.stepName}  run ${r.runId}`);
     console.log(`   ${JSON.stringify(r.payload).slice(0, 200)}`);
   }
 }
 
+/** Lista os servidores cadastrados, marcando os que estao desligados. */
+async function mcpList(): Promise<void> {
+  const entries = await mcpService.list();
+  if (entries.length === 0) {
+    console.log("nenhum servidor MCP cadastrado");
+    return;
+  }
+  for (const { config, enabled } of entries) {
+    const alvo = config.transport === "stdio" ? config.command!.join(" ") : config.url!;
+    console.log(
+      `${enabled ? " " : "-"} ${config.name.padEnd(20)} ${config.transport.padEnd(6)} ${config.scope.padEnd(5)} ${alvo}`,
+    );
+  }
+}
+
+/** Catalogo do servidor, com o peso de cada ferramenta no contexto. */
+async function mcpTools(name: string): Promise<void> {
+  const tools = await mcpService.listTools(name);
+  if (tools.length === 0) {
+    console.log(`${name} nao expoe nenhuma ferramenta`);
+    return;
+  }
+  for (const tool of tools) {
+    console.log(`${tool.name.padEnd(20)} ~${String(tool.estimatedTokens).padStart(5)} tok  ${tool.description}`);
+  }
+  console.log(`${tools.length} ferramenta(s)`);
+}
+
+async function mcpTest(name: string): Promise<void> {
+  const check = await mcpService.testConnection(name);
+  if (check.ok) {
+    console.log(`${name} ok em ${check.elapsedMs}ms, ${check.toolCount} ferramenta(s)`);
+    return;
+  }
+  console.log(`${name} falhou em ${check.elapsedMs}ms: ${check.error}`);
+  process.exitCode = 1;
+}
+
+/** Lista os gatilhos cadastrados e quando cada um quer a proxima batida. */
+async function triggers(): Promise<void> {
+  const list = await triggerService.list();
+  if (list.length === 0) {
+    console.log("nenhum gatilho cadastrado");
+    return;
+  }
+  for (const t of list) {
+    const estado = t.enabled ? "habilitado " : "desabilitado";
+    console.log(`${t.id}  ${estado}  ${t.agentId}  ${JSON.stringify(t.config)}`);
+  }
+  const next = await scheduler.nextDueAt();
+  console.log(`\nproxima batida: ${next === null ? "nenhuma" : new Date(next).toISOString()}`);
+}
+
+/** Uma batida do agendador. Quem repete e o sistema, nao um laco daqui. */
+async function tick(wait: boolean): Promise<void> {
+  const result: TickResult = await scheduler.tick({ wait });
+  if (result.outcomes.length === 0) {
+    console.log("nenhum gatilho habilitado");
+    return;
+  }
+  for (const o of result.outcomes) {
+    const detalhe = o.detail ? `  ${o.detail}` : "";
+    console.log(
+      `${o.status.padEnd(8)} ${o.kind.padEnd(9)} ${o.agentId}  ` +
+        `${o.events} evento(s), ${o.runs.length} run(s)${detalhe}`,
+    );
+    for (const runId of o.runs) console.log(`         run ${runId}`);
+  }
+  console.log(
+    `\nproxima batida: ${result.nextDueAt === null ? "nenhuma" : new Date(result.nextDueAt).toISOString()}`,
+  );
+}
+
 async function main(): Promise<void> {
-  const [cmd, arg] = process.argv.slice(2);
+  const [cmd, ...args] = process.argv.slice(2);
+  const arg = args[0];
   const executor = () => buildExecutor();
 
   switch (cmd) {
@@ -166,11 +266,11 @@ async function main(): Promise<void> {
       console.log(`versao ${await seed()}`);
       break;
     case "demo":
-      await demo();
+      await start("sintetico");
       break;
     case "review":
       if (!arg) throw new Error('uso: review owner/repo#123');
-      await review(arg);
+      await start(arg);
       break;
     case "poll": {
       const owner = process.env.GITHUB_OWNER;
@@ -182,6 +282,65 @@ async function main(): Promise<void> {
     case "inbox":
       await inbox();
       break;
+    case "runs":
+      await runs(arg);
+      break;
+    case "reconcile": {
+      if (!arg) throw new Error("uso: reconcile <run-id> [--force]");
+      await reconcile(arg, args.includes("--force"));
+      break;
+    }
+    case "metrics":
+      await metrics(arg);
+      break;
+    case "triggers":
+      await triggers();
+      break;
+    case "tick":
+      await tick(args.includes("--wait"));
+      break;
+    case "providers":
+      await providers();
+      break;
+    case "mcp":
+      await mcpList();
+      break;
+    case "mcp:register": {
+      const [name, rawTransport, alvo] = args;
+      if (!name || !rawTransport || !alvo) {
+        throw new Error("uso: mcp:register <nome> <stdio|http|sse> <comando-ou-url>");
+      }
+      const transport = McpTransport.safeParse(rawTransport);
+      if (!transport.success) throw new Error("transporte invalido, use stdio, http ou sse");
+
+      // O comando chega como uma string so para caber em um argumento de shell.
+      const { config } = await mcpService.register({
+        name,
+        transport: transport.data,
+        ...(transport.data === "stdio" ? { command: alvo.split(/\s+/) } : { url: alvo }),
+      });
+      console.log(`${config.name} cadastrado (${config.transport})`);
+      break;
+    }
+    case "mcp:tools":
+      if (!arg) throw new Error("uso: mcp:tools <nome>");
+      await mcpTools(arg);
+      break;
+    case "mcp:test":
+      if (!arg) throw new Error("uso: mcp:test <nome>");
+      await mcpTest(arg);
+      break;
+    case "mcp:remove":
+      if (!arg) throw new Error("uso: mcp:remove <nome>");
+      console.log((await mcpService.remove(arg)) ? `${arg} removido` : `${arg} nao estava cadastrado`);
+      break;
+    case "mcp:enable":
+    case "mcp:disable": {
+      if (!arg) throw new Error(`uso: ${cmd} <nome>`);
+      await mcpService.setEnabled(arg, cmd === "mcp:enable");
+      console.log(`${arg} ${cmd === "mcp:enable" ? "habilitado" : "desabilitado"}`);
+      break;
+    }
     case "approve":
     case "reject": {
       if (!arg) throw new Error(`uso: ${cmd} <approval-id>`);
@@ -191,15 +350,22 @@ async function main(): Promise<void> {
       break;
     }
     case "resume": {
-      const ids = await executor().resumeAll();
+      const ids = await (await executor()).resumeAll();
       console.log(`${ids.length} run(s) retomado(s)`);
       break;
     }
     case "run":
       if (!arg) throw new Error("uso: run <run-id>");
-      console.log(await executor().execute(arg));
+      console.log(await (await executor()).execute(arg));
       await printRun(arg);
       break;
+    case "rerun": {
+      const [runId, stepKey] = args;
+      if (!runId || !stepKey) throw new Error("uso: rerun <run-id> <chave-do-passo>");
+      console.log(await runService.rerunStep(runId, stepKey));
+      await printRun(runId);
+      break;
+    }
     default:
       console.log(
         [
@@ -210,10 +376,24 @@ async function main(): Promise<void> {
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",
+          "  runs [status]            lista as ultimas execucoes",
+          "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",
+          "  metrics [agent-id]       recalcula e imprime precisao por versao de agent",
+          "  triggers                 lista os gatilhos e quando o agendador quer a proxima batida",
+          "  tick [--wait]            uma batida do agendador nos gatilhos habilitados",
+          "  providers                lista provedores, substituicoes e a resolucao de cada passo",
+          "  mcp                      lista os servidores MCP cadastrados",
+          "  mcp:register <nome> <transporte> <comando-ou-url>",
+          "  mcp:tools <nome>         lista as ferramentas que o servidor expoe",
+          "  mcp:test <nome>          conecta no servidor e informa o resultado",
+          "  mcp:remove <nome>        tira o servidor do cadastro",
+          "  mcp:enable <nome>        volta a expor o servidor ao executor",
+          "  mcp:disable <nome>       tira o servidor do executor sem apagar",
           "  approve <id>             publica a acao",
           "  reject <id>              descarta",
           "  resume                   retoma runs interrompidos",
           "  run <run-id>             continua um run especifico",
+          "  rerun <run-id> <passo>   zera o passo e os que dependem dele, e roda de novo",
         ].join("\n"),
       );
   }

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { McpServerConfig } from "../mcp/registry.js";
+import type { McpServerConfig } from "../config/types.js";
 import type { Runtime, RuntimeRequest, RuntimeResult } from "./types.js";
 
 const run = promisify(execFile);
