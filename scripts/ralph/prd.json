@@ -263,7 +263,7 @@
       "description": "Vite com React e Tailwind em app/renderer, saida em app/dist/renderer, e o processo principal carregando o arquivo construido em vez de pagina em branco. Script build que faz main e renderer. Sob --smoke, carregar a pagina e conferir pelo executeJavaScript que a raiz montou.",
       "done_when": "npm run build produz dist/renderer/index.html e o smoke confirma a raiz montada.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -274,7 +274,7 @@
       "description": "Instalar shadcn/ui e os componentes do AI Elements pelo registry, vendorizados em app/renderer/components. Trazer so o que as telas usam: conversa, mensagem, raciocinio, ferramenta, bloco de codigo, tarefa. Tema escuro por padrao. Nao adicionar dependencia de rede em tempo de execucao: os componentes entram como fonte.",
       "done_when": "Os componentes existem como arquivo no repositorio e a pagina renderiza um bloco de codigo com destaque.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -285,7 +285,7 @@
       "description": "Modulo app/renderer/lib/bridge.ts tipado contra electron/bridge-contract.ts, com hook de leitura e tratamento de erro. O catalogo de canais e lista explicita escrita a mao, nunca derivada por varredura: a emenda 5 do ADR 0003 exige que approvals.decide fique fora de qualquer catalogo que um modelo possa enxergar.",
       "done_when": "O renderer le agents, runs e pendencias pela ponte, e o smoke confere os valores contra os servicos.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -296,7 +296,7 @@
       "description": "Barra lateral com quatro destinos: inbox, execucoes, agents, configuracao. Roteamento sem servidor, adequado a arquivo local. Atalho de teclado abrindo uma paleta de comandos, ainda sem acoes. Inbox pode ficar como espaco reservado: ela e feita depois, junto com o dono do projeto.",
       "done_when": "As quatro rotas navegam e o smoke confirma o destino ativo mudando.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -307,7 +307,7 @@
       "description": "Lista de execucoes com estado, custo e agent, e detalhe com a linha do tempo dos passos: entrada, saida, modelo usado com substituicao quando houver, ferramentas chamadas, tokens e erro. Usar os componentes de raciocinio e de codigo. Lista virtualizada, porque log longo redesenhando come CPU a toa. Botao de reexecutar passo chamando runs.rerunStep.",
       "done_when": "O detalhe de um run mostra os quatro passos do agent semente e o smoke confere a contagem.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -318,7 +318,7 @@
       "description": "Lista de agents, historico de versoes e comparacao entre duas versoes do spec. Sem edicao nesta story: o editor entra depois. Mostrar por passo o modelo pedido, o que a maquina resolve, e as ferramentas com a contagem de tokens.",
       "done_when": "O historico mostra as versoes do agent semente e a comparacao aponta a diferenca de modo do passo de acao.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -329,7 +329,7 @@
       "description": "Provedores com disponibilidade nesta maquina, tabela de substituicao de modelo, servidores MCP com testar conexao e listar ferramentas com contagem de tokens, e orcamentos. Segredo nunca aparece na tela: so a referencia e o estado de estar guardado ou nao.",
       "done_when": "A tela lista provedores e servidores e o teste de conexao do fixture responde na interface.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -340,7 +340,7 @@
       "description": "Desenho somente leitura do run com a familia de workflow do AI Elements, lendo needs de cada passo. Estado por cor, passo pulado e passo aguardando aprovacao visiveis. Sem edicao: o editor continua sendo a lista.",
       "done_when": "O grafo do agent semente mostra os quatro passos e as tres arestas.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

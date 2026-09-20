@@ -177,12 +177,30 @@ export class ProviderService {
 
   /** Onde o passo cairia nesta maquina, sem precisar disparar um run. */
   async resolvePreview(model: string, machineId: string): Promise<ModelPreview> {
+    const [preview] = await this.resolvePreviews([model], machineId);
+    return preview!;
+  }
+
+  /**
+   * A mesma previa para varios modelos, com uma leitura so da tabela.
+   *
+   * Quem pergunta por um passo costuma perguntar pelo spec inteiro, e chamar
+   * `resolvePreview` em laco releria os fallbacks da maquina a cada passo: sao
+   * N consultas para responder uma pergunta que muda com uma tabela so.
+   */
+  async resolvePreviews(models: string[], machineId: string): Promise<ModelPreview[]> {
     const fallbacks = await this.getFallbacks(machineId);
-    try {
-      return { ok: true, resolution: resolveModel(model, fallbacks, this.providers) };
-    } catch (err) {
-      return { ok: false, requested: model, error: err instanceof Error ? err.message : String(err) };
-    }
+    return models.map((model) => {
+      try {
+        return { ok: true, resolution: resolveModel(model, fallbacks, this.providers) };
+      } catch (err) {
+        return {
+          ok: false,
+          requested: model,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    });
   }
 }
 

@@ -1,0 +1,396 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { call, useRead, type ReadResult } from "@/lib/bridge";
+import { useState } from "react";
+
+type Provedor = ReadResult<"providers.list">[number];
+type Fallback = ReadResult<"providers.fallbacks">[number];
+type Servidor = ReadResult<"mcp.list">[number];
+type Orcamento = ReadResult<"agents.budgets">[number];
+type Credencial = ReadResult<"credentials.overview">["refs"][number];
+type Ferramenta = ReadResult<"mcp.tools">[number];
+type Teste = ReadResult<"mcp.test">;
+
+/**
+ * A tela de configuracao: o que esta maquina tem, para onde ela troca, o que
+ * ela sabe conectar, e quanto ela pode gastar.
+ *
+ * Segredo nenhum passa por aqui. O que as secoes de provedor e de servidor
+ * mostram e o endereco da credencial e se existe valor guardado nele, que e
+ * tudo que `credentials.overview` devolve: o cofre so se abre no caminho de
+ * quem vai conectar, e a janela nao e esse caminho.
+ *
+ * Testar conexao e listar ferramentas ficam atras de botao, e nao na leitura
+ * que dispara ao montar. As duas sobem o servidor que vao examinar, e abrir a
+ * tela subiria todo cadastro de uma vez, o que num app que fica na bandeja o
+ * dia todo e barulho caro.
+ */
+export function Configuracao() {
+  const maquina = useRead("machine.profile");
+  const machineId = maquina.data?.machineId ?? null;
+
+  const provedores = useRead("providers.list");
+  // A tabela de substituicao e por maquina, e o identificador chega por outra
+  // leitura. Com ele ainda nulo o canal responde lista vazia sem tocar no
+  // banco, e a tela repinta quando ele chegar.
+  const fallbacks = useRead("providers.fallbacks", machineId ?? "");
+  const servidores = useRead("mcp.list");
+  const orcamentos = useRead("agents.budgets");
+  const credenciais = useRead("credentials.overview");
+
+  const leituras = [provedores, fallbacks, servidores, orcamentos, credenciais];
+  const erro = leituras.find((l) => l.status === "error")?.error;
+  const pronto =
+    machineId !== null && leituras.every((l) => l.status === "ready");
+  const estado = erro !== undefined ? "erro" : pronto ? "pronto" : "carregando";
+
+  // Por quem aponta, e nao por convencao de nome: a referencia de um cadastro
+  // e escolhida por quem liga os dois, entao adivinha-la a partir do nome do
+  // provider acertaria hoje e erraria no dia em que alguem apontasse dois
+  // cadastros para a mesma credencial.
+  const porCadastro = new Map<string, Credencial>();
+  for (const credencial of credenciais.data?.refs ?? []) {
+    for (const uso of credencial.users) porCadastro.set(`${uso.kind}:${uso.name}`, credencial);
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-8"
+      data-estado={estado}
+      data-locum-cofre={credenciais.data?.available === true ? "legivel" : "fechado"}
+      data-locum-fallbacks={fallbacks.data?.length ?? -1}
+      data-locum-maquina={machineId ?? ""}
+      data-locum-orcamentos={(orcamentos.data ?? []).map((o) => o.agentId).join(",")}
+      data-locum-probe="configuracao"
+      data-locum-provedores={(provedores.data ?? []).map((p) => p.name).join(",")}
+      data-locum-servidores={(servidores.data ?? []).map((s) => s.config.name).join(",")}
+    >
+      {erro === undefined ? null : (
+        <p className="text-destructive text-sm">
+          a ponte recusou {erro.channel}: {erro.message}
+        </p>
+      )}
+
+      <Secao
+        descricao="O que roda neste computador, e o que falta para o resto rodar."
+        titulo="Provedores"
+      >
+        {(provedores.data ?? []).map((provedor) => (
+          <LinhaDoProvedor
+            credencial={porCadastro.get(`provider:${provedor.name}`)}
+            key={provedor.name}
+            provedor={provedor}
+          />
+        ))}
+      </Secao>
+
+      <Secao
+        descricao={`Para onde cada modelo cai quando o pedido nao roda em "${machineId ?? "..."}".`}
+        titulo="Substituicao de modelo"
+      >
+        {(fallbacks.data ?? []).length === 0 ? (
+          <Vazio>
+            Nenhuma substituicao cadastrada: cada passo roda o modelo que o spec pede,
+            ou falha.
+          </Vazio>
+        ) : (
+          (fallbacks.data ?? []).map((fallback) => (
+            <LinhaDoFallback fallback={fallback} key={`${fallback.fromModel}>${fallback.toModel}`} />
+          ))
+        )}
+      </Secao>
+
+      <Secao
+        descricao="Cadastros que os passos referenciam. Testar sobe o servidor, e so quando pedido."
+        titulo="Servidores MCP"
+      >
+        {(servidores.data ?? []).length === 0 ? (
+          <Vazio>Nenhum servidor cadastrado.</Vazio>
+        ) : (
+          (servidores.data ?? []).map((servidor) => (
+            <LinhaDoServidor
+              credencial={porCadastro.get(`mcp:${servidor.config.name}`)}
+              key={servidor.config.name}
+              servidor={servidor}
+            />
+          ))
+        )}
+      </Secao>
+
+      <Secao
+        descricao="O teto sai da versao do topo de cada agent, e o gasto de hoje sai do que ja rodou."
+        titulo="Orcamentos"
+      >
+        {(orcamentos.data ?? []).map((orcamento) => (
+          <LinhaDoOrcamento key={orcamento.agentId} orcamento={orcamento} />
+        ))}
+      </Secao>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ secoes */
+
+function Secao({
+  children,
+  descricao,
+  titulo,
+}: {
+  children: React.ReactNode;
+  descricao: string;
+  titulo: string;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="font-medium text-sm">{titulo}</h2>
+      <p className="text-muted-foreground text-xs">{descricao}</p>
+      <div className="mt-1 overflow-hidden rounded-lg border border-border">{children}</div>
+    </section>
+  );
+}
+
+function Vazio({ children }: { children: React.ReactNode }) {
+  return <p className="px-4 py-3 text-muted-foreground text-sm">{children}</p>;
+}
+
+/* --------------------------------------------------------------- provedores */
+
+function LinhaDoProvedor({
+  credencial,
+  provedor,
+}: {
+  credencial: Credencial | undefined;
+  provedor: Provedor;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-3 text-sm last:border-b-0"
+      data-locum-disponivel={provedor.available ? "sim" : "nao"}
+      data-locum-provider={provedor.name}
+    >
+      <span className="w-40 shrink-0 truncate font-medium">{provedor.name}</span>
+      <Badge variant={provedor.available ? "secondary" : "outline"}>
+        {provedor.available ? "disponivel" : "indisponivel"}
+      </Badge>
+      {provedor.subscription ? <Badge variant="outline">assinatura</Badge> : null}
+      <Credenciais credencial={credencial} />
+      {provedor.requires.length > 0 ? (
+        <span className="text-muted-foreground text-xs">
+          {provedor.available ? "usa" : "falta"} {provedor.requires.join(", ")}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A credencial de um cadastro: onde ela mora, e se existe valor la.
+ *
+ * O valor nao chega ate aqui nem por acidente. `credentials.overview` devolve
+ * endereco e um booleano, e e isso que a tela tem para mostrar.
+ */
+function Credenciais({ credencial }: { credencial: Credencial | undefined }) {
+  if (credencial === undefined) return null;
+  return (
+    <Badge
+      data-locum-credencial={credencial.ref}
+      data-locum-guardado={credencial.stored ? "sim" : "nao"}
+      variant={credencial.stored ? "secondary" : "destructive"}
+    >
+      {credencial.ref} · {credencial.stored ? "guardada" : "sem valor no cofre"}
+    </Badge>
+  );
+}
+
+/* ---------------------------------------------------------------- fallbacks */
+
+function LinhaDoFallback({ fallback }: { fallback: Fallback }) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-2 text-sm last:border-b-0"
+      data-locum-fallback={`${fallback.fromModel}>${fallback.toModel}`}
+      data-locum-ordem={fallback.order}
+    >
+      <code className="text-xs">{fallback.fromModel}</code>
+      <span className="text-muted-foreground text-xs">vira</span>
+      <code className="text-xs">{fallback.toModel}</code>
+      <span className="ml-auto text-muted-foreground text-xs tabular-nums">
+        ordem {fallback.order}
+      </span>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- servidores */
+
+type EstadoDoTeste =
+  | { fase: "parado" }
+  | { fase: "testando" }
+  | { fase: "respondeu"; teste: Teste }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * Um servidor MCP cadastrado, com os dois exames que ele aceita.
+ *
+ * Testar conexao e listar ferramentas sobem o mesmo processo, mas respondem
+ * perguntas diferentes: a primeira diz se o cadastro esta certo, a segunda diz
+ * o que cada ferramenta pesa antes de alguem marca-la num passo. Por isso sao
+ * dois botoes, e nao um exame que sempre faz as duas coisas.
+ */
+function LinhaDoServidor({
+  credencial,
+  servidor,
+}: {
+  credencial: Credencial | undefined;
+  servidor: Servidor;
+}) {
+  const nome = servidor.config.name;
+  const [teste, setTeste] = useState<EstadoDoTeste>({ fase: "parado" });
+  const [ferramentas, setFerramentas] = useState<Ferramenta[] | null>(null);
+  const [listando, setListando] = useState(false);
+
+  const testar = (): void => {
+    setTeste({ fase: "testando" });
+    call("mcp.test", nome).then(
+      (resultado) => setTeste({ fase: "respondeu", teste: resultado }),
+      // `testConnection` devolve a falha como dado, entao chegar aqui quer
+      // dizer que a ponte recusou, e nao que o servidor esta fora do ar.
+      (erro: unknown) =>
+        setTeste({ fase: "recusado", erro: erro instanceof Error ? erro.message : String(erro) }),
+    );
+  };
+
+  const listar = (): void => {
+    setListando(true);
+    call("mcp.tools", nome).then(
+      (lista) => {
+        setFerramentas(lista);
+        setListando(false);
+      },
+      () => {
+        setFerramentas([]);
+        setListando(false);
+      },
+    );
+  };
+
+  return (
+    <div
+      className="flex flex-col gap-2 border-border border-b px-4 py-3 last:border-b-0"
+      data-locum-escopo={servidor.config.scope}
+      data-locum-habilitado={servidor.enabled ? "sim" : "nao"}
+      data-locum-servidor={nome}
+      data-locum-transporte={servidor.config.transport}
+    >
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="w-40 shrink-0 truncate font-medium">{nome}</span>
+        <Badge variant="outline">{servidor.config.transport}</Badge>
+        <Badge variant={servidor.config.scope === "write" ? "destructive" : "outline"}>
+          {servidor.config.scope}
+        </Badge>
+        <Badge variant={servidor.enabled ? "secondary" : "outline"}>
+          {servidor.enabled ? "habilitado" : "desabilitado"}
+        </Badge>
+        <Credenciais credencial={credencial} />
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            data-locum-testar={nome}
+            disabled={teste.fase === "testando"}
+            onClick={testar}
+            size="sm"
+            variant="ghost"
+          >
+            {teste.fase === "testando" ? "testando..." : "testar conexao"}
+          </Button>
+          <Button
+            data-locum-listar={nome}
+            disabled={listando}
+            onClick={listar}
+            size="sm"
+            variant="ghost"
+          >
+            {listando ? "listando..." : "listar ferramentas"}
+          </Button>
+        </div>
+      </div>
+
+      <ResultadoDoTeste estado={teste} nome={nome} />
+
+      {ferramentas === null ? null : (
+        <div className="flex flex-wrap gap-1" data-locum-ferramentas-de={nome}>
+          {ferramentas.length === 0 ? (
+            <span className="text-muted-foreground text-xs">nenhuma ferramenta</span>
+          ) : (
+            ferramentas.map((ferramenta) => (
+              <Badge
+                data-locum-ferramenta={`${nome}/${ferramenta.name}`}
+                data-locum-tokens={ferramenta.estimatedTokens}
+                key={ferramenta.name}
+                variant="outline"
+              >
+                {ferramenta.name} · {ferramenta.estimatedTokens} tok
+              </Badge>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultadoDoTeste({ estado, nome }: { estado: EstadoDoTeste; nome: string }) {
+  if (estado.fase === "parado" || estado.fase === "testando") return null;
+
+  if (estado.fase === "recusado") {
+    return (
+      <p className="text-destructive text-xs" data-locum-ok="nao" data-locum-teste={nome}>
+        a ponte recusou: {estado.erro}
+      </p>
+    );
+  }
+
+  const { teste } = estado;
+  return (
+    <p
+      className={teste.ok ? "text-muted-foreground text-xs" : "text-destructive text-xs"}
+      data-locum-ferramentas={teste.toolCount}
+      data-locum-ok={teste.ok ? "sim" : "nao"}
+      data-locum-teste={nome}
+    >
+      {teste.ok
+        ? `conectou em ${teste.elapsedMs}ms e expoe ${teste.toolCount} ferramenta(s)`
+        : `nao conectou em ${teste.elapsedMs}ms: ${teste.error ?? "sem motivo"}`}
+    </p>
+  );
+}
+
+/* ---------------------------------------------------------------- orcamentos */
+
+function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 border-border border-b px-4 py-3 text-sm last:border-b-0"
+      data-locum-gasto-hoje={orcamento.spentTodayUsd}
+      data-locum-orcamento={orcamento.agentId}
+      data-locum-por-dia={orcamento.perDayUsd ?? ""}
+      data-locum-por-run={orcamento.perRunUsd ?? ""}
+    >
+      <span className="w-40 shrink-0 truncate font-medium">{orcamento.agentId}</span>
+      <span className="text-muted-foreground text-xs">
+        v{orcamento.version ?? "?"}
+      </span>
+      <span className="text-xs tabular-nums">
+        por run {moeda(orcamento.perRunUsd)}
+      </span>
+      <span className="text-xs tabular-nums">por dia {moeda(orcamento.perDayUsd)}</span>
+      <span className="ml-auto text-muted-foreground text-xs tabular-nums">
+        hoje {orcamento.spentTodayUsd.toFixed(3)} USD em {orcamento.runsToday} execucao(oes)
+      </span>
+    </div>
+  );
+}
+
+/** Teto ausente e teto ausente, e escrever zero ali mentiria sobre o limite. */
+function moeda(valor: number | null): string {
+  return valor === null ? "sem teto" : `${valor.toFixed(2)} USD`;
+}

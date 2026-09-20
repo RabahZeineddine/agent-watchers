@@ -3,6 +3,10 @@ import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+// So tipo: o `import type` e apagado no build, e um import de valor vindo de
+// `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
+// apontar o binario do Electron.
+import type { RunService } from "../src/services/run-service.js";
 
 const smoke = process.argv.includes("--smoke");
 
@@ -32,6 +36,16 @@ let mainWindow: BrowserWindow | null = null;
 /** O preload sai do mesmo build que o main e fica ao lado dele em dist/. */
 const PRELOAD = join(__dirname, "preload.cjs");
 
+/**
+ * A pagina que o Vite constroi, carregada do disco por `file://`.
+ *
+ * Nao existe servidor por tras da janela, e nem precisa: o Electron deixa o
+ * modulo ES da pagina carregar em `file://`, ao contrario do Chrome de mesa,
+ * que recusaria por origem opaca. Por isso o `base` do Vite e relativo, e por
+ * isso nenhum recurso da pagina pode vir da rede.
+ */
+const RENDERER = join(__dirname, "renderer", "index.html");
+
 function createWindow(options: { show?: boolean } = {}): BrowserWindow {
   const window = new BrowserWindow({
     width: 1100,
@@ -55,11 +69,44 @@ function createWindow(options: { show?: boolean } = {}): BrowserWindow {
   return window;
 }
 
+/**
+ * Cria a janela do Locum: ponte confiada e pagina construida carregada.
+ *
+ * O `trustWindow` vem antes do `loadFile` de proposito. O preload roda assim
+ * que o documento carrega, e um canal chamado por janela ainda nao confiada
+ * volta como recusa para o renderer.
+ */
+async function openMainWindow(): Promise<BrowserWindow> {
+  const { trustWindow } = await import("./bridge.js");
+
+  const window = createWindow();
+  trustWindow(window);
+  await window.loadFile(RENDERER);
+  mainWindow = window;
+  return window;
+}
+
+/**
+ * Abrir a janela leva alguns passos assincronos, e nesse meio tempo
+ * `mainWindow` continua nulo. Sem guardar a abertura em curso, um clique na
+ * bandeja junto de um clique numa notificacao abriria duas janelas.
+ */
+let opening: Promise<BrowserWindow> | null = null;
+
+function ensureWindow(): Promise<BrowserWindow> {
+  if (mainWindow !== null) return Promise.resolve(mainWindow);
+  opening ??= openMainWindow().finally(() => {
+    opening = null;
+  });
+  return opening;
+}
+
 /** Traz a janela para frente, criando uma se nao houver. */
 function showWindow(): void {
-  if (mainWindow === null) mainWindow = createWindow();
-  mainWindow.show();
-  mainWindow.focus();
+  void ensureWindow().then((window) => {
+    window.show();
+    window.focus();
+  });
 }
 
 /**
@@ -499,6 +546,852 @@ async function checkBridge(): Promise<string> {
   return `${canais} canais no ar, janela sem Node, valores batendo com os servicos`;
 }
 
+/**
+ * Prova que a pagina construida sobe dentro da janela.
+ *
+ * A janela nasce com `show: false` e nada aparece na tela: o smoke roda no
+ * loop de verificacao, sem ninguem olhando. Quem responde e o proprio
+ * renderer, por `executeJavaScript`, que e a unica forma de saber se o React
+ * montou de verdade. Conferir o `index.html` no disco nao provaria nada.
+ *
+ * Alem da raiz, a folha do Tailwind e conferida pelo marcador `hidden` da
+ * pagina: raiz montada prova o React, nao prova que o CSS chegou. E o console
+ * do renderer entra no exame porque modulo que falha ao carregar deixa a raiz
+ * vazia sem estourar deste lado.
+ *
+ * O bloco de codigo tambem entra, e ele so fica pronto depois da pagina: o
+ * shiki destaca de forma assincrona e busca a gramatica da linguagem num
+ * pedaco separado do pacote. Por isso a espera abaixo, que e o unico jeito de
+ * saber que o import dinamico funciona carregando do disco, sem servidor.
+ *
+ * E a ponte sobe junto, porque a pagina agora le pelos canais assim que monta.
+ * O `checkBridge` prova o caminho com `about:blank` e chamada solta; aqui o que
+ * esta sendo provado e a pagina de verdade lendo por conta propria, com o hook
+ * no meio, e os valores que ela exibiu conferidos contra os mesmos servicos.
+ *
+ * A navegacao entre os quatro destinos entra pelo mesmo caminho do clique, que
+ * e escrever o hash, porque o loop roda sem ninguem olhando e nao ha clique
+ * para dar.
+ */
+async function checkRenderer(): Promise<string> {
+  if (!existsSync(RENDERER)) throw new Error(`renderer nao foi construido em ${RENDERER}`);
+
+  const { setupBridge, teardownBridge, trustWindow } = await import("./bridge.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { runService } = await import("../src/services/run-service.js");
+  const { ensureDemoRun } = await import("../src/fixtures/demo-run.js");
+  const { ensureAgentHistory } = await import("../src/fixtures/agent-history.js");
+  const { ensureFixtureServer } = await import("../src/fixtures/mcp-fixture.js");
+
+  // Banco vazio faz a tela de execucoes passar sem provar nada: lista vazia e
+  // detalhe inexistente batem com servico vazio por acidente. O fixture planta
+  // uma execucao pronta, e nao roda o pipeline, que custaria minutos de
+  // assinatura a cada verificacao do loop.
+  const fixture = await ensureDemoRun();
+  // A tela de agents compara duas versoes, e um banco novo so tem uma. O
+  // fixture planta a que falta sem rodar nada, e deixa o spec canonico no topo.
+  await ensureAgentHistory();
+  // A tela de configuracao precisa de um servidor MCP para o botao de testar
+  // ter alvo. O de brinquedo nao depende de rede nem de nada instalado, entao
+  // conectar nele custa segundos e nao expoe o loop a servidor de terceiro.
+  await ensureFixtureServer(join(__dirname, ".."));
+
+  setupBridge({ inboxTarget: pendingInboxTarget });
+
+  const window = createWindow({ show: false });
+  trustWindow(window);
+  const erros: string[] = [];
+  window.webContents.on("console-message", (event) => {
+    if (event.level === "error") erros.push(event.message);
+  });
+
+  try {
+    await window.loadFile(RENDERER);
+
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=tailwind]");
+        return {
+          raiz: document.getElementById("root")?.childElementCount ?? 0,
+          marca: document.querySelector("[data-locum-probe=marca]")?.textContent ?? "",
+          folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
+        };
+      })()`,
+    )) as { raiz: number; marca: string; folha: string };
+
+    if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
+    if (visto.raiz === 0) throw new Error("a raiz #root ficou vazia, o React nao montou");
+    if (visto.marca !== "Locum") throw new Error(`a barra lateral montou com a marca ${visto.marca}`);
+    if (visto.folha !== "none") {
+      throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
+    }
+
+    const rotas = await checkRoutes(window);
+    const paleta = await checkPalette(window);
+    // Antes das execucoes de proposito: o `checkRuns` deixa a janela no detalhe
+    // de um run, que e onde a verificacao do destaque procura o bloco de codigo.
+    const agents = await checkAgents(window);
+    const configuracao = await checkConfig(window);
+
+    const execucoes = await checkRuns(window, fixture);
+    // O bloco de codigo mora no detalhe de uma execucao, que e quem vai usa-lo
+    // de verdade: a saida de cada passo sai como JSON destacado. O `checkRuns`
+    // deixa a janela nesse detalhe, entao o destaque e conferido de onde ele
+    // aparece.
+    const destacado = await esperarDestaque(window);
+    const ponte = await esperarPonte(window);
+
+    const agentes = (await agentService.list()).map((a) => a.id).join(",");
+    if (ponte.agents !== agentes) {
+      throw new Error(`a janela leu os agents ${ponte.agents} e o servico tem ${agentes}`);
+    }
+    const total = (await runService.list()).length;
+    if (ponte.runs !== total) {
+      throw new Error(`a janela leu ${ponte.runs} execucao(oes) e o servico tem ${total}`);
+    }
+    const pendencias = await countPending();
+    if (ponte.pendencias !== pendencias) {
+      throw new Error(`a janela leu ${ponte.pendencias} pendencia(s) e a fila tem ${pendencias}`);
+    }
+
+    if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
+
+    return (
+      "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
+      `${rotas} navegando, ${paleta}, ${agents}, ${configuracao}, ${execucoes}, ` +
+      `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
+      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
+    );
+  } finally {
+    window.destroy();
+    teardownBridge();
+  }
+}
+
+/**
+ * Espera as leituras da pagina terminarem e devolve o que ela exibiu.
+ *
+ * A pagina monta antes de a ponte responder, entao conferir logo depois do
+ * `loadFile` pegaria o estado de carregando. O marcador guarda o estado junto
+ * dos valores justamente para que a espera saiba a hora, em vez de dormir um
+ * tempo arbitrario e torcer.
+ */
+async function esperarPonte(
+  window: BrowserWindow,
+): Promise<{ agents: string; runs: number; pendencias: number }> {
+  const limite = Date.now() + 20_000;
+  let ultimo = "sem marcador";
+
+  while (Date.now() < limite) {
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=ponte]");
+        if (probe === null) return null;
+        return {
+          estado: probe.dataset.estado,
+          erro: probe.dataset.erro,
+          agents: probe.dataset.agents,
+          runs: Number(probe.dataset.runs),
+          pendencias: Number(probe.dataset.pendencias),
+        };
+      })()`,
+    )) as { estado: string; erro: string; agents: string; runs: number; pendencias: number } | null;
+
+    if (visto !== null) {
+      if (visto.estado === "erro") throw new Error(`a janela nao leu pela ponte: ${visto.erro}`);
+      if (visto.estado === "pronto") return visto;
+      ultimo = visto.estado;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`as leituras da janela ficaram em "${ultimo}" por 20s`);
+}
+
+/**
+ * Poe a janela num destino e espera a tela trocar.
+ *
+ * A navegacao e por hash porque nao existe servidor atras da pagina, e escrever
+ * o hash e exatamente o que o clique na barra lateral faz: o caminho exercitado
+ * aqui e o mesmo que uma pessoa usa.
+ */
+async function irPara(window: BrowserWindow, id: string, detalhe?: string): Promise<void> {
+  const cauda = detalhe === undefined ? "" : `/${encodeURIComponent(detalhe)}`;
+  const esperado = `${id}|${detalhe ?? ""}`;
+  await window.webContents.executeJavaScript(`(location.hash = "#/${id}${cauda}", null)`);
+
+  const limite = Date.now() + 10_000;
+  let ultimo = "sem marcador";
+
+  while (Date.now() < limite) {
+    const onde = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=rota]");
+        return probe === null ? null : probe.dataset.ativo + "|" + probe.dataset.detalhe;
+      })()`,
+    )) as string | null;
+
+    if (onde === esperado) return;
+    if (onde !== null) ultimo = onde;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`a janela ficou em "${ultimo}" depois de pedir o destino ${esperado}`);
+}
+
+/**
+ * Confere os quatro destinos e que navegar entre eles troca a tela.
+ *
+ * Os identificadores e os titulos saem da propria barra lateral, e nao de uma
+ * copia deste lado: uma lista repetida aqui passaria a concordar com ela mesma
+ * no dia em que o catalogo do renderer mudasse. O que fica escrito deste lado e
+ * so a exigencia da story, que sao estes quatro destinos.
+ */
+async function checkRoutes(window: BrowserWindow): Promise<string> {
+  const esperados = ["inbox", "execucoes", "agents", "configuracao"];
+
+  const barra = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-rota]")).map((b) => ({
+      id: b.dataset.locumRota,
+      titulo: b.querySelector("span")?.textContent ?? "",
+    }))`,
+  )) as { id: string; titulo: string }[];
+
+  const ids = barra.map((r) => r.id);
+  if (ids.join(",") !== esperados.join(",")) {
+    throw new Error(`a barra lateral oferece ${ids.join(",")} e nao ${esperados.join(",")}`);
+  }
+
+  const inicial = (await window.webContents.executeJavaScript(
+    `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+  )) as string | null;
+  if (inicial !== esperados[0]) {
+    throw new Error(`com o hash vazio a janela abriu em ${inicial} e nao em ${esperados[0]}`);
+  }
+
+  for (const { id, titulo } of barra) {
+    await irPara(window, id);
+
+    const visto = (await window.webContents.executeJavaScript(
+      `(() => ({
+        titulo: document.querySelector("h1")?.textContent ?? "",
+        marcado: document.querySelector("[data-locum-rota][aria-current=page]")?.dataset.locumRota ?? null,
+      }))()`,
+    )) as { titulo: string; marcado: string | null };
+
+    if (visto.titulo !== titulo) {
+      throw new Error(`o destino ${id} mostrou o titulo ${visto.titulo} e nao ${titulo}`);
+    }
+    if (visto.marcado !== id) {
+      throw new Error(`o destino ${id} esta ativo e a barra marca ${visto.marcado}`);
+    }
+  }
+
+  // Um destino desconhecido nao pode deixar a janela em branco: quem chegar por
+  // hash velho, ou por deep link de uma versao anterior, cai no padrao.
+  await irPara(window, esperados[0] as string);
+  await window.webContents.executeJavaScript(`(location.hash = "#/nao-existe", null)`);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const desconhecido = (await window.webContents.executeJavaScript(
+    `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+  )) as string | null;
+  if (desconhecido !== esperados[0]) {
+    throw new Error(`hash desconhecido levou a janela para ${desconhecido}`);
+  }
+
+  return `${barra.length} destino(s)`;
+}
+
+/**
+ * Confere que o atalho abre a paleta de comandos e que Escape a fecha.
+ *
+ * Ela ainda nao tem comando nenhum dentro, entao o que esta sendo provado e o
+ * atalho: o ouvinte de teclado esta no ar e o estado da paleta responde a ele.
+ */
+async function checkPalette(window: BrowserWindow): Promise<string> {
+  const estado = async (): Promise<string | null> =>
+    (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-probe=paleta]")?.dataset.aberta ?? null`,
+    )) as string | null;
+
+  const tecla = async (script: string): Promise<void> => {
+    await window.webContents.executeJavaScript(script);
+    // O estado e do React, que pinta no proximo quadro: perguntar na mesma
+    // linha pegaria o valor anterior.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  };
+
+  if ((await estado()) !== "nao") throw new Error("a paleta nasceu aberta");
+
+  await tecla(
+    `(document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })), null)`,
+  );
+  if ((await estado()) !== "sim") throw new Error("o atalho nao abriu a paleta de comandos");
+
+  await tecla(
+    `(document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })), null)`,
+  );
+  if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
+
+  return "paleta abrindo e fechando pelo atalho";
+}
+
+/**
+ * Confere a tela de agents: a lista, o historico e a comparacao de versoes.
+ *
+ * Tudo que a janela mostra e conferido contra os mesmos servicos, e nao contra
+ * numeros escritos aqui. O unico valor deste lado e a exigencia da story, que e
+ * a diferenca de modo do passo de acao aparecer na comparacao: qual modo e de
+ * cada versao sai do banco, porque o fixture pode mudar e o teste continua
+ * valendo.
+ *
+ * O botao de contar tokens e conferido por existir, e nunca clicado. Clicar
+ * subiria os servidores MCP citados pelo spec, e o loop roda sem ninguem
+ * olhando: o que esta sendo provado aqui e a fiacao.
+ */
+async function checkAgents(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { providerService } = await import("../src/services/provider-service.js");
+
+  await irPara(window, "agents");
+  const lista = await esperarProbe<{ agents: string; total: number }>(
+    window,
+    "agents",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agents]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { agents: probe.dataset.agents, total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  const doServico = await agentService.list();
+  if (lista.agents !== doServico.map((a) => a.id).join(",")) {
+    throw new Error(`a lista mostrou ${lista.agents} e o servico devolveu ${doServico.length} agent(s)`);
+  }
+
+  const desenhadas = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-agent]").length`,
+  )) as number;
+  if (desenhadas !== doServico.length) {
+    throw new Error(`a lista desenhou ${desenhadas} linha(s) para ${doServico.length} agent(s)`);
+  }
+
+  // O alvo e quem tem historico: comparar versao exige duas, e um agent de uma
+  // versao so provaria a tela de lista mais uma vez.
+  let alvo: string | undefined;
+  for (const agent of doServico) {
+    if ((await agentService.listVersions(agent.id)).length >= 2) {
+      alvo = agent.id;
+      break;
+    }
+  }
+  if (alvo === undefined) throw new Error("nenhum agent tem duas versoes para comparar");
+
+  await irPara(window, "agents", alvo);
+  const detalhe = await esperarProbe<{
+    versoes: string;
+    versao: number;
+    comparando: string;
+    diff: number;
+    saiu: string;
+    entrou: string;
+  }>(
+    window,
+    "agent",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=agent]");
+      const diff = document.querySelector("[data-locum-probe=diff]");
+      const passos = document.querySelector("[data-locum-passos]");
+      // As previas de modelo sao uma terceira leitura, e ela so comeca depois
+      // que o perfil da maquina chega: girar ate ela terminar e o que separa
+      // conferir o que a maquina resolve de conferir o estado de carregando.
+      if (probe === null || diff === null || passos === null) return null;
+      if (probe.dataset.versoes === "") return null;
+      if (passos.dataset.locumMaquina === "" || passos.dataset.locumPrevias !== "ready") return null;
+      return {
+        versoes: probe.dataset.versoes,
+        versao: Number(probe.dataset.versao),
+        comparando: probe.dataset.comparando,
+        diff: Number(diff.dataset.locumDiff),
+        saiu: diff.dataset.locumSaiu ?? "",
+        entrou: diff.dataset.locumEntrou ?? "",
+      };
+    })()`,
+  );
+
+  const versoes = await agentService.listVersions(alvo);
+  if (detalhe.versoes !== versoes.map((v) => v.version).join(",")) {
+    throw new Error(`o historico mostrou ${detalhe.versoes} e o servico tem ${versoes.length} versao(oes)`);
+  }
+  if (detalhe.versao !== versoes[0]!.version) {
+    throw new Error(`a tela abriu na v${detalhe.versao} e o topo do historico e a v${versoes[0]!.version}`);
+  }
+
+  const atual = versoes[0]!;
+  const anterior = versoes[1]!;
+  if (detalhe.comparando !== `${anterior.version}:${atual.version}`) {
+    throw new Error(`a comparacao ficou em ${detalhe.comparando} e o par esperado e o topo com o anterior`);
+  }
+
+  const modo = (v: (typeof versoes)[number]): string | undefined =>
+    v.spec.steps.find((p) => p.type === "action")?.mode;
+  const de = modo(anterior);
+  const para = modo(atual);
+  if (de === undefined || para === undefined) {
+    throw new Error(`a v${anterior.version} ou a v${atual.version} nao tem passo de acao`);
+  }
+  if (de === para) {
+    throw new Error(`as duas versoes do topo tem o passo de acao em "${de}", nao ha diferenca de modo`);
+  }
+  if (detalhe.diff === 0) throw new Error("a comparacao nao apontou nenhuma linha diferente");
+  if (!detalhe.saiu.includes(`"mode": "${de}"`)) {
+    throw new Error(`a comparacao nao mostrou o modo "${de}" saindo da v${anterior.version}`);
+  }
+  if (!detalhe.entrou.includes(`"mode": "${para}"`)) {
+    throw new Error(`a comparacao nao mostrou o modo "${para}" entrando na v${atual.version}`);
+  }
+
+  // O que a maquina resolve para cada passo de modelo, conferido contra o mesmo
+  // servico: uma tabela repetida deste lado passaria a concordar consigo mesma.
+  const naTela = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-modelo]")).map((e) => ({
+      pedido: e.dataset.locumModelo,
+      resolvido: e.dataset.locumResolvido ?? "",
+    }))`,
+  )) as { pedido: string; resolvido: string }[];
+
+  const passosDeModelo = atual.spec.steps.filter((p) => p.type === "model");
+  if (naTela.length !== passosDeModelo.length) {
+    throw new Error(
+      `a tela mostrou ${naTela.length} resolucao(oes) e a v${atual.version} tem ${passosDeModelo.length} passo(s) de modelo`,
+    );
+  }
+
+  const previas = await providerService.resolvePreviews(
+    passosDeModelo.map((p) => p.model),
+    machineId,
+  );
+  for (const [i, passo] of passosDeModelo.entries()) {
+    const previa = previas[i]!;
+    const esperado = previa.ok ? previa.resolution.used : "";
+    if (naTela[i]!.pedido !== passo.model) {
+      throw new Error(`o passo ${passo.key} mostrou o modelo ${naTela[i]!.pedido} e o spec pede ${passo.model}`);
+    }
+    if (naTela[i]!.resolvido !== esperado) {
+      throw new Error(
+        `o passo ${passo.key} resolveu para "${naTela[i]!.resolvido}" na tela e "${esperado}" no servico`,
+      );
+    }
+  }
+
+  // Um spec sem ferramenta nao tem botao, e isso nao e falha: o agent semente
+  // herda a lista vazia. O que nao pode e existir ferramenta sem como contar.
+  const comFerramenta = passosDeModelo.filter(
+    (p) => (p.tools ?? atual.spec.defaultTools).length > 0,
+  ).length;
+  const botoes = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-contar]").length`,
+  )) as number;
+  if (botoes !== comFerramenta) {
+    throw new Error(`${botoes} botao(oes) de contar token para ${comFerramenta} passo(s) com ferramenta`);
+  }
+
+  return (
+    `lista com ${lista.total} agent(s), historico de ${versoes.length} versao(oes) de ${alvo} e ` +
+    `comparacao apontando o passo de acao de "${de}" para "${para}"`
+  );
+}
+
+/**
+ * Confere a tela de configuracao.
+ *
+ * As quatro secoes sao comparadas contra os mesmos servicos que a janela leu
+ * pela ponte, e nao contra numeros escritos deste lado: uma tabela repetida
+ * aqui passaria a concordar consigo mesma no dia em que a tela mudasse.
+ *
+ * O botao de testar conexao e clicado, ao contrario do de reexecutar passo.
+ * A diferenca nao e de gosto: reexecutar solta o executor de verdade e gasta
+ * assinatura, enquanto testar sobe o servidor de brinquedo, que e local e nao
+ * fala com ninguem. E e o unico jeito de provar o que a story pede, que e o
+ * teste respondendo na interface e nao so o canal existindo.
+ *
+ * O que nao aparece em lugar nenhum e valor de segredo, e a verificacao cobra
+ * isso: o marcador de credencial carrega a referencia e se ha algo guardado,
+ * e mais nada.
+ */
+async function checkConfig(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { providerService } = await import("../src/services/provider-service.js");
+  const { FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
+
+  await irPara(window, "configuracao");
+  const tela = await esperarProbe<{
+    maquina: string;
+    provedores: string;
+    fallbacks: number;
+    servidores: string;
+    orcamentos: string;
+  }>(
+    window,
+    "configuracao",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=configuracao]");
+      if (probe === null || probe.dataset.estado !== "pronto") return null;
+      return {
+        maquina: probe.dataset.locumMaquina,
+        provedores: probe.dataset.locumProvedores,
+        fallbacks: Number(probe.dataset.locumFallbacks),
+        servidores: probe.dataset.locumServidores,
+        orcamentos: probe.dataset.locumOrcamentos,
+      };
+    })()`,
+  );
+
+  if (tela.maquina !== machineId) {
+    throw new Error(`a tela diz estar em "${tela.maquina}" e a maquina e "${machineId}"`);
+  }
+
+  const provedores = providerService.listProviders();
+  if (tela.provedores !== provedores.map((p) => p.name).join(",")) {
+    throw new Error(
+      `a tela listou os provedores ${tela.provedores} e o servico tem ${provedores.length}`,
+    );
+  }
+
+  // Disponibilidade por provider, e nao so a contagem: uma tela que mostrasse
+  // todo mundo como indisponivel teria a mesma lista e diria outra coisa.
+  const disponiveis = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-provider]")).map((e) => ({
+      nome: e.dataset.locumProvider,
+      disponivel: e.dataset.locumDisponivel,
+    }))`,
+  )) as { nome: string; disponivel: string }[];
+  for (const [i, provedor] of provedores.entries()) {
+    const naTela = disponiveis[i];
+    const esperado = provedor.available ? "sim" : "nao";
+    if (naTela === undefined || naTela.disponivel !== esperado) {
+      throw new Error(
+        `o provider ${provedor.name} aparece como "${naTela?.disponivel ?? "ausente"}" e o servico diz "${esperado}"`,
+      );
+    }
+  }
+
+  const fallbacks = await providerService.getFallbacks(machineId);
+  const linhasDeFallback = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-fallback]")).map((e) => e.dataset.locumFallback)`,
+  )) as string[];
+  const esperadas = fallbacks.map((f) => `${f.fromModel}>${f.toModel}`);
+  if (tela.fallbacks !== fallbacks.length || linhasDeFallback.join("|") !== esperadas.join("|")) {
+    throw new Error(
+      `a tabela de substituicao desenhou ${linhasDeFallback.join("|")} e o servico tem ${esperadas.join("|")}`,
+    );
+  }
+
+  const servidores = await mcpService.list();
+  if (tela.servidores !== servidores.map((s) => s.config.name).join(",")) {
+    throw new Error(
+      `a tela listou os servidores ${tela.servidores} e o servico tem ${servidores.length}`,
+    );
+  }
+  if (!tela.servidores.split(",").includes(FIXTURE_SERVER)) {
+    throw new Error(`o servidor de brinquedo ${FIXTURE_SERVER} nao apareceu na tela`);
+  }
+
+  const orcamentos = await agentService.budgets();
+  if (tela.orcamentos !== orcamentos.map((o) => o.agentId).join(",")) {
+    throw new Error(
+      `a tela listou os orcamentos de ${tela.orcamentos} e o servico tem ${orcamentos.length}`,
+    );
+  }
+
+  // Segredo nao tem como chegar na tela, porque nao ha canal que o devolva. O
+  // que da para conferir daqui e que o marcador nao guarda nada alem do
+  // endereco e do sim ou nao, e e isso que esta sendo olhado.
+  const credenciais = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-credencial]")).map((e) => ({
+      ref: e.dataset.locumCredencial,
+      guardado: e.dataset.locumGuardado,
+    }))`,
+  )) as { ref: string; guardado: string }[];
+  for (const credencial of credenciais) {
+    if (credencial.guardado !== "sim" && credencial.guardado !== "nao") {
+      throw new Error(`a credencial ${credencial.ref} mostrou "${credencial.guardado}"`);
+    }
+  }
+
+  // O clique, que e o ponto da story. Ele sobe o servidor de brinquedo, que e
+  // local: nao ha rede, nao ha assinatura e nao ha nada publicado.
+  const clicou = (await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector('[data-locum-testar="${FIXTURE_SERVER}"]');
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  )) as boolean;
+  if (!clicou) throw new Error(`a tela nao ofereceu botao de testar ${FIXTURE_SERVER}`);
+
+  // Subir o processo e esperar a primeira resposta leva mais que uma leitura
+  // de banco, e o tsx ainda compila o fixture antes de responder.
+  const resultado = await esperarProbe<{ ok: string; ferramentas: number }>(
+    window,
+    `teste de ${FIXTURE_SERVER}`,
+    `(() => {
+      const probe = document.querySelector('[data-locum-teste="${FIXTURE_SERVER}"]');
+      if (probe === null) return null;
+      return { ok: probe.dataset.locumOk, ferramentas: Number(probe.dataset.locumFerramentas) };
+    })()`,
+    60_000,
+  );
+
+  const doServico = await mcpService.testConnection(FIXTURE_SERVER);
+  if (resultado.ok !== (doServico.ok ? "sim" : "nao")) {
+    throw new Error(
+      `a tela disse "${resultado.ok}" para a conexao e o servico disse "${doServico.ok ? "sim" : "nao"}"` +
+        (doServico.error === undefined ? "" : `: ${doServico.error}`),
+    );
+  }
+  if (!doServico.ok) throw new Error(`o servidor de brinquedo nao conectou: ${doServico.error}`);
+  if (resultado.ferramentas !== doServico.toolCount) {
+    throw new Error(
+      `a tela contou ${resultado.ferramentas} ferramenta(s) e o servico contou ${doServico.toolCount}`,
+    );
+  }
+
+  return (
+    `${provedores.length} provedor(es), ${fallbacks.length} substituicao(oes), ` +
+    `${servidores.length} servidor(es) com ${FIXTURE_SERVER} respondendo ` +
+    `${resultado.ferramentas} ferramenta(s) na interface, e ${orcamentos.length} orcamento(s)`
+  );
+}
+
+/**
+ * Confere a lista de execucoes e o detalhe de uma delas.
+ *
+ * Os dois lados sao comparados contra o mesmo servico, e nao contra numeros
+ * escritos aqui: o que o loop precisa saber e se a janela mostra o que o banco
+ * tem, nao se alguem lembrou de atualizar uma constante deste lado.
+ *
+ * O botao de reexecutar e conferido por existir, e nunca clicado. Clicar
+ * soltaria o executor de verdade, que gasta minutos de assinatura e leva o run
+ * junto: o que esta sendo provado aqui e a fiacao, e um passo por botao.
+ *
+ * Ao sair, a janela fica no detalhe, porque e la que vive o bloco de codigo
+ * que a verificacao do destaque procura.
+ */
+async function checkRuns(window: BrowserWindow, runId: string): Promise<string> {
+  const { runService } = await import("../src/services/run-service.js");
+
+  await irPara(window, "execucoes");
+  const lista = await esperarProbe<{ estado: string; runs: string; total: number }>(
+    window,
+    "execucoes",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucoes]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { estado: probe.dataset.estado, runs: probe.dataset.runs, total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  const doServico = (await runService.list({ limit: 500 })).map((r) => r.id);
+  if (lista.runs !== doServico.join(",")) {
+    throw new Error(`a lista mostrou ${lista.runs} e o servico devolveu ${doServico.join(",")}`);
+  }
+  if (!doServico.includes(runId)) {
+    throw new Error(`o run plantado ${runId} nao apareceu na lista`);
+  }
+
+  // A linha so existe no DOM se a janela virtual a desenhou: lista vazia de
+  // linhas com o total certo passaria pela conferencia acima.
+  const desenhadas = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-run]").length`,
+  )) as number;
+  if (desenhadas === 0) throw new Error("a lista de execucoes nao desenhou nenhuma linha");
+
+  await irPara(window, "execucoes", runId);
+  const detalhe = await esperarProbe<{ run: string; passos: number; chaves: string; achados: number }>(
+    window,
+    "execucao",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucao]");
+      // Os passos e os achados sao duas leituras, e a segunda demora mais.
+      // O menos um e o "ainda lendo" das duas, entao girar enquanto ele
+      // aparecer e o que separa conferir o estado final de conferir o inicial.
+      if (probe === null || probe.dataset.passos === "-1" || probe.dataset.achados === "-1") return null;
+      return {
+        run: probe.dataset.run,
+        passos: Number(probe.dataset.passos),
+        chaves: probe.dataset.chaves,
+        achados: Number(probe.dataset.achados),
+      };
+    })()`,
+  );
+
+  const doBanco = await runService.get(runId);
+  if (doBanco === undefined) throw new Error(`o run plantado ${runId} sumiu do banco`);
+
+  const chaves = doBanco.spec.steps.map((p) => p.key);
+  if (chaves.length !== 4) {
+    throw new Error(`o agent semente passou a ter ${chaves.length} passos e o smoke espera quatro`);
+  }
+  if (detalhe.passos !== doBanco.steps.length) {
+    throw new Error(`o detalhe mostrou ${detalhe.passos} passo(s) e o run tem ${doBanco.steps.length}`);
+  }
+  if (detalhe.chaves !== doBanco.steps.map((p) => p.stepKey).join(",")) {
+    throw new Error(`o detalhe listou os passos ${detalhe.chaves}`);
+  }
+
+  const achados = (await runService.findings(runId)).length;
+  if (detalhe.achados !== achados) {
+    throw new Error(`o detalhe mostrou ${detalhe.achados} achado(s) e o servico tem ${achados}`);
+  }
+
+  const rerun = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-rerun]")).map((b) => b.dataset.locumRerun).join(",")`,
+  )) as string;
+  if (rerun !== detalhe.chaves) {
+    throw new Error(`os botoes de reexecutar cobrem ${rerun} e os passos sao ${detalhe.chaves}`);
+  }
+
+  const grafo = await checkGrafo(window, doBanco);
+
+  return (
+    `lista com ${lista.total} execucao(oes) e ${desenhadas} linha(s) desenhada(s), ` +
+    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada, ` +
+    grafo
+  );
+}
+
+/**
+ * Confere o grafo do run que esta aberto na janela.
+ *
+ * O esperado sai do `needs` do spec, e nao de uma lista escrita aqui: o que
+ * precisa ser provado e que o desenho segue a dependencia declarada, e nao que
+ * alguem lembrou de atualizar dois lugares ao mesmo tempo.
+ *
+ * O no e a aresta sao contados no DOM alem de conferidos no marcador, pelo
+ * mesmo motivo da lista virtualizada: um grafo que montasse a conta certa e
+ * desenhasse nada passaria pela primeira conferencia inteira.
+ */
+async function checkGrafo(
+  window: BrowserWindow,
+  run: Awaited<ReturnType<RunService["get"]>>,
+): Promise<string> {
+  if (run === undefined) throw new Error("o grafo foi conferido sem run");
+
+  const chaves = run.spec.steps.map((p) => p.key);
+  const esperadas = run.spec.steps.flatMap((passo) =>
+    passo.needs.filter((n) => chaves.includes(n)).map((n) => `${n}->${passo.key}`),
+  );
+  if (esperadas.length !== 3) {
+    throw new Error(`o agent semente passou a ter ${esperadas.length} arestas e o smoke espera tres`);
+  }
+
+  const visto = await esperarProbe<{
+    arestas: string;
+    desenhadas: number;
+    estados: string;
+    nos: string;
+  }>(
+    window,
+    "grafo",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=grafo]");
+      if (probe === null) return null;
+      const caixas = Array.from(document.querySelectorAll("[data-locum-no]"));
+      // A aresta so entra no DOM depois que o React Flow mede as caixas, que e
+      // um quadro depois do no aparecer: sem esta espera a contagem sairia
+      // zero com o grafo certo na tela.
+      const linhas = document.querySelectorAll(".react-flow__edge").length;
+      if (caixas.length === 0 || linhas === 0) return null;
+      return {
+        arestas: probe.dataset.arestas,
+        desenhadas: linhas,
+        estados: caixas.map((c) => c.dataset.locumNo + ":" + c.dataset.locumEstado).join(","),
+        nos: probe.dataset.nos,
+      };
+    })()`,
+  );
+
+  if (visto.nos !== chaves.join(",")) {
+    throw new Error(`o grafo listou os nos ${visto.nos} e o spec tem ${chaves.join(",")}`);
+  }
+  if (visto.arestas !== esperadas.join(",")) {
+    throw new Error(`o grafo listou as arestas ${visto.arestas} e o spec pede ${esperadas.join(",")}`);
+  }
+  if (visto.desenhadas !== esperadas.length) {
+    throw new Error(`o grafo desenhou ${visto.desenhadas} aresta(s) e o spec pede ${esperadas.length}`);
+  }
+
+  // O estado por no e o que separa "desenhou caixa" de "desenhou o run": o
+  // passo pulado e o que espera aprovacao so aparecem se vierem do banco.
+  const doBanco = run.steps.map((p) => `${p.stepKey}:${p.status}`).join(",");
+  if (visto.estados !== doBanco) {
+    throw new Error(`o grafo mostrou ${visto.estados} e o run esta em ${doBanco}`);
+  }
+  for (const exigido of ["skipped", "awaiting_approval"]) {
+    if (!visto.estados.includes(`:${exigido}`)) {
+      throw new Error(`o grafo do fixture nao mostrou nenhum passo ${exigido}`);
+    }
+  }
+
+  return `grafo com ${chaves.length} no(s) e ${visto.desenhadas} aresta(s), estados ${visto.estados}`;
+}
+
+/**
+ * Gira ate o marcador responder com algo que nao seja nulo.
+ *
+ * O limite entra por parametro porque nem toda espera e da mesma natureza:
+ * uma leitura de banco responde em milissegundos, e um teste de conexao MCP
+ * sobe um processo antes de responder.
+ */
+async function esperarProbe<T>(
+  window: BrowserWindow,
+  nome: string,
+  script: string,
+  limiteMs = 20_000,
+): Promise<T> {
+  const limite = Date.now() + limiteMs;
+
+  while (Date.now() < limite) {
+    const visto = (await window.webContents.executeJavaScript(script)) as T | null;
+    if (visto !== null) return visto;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`o marcador ${nome} nao ficou pronto dentro de ${limiteMs / 1000}s`);
+}
+
+/**
+ * Espera o shiki terminar e devolve quantos trechos ele coloriu.
+ *
+ * O destaque nao esta no HTML construido: ele acontece no navegador, depois de
+ * um import dinamico do pacote da linguagem. Contar `span` com cor e o que
+ * separa "o componente montou" de "o destaque funcionou": sem a gramatica o
+ * shiki ainda desenha o `pre`, so que com o codigo todo na mesma cor.
+ */
+async function esperarDestaque(window: BrowserWindow): Promise<number> {
+  const limite = Date.now() + 20_000;
+
+  while (Date.now() < limite) {
+    const coloridos = (await window.webContents.executeJavaScript(
+      `(() => {
+        const bloco = document.querySelector("[data-locum-probe=code-block] pre.shiki");
+        if (bloco === null) return 0;
+        return bloco.querySelectorAll("span[style*='color']").length;
+      })()`,
+    )) as number;
+
+    if (coloridos > 0) return coloridos;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  throw new Error("o bloco de codigo nao ficou destacado dentro de 20s");
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -573,12 +1466,13 @@ async function main(): Promise<void> {
     const avisos = await checkNotifications();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
+    const renderer = await checkRenderer();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
         `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
-        `deep link com ${deepLink}, ponte com ${ponte}`,
+        `deep link com ${deepLink}, ponte com ${ponte}, interface com ${renderer}`,
     );
     app.exit(0);
     return;
@@ -618,18 +1512,12 @@ async function main(): Promise<void> {
 
   // Antes da janela: o preload chama os canais assim que o documento carrega, e
   // canal ainda nao registrado volta como erro de IPC para o renderer.
-  const { setupBridge, trustWindow } = await import("./bridge.js");
+  const { setupBridge } = await import("./bridge.js");
   setupBridge({ inboxTarget: pendingInboxTarget });
 
-  mainWindow = createWindow();
-  trustWindow(mainWindow);
+  await ensureWindow();
 
-  app.on("activate", () => {
-    if (mainWindow === null) {
-      mainWindow = createWindow();
-      trustWindow(mainWindow);
-    }
-  });
+  app.on("activate", showWindow);
 }
 
 app.on("window-all-closed", () => {

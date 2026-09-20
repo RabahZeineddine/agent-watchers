@@ -2,6 +2,7 @@ import { McpTransport } from "./config/types.js";
 import { buildExecutor, buildGate } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
+import { credentialService } from "./services/credential-service.js";
 import { executionService } from "./services/execution-service.js";
 import { machineId } from "./services/machine-service.js";
 import { metricsService, type VersionMetrics } from "./services/metrics-service.js";
@@ -285,32 +286,27 @@ async function startup(decision: boolean | null): Promise<void> {
  * abre dentro do app. Aqui se enxerga o endereco, nao o segredo.
  */
 async function secrets(): Promise<void> {
-  const guardados = secretService.list();
+  const { available, refs } = await credentialService.overview();
   console.log(
-    secretService.available
+    available
       ? "cofre: legivel neste processo"
       : "cofre: so o app Electron le, aqui vale a variavel de ambiente",
   );
 
-  const usos = new Map<string, string[]>();
-  for (const [name, ref] of Object.entries(await providerService.credentialRefs())) {
-    usos.set(ref, [...(usos.get(ref) ?? []), `provider ${name}`]);
-  }
-  for (const entry of await mcpService.list()) {
-    if (!entry.credentialRef) continue;
-    usos.set(entry.credentialRef, [...(usos.get(entry.credentialRef) ?? []), `mcp ${entry.config.name}`]);
-  }
+  const quem = (ref: (typeof refs)[number]): string =>
+    ref.users.length === 0
+      ? "sem cadastro apontando"
+      : ref.users.map((uso) => `${uso.kind} ${uso.name}`).join(", ");
 
+  const guardados = refs.filter((ref) => ref.stored);
   console.log("\nguardados:");
   if (guardados.length === 0) console.log("  nenhum");
-  for (const ref of guardados) {
-    console.log(`  ${ref.padEnd(32)} ${usos.get(ref)?.join(", ") ?? "sem cadastro apontando"}`);
-  }
+  for (const ref of guardados) console.log(`  ${ref.ref.padEnd(32)} ${quem(ref)}`);
 
-  const orfaos = [...usos].filter(([ref]) => !secretService.has(ref));
+  const orfaos = refs.filter((ref) => !ref.stored);
   if (orfaos.length > 0) {
     console.log("\napontam para credencial que nao existe no cofre:");
-    for (const [ref, quem] of orfaos) console.log(`  ${ref.padEnd(32)} ${quem.join(", ")}`);
+    for (const ref of orfaos) console.log(`  ${ref.ref.padEnd(32)} ${quem(ref)}`);
   }
 }
 
@@ -344,6 +340,14 @@ async function main(): Promise<void> {
     case "demo":
       await start("sintetico");
       break;
+    case "fixture:run": {
+      // Execucao plantada, sem chamar modelo. Ela existe para a interface e
+      // para o smoke terem o que mostrar num banco novo sem gastar assinatura.
+      const { ensureDemoRun } = await import("./fixtures/demo-run.js");
+      const id = await ensureDemoRun();
+      await printRun(id);
+      break;
+    }
     case "review":
       if (!arg) throw new Error('uso: review owner/repo#123');
       await start(arg);
@@ -470,6 +474,7 @@ async function main(): Promise<void> {
           "",
           "  seed                     grava a versao do agent semente",
           "  demo                     roda o pipeline num PR sintetico, sem credencial",
+          "  fixture:run              planta uma execucao pronta no banco, sem chamar modelo",
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",

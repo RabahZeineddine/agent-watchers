@@ -7,6 +7,7 @@ import {
 import { buildGate } from "../src/executor/build.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
+import { credentialService } from "../src/services/credential-service.js";
 import { machineService } from "../src/services/machine-service.js";
 import { mcpService } from "../src/services/mcp-service.js";
 import { metricsService } from "../src/services/metrics-service.js";
@@ -55,6 +56,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "agents.list": () => agentService.list(),
     "agents.get": (agentId) => agentService.get(agentId),
     "agents.versions": (agentId) => agentService.listVersions(agentId),
+    "agents.budgets": () => agentService.budgets(),
 
     "runs.list": (filter) => runService.list(filter),
     "runs.get": (runId) => runService.get(runId),
@@ -81,6 +83,9 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "providers.list": async () => providerService.listProviders(),
     "providers.fallbacks": (machine) => providerService.getFallbacks(machine),
+    "providers.preview": (models, machine) => providerService.resolvePreviews(models, machine),
+
+    "credentials.overview": () => credentialService.overview(),
 
     "metrics.report": (options) => metricsService.report(options),
     "machine.profile": () => machineService.profile(),

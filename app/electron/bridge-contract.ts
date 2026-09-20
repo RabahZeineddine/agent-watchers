@@ -1,5 +1,6 @@
 import type { AgentService } from "../src/services/agent-service.js";
 import type { ApprovalService } from "../src/services/approval-service.js";
+import type { CredentialService } from "../src/services/credential-service.js";
 import type { MachineService } from "../src/services/machine-service.js";
 import type { McpService } from "../src/services/mcp-service.js";
 import type { MetricsService } from "../src/services/metrics-service.js";
@@ -35,6 +36,7 @@ interface ServiceApi {
   "agents.list": AgentService["list"];
   "agents.get": AgentService["get"];
   "agents.versions": AgentService["listVersions"];
+  "agents.budgets": AgentService["budgets"];
 
   "runs.list": RunService["list"];
   "runs.get": RunService["get"];
@@ -62,6 +64,14 @@ interface ServiceApi {
 
   "providers.list": ProviderService["listProviders"];
   "providers.fallbacks": ProviderService["getFallbacks"];
+  /** Onde cada modelo do spec cai nesta maquina. So conta, nao dispara nada. */
+  "providers.preview": ProviderService["resolvePreviews"];
+
+  /**
+   * Onde cada credencial mora e se ha valor guardado nela. Nunca o valor: o
+   * cofre so se abre no caminho de quem vai conectar, e a janela nao e esse.
+   */
+  "credentials.overview": CredentialService["overview"];
 
   "metrics.report": MetricsService["report"];
   "machine.profile": MachineService["profile"];
@@ -89,6 +99,7 @@ export const BRIDGE_CHANNELS = [
   "agents.list",
   "agents.get",
   "agents.versions",
+  "agents.budgets",
   "runs.list",
   "runs.get",
   "runs.findings",
@@ -101,6 +112,8 @@ export const BRIDGE_CHANNELS = [
   "mcp.tools",
   "providers.list",
   "providers.fallbacks",
+  "providers.preview",
+  "credentials.overview",
   "metrics.report",
   "machine.profile",
   "triggers.list",

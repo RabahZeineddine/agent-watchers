@@ -2,29 +2,38 @@
   "compilerOptions": {
     "target": "ES2023",
     "lib": [
-      "ES2023"
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
     ],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": [
-      "node"
+      "vite/client"
     ],
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
       "@/*": [
-        "./renderer/*"
+        "./*"
       ]
     }
   },
   "include": [
     "src/**/*.ts",
-    "electron/**/*.ts",
-    "drizzle.config.ts"
+    "src/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "hooks/**/*.ts",
+    "hooks/**/*.tsx",
+    "vite.config.ts"
   ]
 }

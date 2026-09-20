@@ -6,9 +6,10 @@ Atualizado em 19 de setembro de 2026.
 
 ## O que existe e roda
 
-Núcleo headless em `app/`, 20 arquivos TypeScript, verificação de tipos limpa.
-A casca Electron ainda não existe; tudo passa pela linha de comando, com o mesmo
-executor que a interface vai usar.
+Núcleo headless em `app/`, verificação de tipos limpa. A casca Electron já sobe
+e carrega a página construída em `app/renderer`, ainda sem tela de verdade.
+Tudo que existe continua alcançável pela linha de comando, com o mesmo executor
+que a interface vai usar.
 
 | área | estado |
 |---|---|
@@ -34,12 +35,19 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
-| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth, sem interface ainda |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
-| interface | a janela ainda não carrega nada |
+| ponte entre janela e serviços | preload em sandbox, 25 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
+| componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
+| cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
+| layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
+| tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
+| tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
+| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
+| grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 
 ## Execução verificada
 
@@ -66,6 +74,7 @@ npm install
 npm run db:push
 npm run dev seed
 npm run dev demo                      # não precisa de credencial
+npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
@@ -88,6 +97,8 @@ npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
 npm run build:main                    # empacota o processo principal em dist/main.cjs
+npm run build:renderer                # constrói a página em dist/renderer
+npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
 npx electron dist/main.cjs --remove-secret provider/anthropic
@@ -188,6 +199,234 @@ núcleo e o `better-sqlite3` para dentro do preload.
 rejeição de `ipcMain.handle`, e o smoke prova de propósito que decidir sobre uma
 pendência inexistente é recusado. A linha de erro que aparece depois do aviso
 `ponte: a proxima linha de erro e a recusa esperada da gate` é o teste passando.
+
+**Módulo ES em `file://`.** A página construída pelo Vite sai com
+`<script type="module">`, e num Chrome de mesa isso não carrega de `file://`,
+porque a origem é opaca e o import bate em CORS. O Electron não aplica essa
+recusa, então a janela carrega o `dist/renderer/index.html` do disco direto,
+sem servidor e sem esquema próprio registrado. O que a página precisa em troca
+é `base` relativa no Vite: caminho absoluto viraria a raiz do volume.
+
+**Raiz montada não prova folha de estilo.** O smoke pergunta ao renderer se o
+`#root` tem filho, o que só diz que o React rodou. A página carrega um marcador
+com a classe `hidden`, e o smoke confere que ele está com `display: none`: se o
+CSS construído não tivesse chegado, a raiz montaria igual e o teste passaria
+sem interface nenhuma. O console de erro do renderer entra no mesmo exame,
+porque módulo que falha ao carregar deixa a raiz vazia sem estourar do lado do
+processo principal.
+
+**`vite build` recebe a raiz por posição.** No Vite 8 não existe `--root` na
+linha de comando: a opção é o argumento posicional, e passar a flag aborta com
+`Unknown option`. O `build:renderer` chama
+`vite build --config renderer/vite.config.ts renderer`.
+
+**O `shadcn add` não roda sozinho.** Ele pergunta a biblioteca de componente
+(Base UI, React Aria, Radix UI) mesmo com `--yes`, e a resposta não cabe no
+`components.json`: o campo não existe no esquema. Para trazer o vendor deste
+marco a escolha foi empurrada pela entrada padrão, com
+`printf '\033[B\033[B\n' |` antes do comando, que é o Radix, que é o que o AI
+Elements espera. E ele só roda onde existe `package.json`, por isso o
+`components.json` mora em `app/` e não em `app/renderer/`, com o apelido `@/`
+declarado nos dois `tsconfig.json`. O que vem do registry do AI Elements cai em
+`app/src/components/ai-elements`, porque a CLI vê a pasta `src` e se guia por
+ela; o lugar certo é `app/renderer/components/ai-elements`, e mover é parte do
+trabalho.
+
+**O `cn` mudou de casa.** Os componentes novos do shadcn importam de um pacote
+`cn`, que é o `clsx` mais o `tailwind-merge` compilados, e não mais de
+`@/lib/utils`. Os do AI Elements continuam pedindo `@/lib/utils`. Por isso
+`app/renderer/lib/utils.ts` é uma reexportação de uma linha: duas
+implementações de merge brigariam no mesmo elemento.
+
+**Token do shadcn não vem do `add`.** Só o `init` escreve a folha, e o estilo v4
+manda importar `shadcn/tailwind.css`, que é a própria CLI virando dependência de
+build por causa de um arquivo. Em vez disso os tokens da paleta zinc foram
+copiados do registry para dentro de `renderer/src/index.css`, pelo mesmo motivo
+dos componentes: nada da interface pode depender de rede. O que veio de pacote
+foi só o `tw-animate-css`, porque os componentes usam `animate-in` e
+`slide-in-from-top-2`.
+
+**O shiki traz todas as gramáticas.** O `codeToHtml` do pacote raiz alcança o
+conjunto inteiro de linguagens, e o Vite parte isso em mais de 600 pedaços
+separados, carregados sob demanda. Funciona de `file://`, e o smoke prova isso
+esperando o destaque aparecer: import dinâmico do disco é justamente o que o
+teste exercita. O preço é o tamanho de `dist/renderer`, que só importa quando o
+empacotamento entrar.
+
+**Destaque de código não está no HTML construído.** O shiki colore no navegador,
+depois que a página montou, e ainda espera a gramática chegar. Conferir logo
+depois do `loadFile` encontraria o `pre` vazio. Por isso o smoke gira até
+aparecer `span` com cor dentro do bloco, e sem gramática o `pre` até existiria,
+só que com o código todo da mesma cor.
+
+**Catálogo de leitura da janela, e o que o compilador vigia.** O
+`READ_CHANNELS` de `app/renderer/lib/bridge.ts` é lista escrita à mão, e a
+emenda 5 do ADR 0003 é o motivo: derivar de `BRIDGE_CHANNELS` seria mais curto
+e entregaria `approvals.decide` junto, mais todo canal de escrita que aparecer
+depois. Revisão humana esquece disso, então existe uma guarda de tipo no mesmo
+arquivo: se o canal de decisão entrar na lista, o `Extract` deixa de ser `never`
+e o `npm run build` para antes de a janela enxergar o canal.
+
+**O contrato da ponte typecheca no renderer.** O `renderer/tsconfig.json` não
+tem `node` em `types`, e mesmo assim o `import type` de
+`electron/bridge-contract.ts` passa: o contrato só tem tipo, e o que ele puxa de
+`src/services/` chega por `import type` também. Import de valor vindo de lá
+quebraria isso na hora.
+
+**Argumento de hook entra por valor, não por referência.** O `useRead` põe
+`JSON.stringify(args)` na lista de dependência do efeito. Quem chama passa
+objeto literal, que muda de referência a cada render, e comparar por identidade
+dispararia a leitura em laço. Os argumentos de verdade viajam numa `ref`, porque
+espalhá-los na lista traria a identidade de volta.
+
+**Comparar versão exige duas, e o banco novo tem uma.** O
+`app/src/fixtures/agent-history.ts` planta a que falta, e planta a antiga, não a
+nova: ele grava o passo de ação em `draft` e logo em seguida devolve o spec
+canônico por cima, então o topo do histórico continua em `approve`. A ordem é o
+ponto. Deixar o `draft` no topo faria uma verificação afrouxar o modo de
+publicação do agent que roda nesta máquina, e o teto do que sai sem clique não é
+coisa que teste mexe. A idempotência é por conteúdo, e não por identificador:
+o `upsert` devolve a versão existente quando o spec bate com o topo, e a
+checagem antes da gravação é o que impede o histórico de crescer duas linhas a
+cada subida do smoke.
+
+**Contar token de ferramenta sobe servidor.** Por isso `mcp.tools` entrou em
+`ACTION_CHANNELS`, e não no catálogo de leitura: num hook que dispara ao montar
+a tela, abrir o destino de agents subiria todo servidor MCP citado por um spec.
+Atrás de um clique, sobe o que alguém pediu e só quando pediu. O smoke confere
+que existe um botão por passo com ferramenta, e nunca clica.
+
+**Prévia de modelo em lote.** O `resolvePreview` relê a tabela de substituição
+da máquina a cada chamada, então uma tela que pergunta pelo spec inteiro faria
+uma consulta por passo. O `resolvePreviews` lê uma vez e responde a lista, e é
+ele que o canal `providers.preview` encaminha.
+
+**A execução do smoke é plantada, não rodada.** Um `demo` de verdade custa
+minutos de assinatura, e o smoke roda a cada iteração do loop. Por isso
+`app/src/fixtures/demo-run.ts` escreve direto no banco uma execução pronta, com
+os números da execução verificada acima, e o smoke chama `ensureDemoRun()` antes
+de carregar a página. Ela é idempotente pelos identificadores fixos, então
+chamar de novo não acumula linha. O que ela não faz é decidir nada: o passo de
+ação nasce parado na fila, como o de verdade nasceu.
+
+**O botão de reexecutar nunca é clicado no smoke.** Clicar solta o executor de
+verdade, que gasta assinatura e leva o run junto. O que a verificação prova é a
+fiação: um botão por passo, com a chave do passo escrita nele. O canal
+`runs.rerunStep` chega à janela por `ACTION_CHANNELS`, uma segunda lista escrita
+à mão em `renderer/lib/bridge.ts`, separada da de leitura porque quem lê dispara
+sozinho ao montar a tela e quem age precisa de alguém clicando. A guarda de tipo
+que mantém `approvals.decide` fora passou a cobrir as duas listas.
+
+**Virtualização escrita à mão.** A lista de execuções tem linha de altura fixa,
+então a primeira visível é uma divisão e não há o que medir: `renderer/lib/janela.ts`
+resolve isso em trinta linhas, e um virtualizador de pacote só ganharia se a
+altura variasse. O smoke confere as duas coisas separadas, o total que a janela
+leu e quantas linhas existem de fato no DOM, porque uma lista que desenhasse
+zero linha ainda mostraria o total certo no marcador.
+
+**Detalhe de execução mora no hash, depois do destino.** `#/execucoes/<run-id>`.
+O roteador devolve o primeiro segmento como destino e o resto inteiro como
+detalhe, sem quebrar de novo, e destino desconhecido descarta o resto e cai na
+inbox. As telas recebem o detalhe do layout em vez de chamarem `useRota` por
+conta própria: dois ouvintes de `hashchange` discordariam por um quadro na troca
+de destino.
+
+**Marcador com menos um quer dizer lendo.** O detalhe faz duas leituras pela
+ponte, os passos e os achados, e a segunda termina depois. O smoke gira enquanto
+qualquer um dos dois estiver em menos um, senão conferiria o estado inicial
+achando que era o final.
+
+**Banco vazio faz o smoke passar sem provar nada.** A comparação entre o que a
+janela leu e o que o serviço devolve é verdadeira por acidente quando os dois
+lados são zero: uma ponte que respondesse `[]` sempre passaria igual. Por isso o
+banco do worktree precisa do `seed`, e por isso o marcador carrega os
+identificadores dos agents, e não só a contagem.
+
+**Roteamento por hash porque não há servidor.** A página é um arquivo no disco,
+carregado por `file://`. Caminho escrito pelo History API até navegaria, mas a
+primeira recarga pediria ao sistema de arquivos um `dist/renderer/agents` que
+nunca existiu. O hash fica fora do caminho, então recarregar e voltar pelo
+histórico caem no mesmo lugar sem nada atrás respondendo. Hash desconhecido não
+deixa a janela em branco: cai no destino padrão, que é a inbox, e o smoke prova
+isso porque hash velho chega de deep link e de janela restaurada.
+
+**O smoke navega escrevendo o hash.** É o mesmo caminho do clique na barra
+lateral, que também só escreve o hash e deixa o `hashchange` mandar de volta.
+Por isso a barra nunca discorda da tela: existe uma fonte só, e é o endereço.
+Os identificadores e os títulos que o smoke confere saem da própria barra, não
+de uma cópia do lado do processo principal, que passaria a concordar consigo
+mesma no dia em que o catálogo do renderer mudasse. O que fica escrito lá é só
+a exigência da story, que são estes quatro destinos.
+
+**A página lê ao montar, então o smoke precisa da ponte no ar.** O
+`checkRenderer` passou a chamar `setupBridge` e `trustWindow` antes do
+`loadFile`, e a esperar o marcador `ponte` sair de "carregando": conferir logo
+depois do `loadFile` pegaria a tela no estado de leitura pendente. O estado vai
+no próprio marcador justamente para a espera saber a hora, em vez de dormir um
+tempo arbitrário.
+
+**A tabela `budgets` não é onde o orçamento mora.** Ela existe no esquema e
+ninguém escreve nela: o teto que o executor lê antes de cada passo está no
+`budget` do spec do agent, e por isso mexer nele grava versão nova, pelo
+`AgentService.setBudget`. Quem monta tela de orçamento tirando da tabela
+mostraria vazio para sempre. O `AgentService.budgets()` cruza a versão do topo
+com `usage_daily`, que é onde o gasto acumula.
+
+**Credencial se acha por quem aponta, não por nome.** A tela de configuração
+poderia adivinhar que o provider `anthropic` usa a referência
+`provider/anthropic`, e acertaria hoje. Quem escolhe a referência, porém, é
+quem liga os dois, e nada impede dois cadastros apontarem para a mesma. Por
+isso o `credentials.overview` devolve os usuários de cada referência e a tela
+indexa por `kind:name`. O que ele nunca devolve é valor: o cofre só se abre no
+caminho de quem vai conectar, e a janela não é esse caminho.
+
+**O único clique do smoke é testar conexão.** O botão de reexecutar passo
+continua sendo só conferido por existir, porque clicar solta o executor de
+verdade. Testar conexão é diferente: o alvo é o `mcp-fixture-server.ts`, que é
+local, não fala com ninguém e custa o tempo de subir um `tsx`. E é o único
+jeito de provar o que a story pede, que é o teste respondendo na interface, e
+não o canal existindo. Por isso `mcp.test` entrou em `ACTION_CHANNELS`, ao lado
+de `mcp.tools`, e pelo mesmo motivo dela: as duas sobem o servidor que vão
+examinar, e numa leitura que dispara ao montar a tela isso subiria todo
+cadastro de uma vez.
+
+**O cadastro do fixture carrega caminho absoluto.** `src/fixtures/mcp-fixture.ts`
+registra o servidor de brinquedo com `node` mais o caminho inteiro do `tsx` e do
+fixture, pelo mesmo motivo do `.mcp.json`: o cadastro não tem campo para
+diretório de trabalho, e quem sobe o processo usa o `cwd` de quem chamou, que é
+`app/` para o smoke e a raiz do repositório para um cliente externo. O registro
+é por nome, então subir o smoke de novo sobrescreve em vez de acumular linha.
+
+**A família de workflow não se chama workflow no registry.** O
+`npx shadcn add @ai-elements/workflow` responde 404: o que existe são os itens
+soltos `canvas`, `node`, `edge`, `connection`, `controls`, `panel` e `toolbar`,
+e o grafo precisa dos quatro primeiros. Todos dependem de `@xyflow/react`, que
+entrou como dependência e é empacotada pelo Vite, sem nada de rede em tempo de
+execução. Como nas outras vendorizações, a CLI escreve em `app/src/components`
+e mover para `app/renderer/components` é parte do trabalho.
+
+**O dado de um nó do React Flow precisa de assinatura de índice.** A restrição
+é `Record<string, unknown>`, e `interface` não a satisfaz: só o alias de objeto
+ganha a assinatura implícita. Declarar o dado do passo como `interface` quebra
+a compilação em três lugares de uma vez, e a mensagem fala de índice ausente,
+não de React Flow.
+
+**O arranjo do grafo é conta nossa.** O React Flow desenha onde mandarem, e não
+posiciona nada sozinho. A coluna de cada passo é a maior distância até um passo
+sem dependência, e não a menor: com a menor, um passo que espera dois cairia à
+esquerda de quem ele espera e a seta apontaria para trás. Quem faz a conta é
+`renderer/lib/grafo.ts`, fora do componente.
+
+**A aresta entra no DOM um quadro depois do nó.** O React Flow só desenha a
+ligação depois de medir as caixas, então conferir logo que o nó aparece
+contaria zero aresta com o grafo certo na tela. O smoke gira até as duas
+contagens saírem do zero, e compara nó e aresta contra o `needs` do spec, não
+contra número escrito no teste.
+
+**A forma do grafo vem do spec, o estado vem do run.** A tabela `steps` guarda
+a ordem em que o executor rodou, que é uma linearização: desenhar a partir dela
+transformaria todo grafo numa fila. O `needs` só existe no spec da versão que
+executou, que o `runs.get` já devolve junto.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
