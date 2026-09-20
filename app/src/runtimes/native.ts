@@ -1,5 +1,5 @@
 import { generateText, stepCountIs, type LanguageModel } from "ai";
-import { buildProviders } from "../providers/registry.js";
+import { buildProviders, type ProviderEntry } from "../providers/registry.js";
 import type { Runtime, RuntimeRequest, RuntimeResult } from "./types.js";
 
 /**
@@ -10,7 +10,10 @@ import type { Runtime, RuntimeRequest, RuntimeResult } from "./types.js";
  */
 export class NativeRuntime implements Runtime {
   readonly id = "native";
-  private providers = buildProviders();
+
+  // Recebe os provedores prontos porque quem monta o executor ja os remontou
+  // com o que veio do keychain. Construir aqui de novo leria so o ambiente.
+  constructor(private readonly providers: Record<string, ProviderEntry> = buildProviders()) {}
 
   private modelFor(provider: string, model: string): LanguageModel {
     const entry = this.providers[provider];

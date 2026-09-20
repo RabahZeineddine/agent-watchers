@@ -28,13 +28,18 @@ executor que a interface vai usar.
 | cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
-| agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; falta o evento de energia do M3 |
+| agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
 | camada de serviço, dez serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
-| agendador por cursor | pronto, falta o evento de energia do M3 |
-| casca Electron e interface | não começou |
+| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth, sem interface ainda |
+| credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
+| notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
+| deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
+| ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| interface | a janela ainda não carrega nada |
 
 ## Execução verificada
 
@@ -73,9 +78,20 @@ npm run dev tick                      # uma batida nos gatilhos habilitados
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
+npm run dev secrets                   # credenciais guardadas e quem aponta para elas
+npm run dev secret:link mcp:locum-fixture mcp/locum-fixture
+npm run dev secret:unlink provider:anthropic
+npm run dev startup                   # o Locum sobe junto com o login?
+npm run dev startup:on                # passa a subir, valendo na próxima subida
+npm run dev startup:off               # deixa de subir
 npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
+npm run build:main                    # empacota o processo principal em dist/main.cjs
+npm run smoke                         # sobe o Electron sem janela e sai 0
+npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
+npx electron dist/main.cjs --remove-secret provider/anthropic
+npm start                             # sobe o Electron com janela
 ```
 
 ## Armadilhas encontradas
@@ -93,6 +109,85 @@ publica sai assinado pela mesma conta que revisa a mão. Sem marca no corpo, o
 reconciliador leria o próprio achado como confirmação humana dele mesmo. Por
 isso tudo que sai leva um `<!-- locum -->`, invisível no GitHub, e o
 reconciliador descarta a review e os comentários que a carregam.
+
+**Dois ABIs para o mesmo `better-sqlite3`.** O binário em `node_modules` é
+compilado para o ABI do Node, que a linha de comando usa por `tsx`. O Electron
+tem ABI próprio e recusa esse binário, e os dois não cabem no mesmo caminho.
+O `build:main` recompila para o Electron, guarda a cópia em `app/native/`, e
+devolve o `node_modules` ao estado de Node. Quem carrega escolhe: o processo
+principal aponta `LOCUM_SQLITE_BINDING` para a cópia antes de importar o núcleo,
+e sem a variável vale o caminho padrão.
+
+**Item de login fora de app empacotado.** O macOS só aceita
+`app.setLoginItemSettings` de aplicativo empacotado, assinado e notarizado.
+Rodando por `npx electron` a chamada volta com `Operation not permitted` no log
+e nada é registrado. Por isso a preferência guardada no banco é a fonte da
+verdade, e o processo principal reconcilia o sistema com ela a cada subida, em
+vez de ler o sistema e acreditar. A preferência tem três estados: sem linha na
+tabela `settings` quer dizer que ninguém decidiu, e aí o app não mexe em nada.
+
+**Onde o segredo cabe.** O Electron não expõe a API de item do keychain, só o
+`safeStorage`, que guarda a chave de cifra no keychain e devolve texto cifrado
+para quem chamou. Então o par é chave no keychain mais texto cifrado num arquivo
+por credencial dentro da pasta do app, e no banco fica apenas o `credential_ref`.
+Gravar exige o app aberto; quem usa a linha de comando lê `undefined` e cai para
+a variável de ambiente, que é como sempre funcionou.
+
+**Marcador de credencial no cadastro de MCP.** O valor `${credential}` em `env`
+ou `headers` é onde o segredo entra na hora de conectar. A substituição acontece
+num caminho separado do que alimenta tela, log e ferramenta de leitura, para que
+não exista listagem por onde um segredo decifrado escape. Sem nada guardado, a
+entrada de `env` cai para a variável de ambiente de mesmo nome, e não havendo
+nem isso a entrada some do mapa: mandar o marcador adiante viraria um token
+literal numa chamada de rede.
+
+**Notificação é sobre o que chegou agora.** A primeira leitura da fila na
+subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de
+uma semana desligado despejaria uma pilha de avisos de coisa velha. O acumulado
+tem lugar próprio, que é a contagem na bandeja. Por isso a memória do que já foi
+avisado é de sessão e não vai para o banco.
+
+**Dono do esquema `locum://` fora de app empacotado.** Ao contrário do item de
+login, o `setAsDefaultProtocolClient` funciona rodando por `npx electron`, e o
+`isDefaultProtocolClient` volta verdadeiro. O que fica registrado no sistema,
+porém, é o binário do Electron, não o Locum: enquanto não houver empacotamento,
+abrir um `locum://` acorda o Electron sem o `dist/main.cjs`. O empacotamento
+precisa declarar `CFBundleURLTypes` no `Info.plist`, porque a chamada em tempo
+de execução não substitui a declaração do bundle.
+
+**A URL do deep link é entrada de fora.** Qualquer programa da máquina abre um
+`locum://`, então nada do que vem nela é confiável: a leitura nunca estoura, o
+que não bate vira rota desconhecida e é descartado, e o motivo registrado no log
+não repete a consulta, que é por onde o `code` viaja. O `state` é comparado em
+tempo constante e consumido antes da troca do código, para que um segundo
+retorno com o mesmo `state` não valha nada.
+
+**Onde o token de OAuth cabe.** O que vai para o cofre é o valor pronto do
+cabeçalho, `Bearer <token>`, e não o token cru: a substituição de `${credential}`
+troca o valor inteiro da entrada de `headers`, então não sobra lugar para montar
+o prefixo depois. O par `state` mais `code_verifier` também mora no cofre, e não
+em memória, porque o macOS pode ter fechado o Locum enquanto a pessoa autorizava
+no navegador e a abertura do `locum://` sobe um processo novo, que não lembra de
+nada.
+
+**Preload só roda quando um documento carrega.** Conferir que o
+`dist/preload.cjs` existe não prova ponte nenhuma: enquanto a janela não chama
+`loadURL`, o preload nem é executado e `window.locum` não existe. Por isso o
+smoke sobe uma janela com `show: false`, carrega `about:blank`, e pergunta ao
+próprio renderer o que ele enxerga. Nada aparece na tela e o caminho inteiro é
+exercitado, do `contextBridge` até o serviço.
+
+**`packages: "external"` não vale para o preload.** No sandbox não existe
+resolução por `node_modules`: o que não estiver dentro do arquivo não carrega. O
+pacote do preload sai com tudo embutido e só `electron` como externo, que é o
+único módulo que o sandbox fornece. Por isso o contrato da ponte, que os dois
+lados importam, não tem import de valor vindo de `src/`: um só arrastaria o
+núcleo e o `better-sqlite3` para dentro do preload.
+
+**Erro de handler de IPC sempre vai para o log.** O Electron registra toda
+rejeição de `ipcMain.handle`, e o smoke prova de propósito que decidir sobre uma
+pendência inexistente é recusado. A linha de erro que aparece depois do aviso
+`ponte: a proxima linha de erro e a recusa esperada da gate` é o teste passando.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
@@ -117,8 +212,9 @@ O agendador não tem relógio próprio. Ele é batido de fora, hoje pelo comando
 `tick`, e devolve em `nextDueAt` quando quer a próxima batida, para quem chama
 armar um temporizador só. Cada gatilho tem seu cursor de tempo na tabela
 `cursors`, então sono da máquina não perde janela: a primeira batida depois de
-acordar já encontra o gatilho vencido. O `onWake()` existe esperando o evento de
-energia do M3.
+acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
+principal do Electron, em `app/electron/power.ts`, no `resume` do
+`powerMonitor`, e o tempo que a máquina passou dormindo vai para o log.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as

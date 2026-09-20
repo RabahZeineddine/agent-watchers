@@ -175,7 +175,7 @@
       "description": "Criar app/electron/main.ts com processo principal, janela unica e carregamento do nucleo. Build do main com esbuild para app/dist/main.cjs. Rodar electron-rebuild para better-sqlite3 casar com o ABI do Electron, porque modulo nativo compilado para o Node do sistema nao carrega no Electron. Aceitar a flag --smoke, que sobe, verifica que o banco abre, e sai com codigo 0 sem mostrar janela.",
       "done_when": "npm run build:main e npx electron app/dist/main.cjs --smoke sai 0.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -186,7 +186,7 @@
       "description": "Icone na bandeja com contagem de aprovacoes pendentes lida do ApprovalService, menu com abrir, pausar tudo, e sair. A contagem atualiza quando a fila muda. Sob --smoke, criar a bandeja, conferir que existe, e sair.",
       "done_when": "Sob --smoke a bandeja e criada e a contagem bate com listPending().",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -197,7 +197,7 @@
       "description": "app.setLoginItemSettings com preferencia guardada, mais comandos na linha de comando para ligar e desligar. Nao ligar sozinho na primeira execucao: e decisao de quem instala.",
       "done_when": "O estado do login item e lido e escrito, e a preferencia sobrevive a reinicio do app.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -208,7 +208,7 @@
       "description": "Escutar powerMonitor resume e suspend. Ao acordar, chamar uma batida do agendador, que ja anda por cursor e recupera a janela perdida. Registrar no log quanto tempo a maquina ficou dormindo.",
       "done_when": "Sob --smoke os ouvintes estao registrados e uma batida simulada de resume chama o agendador uma vez.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -219,7 +219,7 @@
       "description": "Usar safeStorage para guardar segredo, com a referencia em credential_ref das tabelas providers e mcp_servers. Ler do keychain na montagem do executor, caindo para variavel de ambiente quando nao houver nada guardado, para nao quebrar quem usa a linha de comando. Nunca gravar segredo no banco nem em log.",
       "done_when": "Segredo gravado e lido pelo keychain, e o banco guarda so a referencia.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -230,7 +230,7 @@
       "description": "Notification nativa quando um achado critico entra na fila ou quando um run falha. Clique abre a janela na inbox. Agrupar: uma notificacao por run, nao uma por achado.",
       "done_when": "Sob --smoke uma notificacao e montada sem ser exibida e o payload aponta para o run certo.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -241,7 +241,7 @@
       "description": "Registrar o protocolo locum:// para receber retorno de OAuth de servidor MCP remoto. Tratar a abertura tanto com o app ja rodando quanto com o app fechado. Guardar o token pelo caminho do M3.5, nunca em arquivo solto.",
       "done_when": "O protocolo aparece registrado e uma URL de teste e roteada para o tratador.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -252,7 +252,7 @@
       "description": "contextBridge com preload, expondo a camada de servico ao renderer por canais tipados. Sem nodeIntegration na janela. A ponte nao expoe aprovar nem publicar como chamada livre: a decisao continua passando pela ApprovalGate, e a ponte so encaminha o clique de uma pessoa.",
       "done_when": "O preload expoe a ponte, a janela nao tem nodeIntegration, e a ponte compila contra os tipos dos servicos.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

@@ -16,11 +16,26 @@ import { githubReviewHandler } from "../sources/github.js";
  * para reexecutar um passo, e o servidor MCP vai precisar da mesma montagem.
  */
 export async function buildExecutor(): Promise<Executor> {
+  // Credencial guardada no keychain entra aqui, antes de qualquer conexao. Sem
+  // keychain, ou sem nada guardado, vale o ambiente do processo como sempre.
+  await providerService.loadSecrets();
+
   const servers = await mcpService.enabledConfigs();
   const configs = new Map(servers.map((c) => [c.name, c]));
-  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
+  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime(providerService.entries())]]);
   if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
-  const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate, machineId });
+  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate: buildGate(), machineId });
+}
+
+/**
+ * A porta unica de saida, com os handlers que sabem publicar.
+ *
+ * Mora aqui porque quem decide fora do executor, hoje a linha de comando e a
+ * ponte da janela, precisa da mesma montagem. Montar o mapa em cada chamador
+ * abriria caminho para um deles registrar um handler diferente sem ninguem
+ * notar, e a gate so vale como porta unica se ela for sempre a mesma porta.
+ */
+export function buildGate(): ApprovalGate {
+  return new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
 }

@@ -29,10 +29,21 @@ export type ProviderEntry = {
   model?: (id: string) => LanguageModel;
 };
 
-function env(name: string): string | undefined {
-  const v = process.env[name];
-  return v && v.length > 0 ? v : undefined;
-}
+/**
+ * Variavel de ambiente que o `credential_ref` de cada provider preenche.
+ *
+ * `claude-code` e `ollama` ficam de fora de proposito: um vive da sessao do
+ * binario e o outro roda local, entao nenhum dos dois tem segredo a guardar.
+ * Nos compativeis com OpenAI so a chave vem do keychain; a URL base nao e
+ * segredo e continua no ambiente.
+ */
+export const PROVIDER_SECRET_VARS: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+  glm: "GLM_API_KEY",
+  gateway: "GATEWAY_API_KEY",
+};
 
 let claudeBinaryChecked: boolean | undefined;
 
@@ -48,7 +59,17 @@ export function claudeCodeAvailable(): boolean {
   return claudeBinaryChecked;
 }
 
-export function buildProviders(): Record<string, ProviderEntry> {
+/**
+ * `secrets` vem do keychain, indexado por variavel de ambiente, e vence o
+ * ambiente do processo: quem cadastrou a chave pelo app nao deveria precisar
+ * exportar nada no shell. Sem nada guardado, tudo se comporta como antes.
+ */
+export function buildProviders(secrets: Record<string, string> = {}): Record<string, ProviderEntry> {
+  const env = (name: string): string | undefined => {
+    const v = secrets[name] ?? process.env[name];
+    return v && v.length > 0 ? v : undefined;
+  };
+
   const compat = (name: string, keyVar: string, urlVar: string) => {
     const apiKey = env(keyVar);
     const baseURL = env(urlVar);

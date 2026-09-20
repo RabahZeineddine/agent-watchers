@@ -1,6 +1,5 @@
-import { ApprovalGate } from "./approval/gate.js";
 import { McpTransport } from "./config/types.js";
-import { buildExecutor } from "./executor/build.js";
+import { buildExecutor, buildGate } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
 import { executionService } from "./services/execution-service.js";
@@ -10,8 +9,10 @@ import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { reconcileService } from "./services/reconcile-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
+import { secretService } from "./services/secret-service.js";
+import { startupService } from "./services/startup-service.js";
 import { triggerService } from "./services/trigger-service.js";
-import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
+import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
 
@@ -256,6 +257,81 @@ async function tick(wait: boolean): Promise<void> {
   );
 }
 
+/**
+ * Estado da preferencia de subir junto com o login.
+ *
+ * A linha de comando so mexe no que esta guardado: quem fala com o item de
+ * login do macOS e o processo do Electron, entao o que se grava aqui vale a
+ * partir da proxima vez que o Locum subir.
+ */
+async function startup(decision: boolean | null): Promise<void> {
+  if (decision !== null) await startupService.setPreference(decision);
+
+  const preference = await startupService.getPreference();
+  if (preference === null) {
+    console.log("inicio no login: nao decidido, e o app nao liga sozinho");
+    return;
+  }
+  console.log(
+    `inicio no login: ${preference ? "ligado" : "desligado"}` +
+      (decision === null ? "" : ", valendo na proxima vez que o Locum subir"),
+  );
+}
+
+/**
+ * O que esta guardado no cofre e quem aponta para la.
+ *
+ * Nenhum valor sai impresso, e pela linha de comando nem daria: o keychain so
+ * abre dentro do app. Aqui se enxerga o endereco, nao o segredo.
+ */
+async function secrets(): Promise<void> {
+  const guardados = secretService.list();
+  console.log(
+    secretService.available
+      ? "cofre: legivel neste processo"
+      : "cofre: so o app Electron le, aqui vale a variavel de ambiente",
+  );
+
+  const usos = new Map<string, string[]>();
+  for (const [name, ref] of Object.entries(await providerService.credentialRefs())) {
+    usos.set(ref, [...(usos.get(ref) ?? []), `provider ${name}`]);
+  }
+  for (const entry of await mcpService.list()) {
+    if (!entry.credentialRef) continue;
+    usos.set(entry.credentialRef, [...(usos.get(entry.credentialRef) ?? []), `mcp ${entry.config.name}`]);
+  }
+
+  console.log("\nguardados:");
+  if (guardados.length === 0) console.log("  nenhum");
+  for (const ref of guardados) {
+    console.log(`  ${ref.padEnd(32)} ${usos.get(ref)?.join(", ") ?? "sem cadastro apontando"}`);
+  }
+
+  const orfaos = [...usos].filter(([ref]) => !secretService.has(ref));
+  if (orfaos.length > 0) {
+    console.log("\napontam para credencial que nao existe no cofre:");
+    for (const [ref, quem] of orfaos) console.log(`  ${ref.padEnd(32)} ${quem.join(", ")}`);
+  }
+}
+
+/** Liga ou desliga um cadastro de uma credencial do cofre. */
+async function secretLink(alvo: string, ref: string | null): Promise<void> {
+  const at = alvo.indexOf(":");
+  const kind = at < 0 ? "" : alvo.slice(0, at);
+  const name = alvo.slice(at + 1);
+  if (kind !== "provider" && kind !== "mcp") {
+    throw new Error("alvo invalido, use provider:<nome> ou mcp:<nome>");
+  }
+
+  if (kind === "provider") await providerService.setCredentialRef(name, ref);
+  else await mcpService.setCredentialRef(name, ref);
+
+  console.log(ref === null ? `${alvo} desvinculado` : `${alvo} aponta para ${ref}`);
+  if (ref !== null && !secretService.has(ref)) {
+    console.log(`nada guardado em ${ref} ainda: grave com "electron dist/main.cjs --set-secret ${ref}"`);
+  }
+}
+
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
   const arg = args[0];
@@ -302,6 +378,28 @@ async function main(): Promise<void> {
     case "providers":
       await providers();
       break;
+    case "startup":
+      await startup(null);
+      break;
+    case "startup:on":
+      await startup(true);
+      break;
+    case "startup:off":
+      await startup(false);
+      break;
+    case "secrets":
+      await secrets();
+      break;
+    case "secret:link": {
+      const [alvo, ref] = args;
+      if (!alvo || !ref) throw new Error("uso: secret:link <provider|mcp>:<nome> <escopo/nome>");
+      await secretLink(alvo, ref);
+      break;
+    }
+    case "secret:unlink":
+      if (!arg) throw new Error("uso: secret:unlink <provider|mcp>:<nome>");
+      await secretLink(arg, null);
+      break;
     case "mcp":
       await mcpList();
       break;
@@ -344,8 +442,7 @@ async function main(): Promise<void> {
     case "approve":
     case "reject": {
       if (!arg) throw new Error(`uso: ${cmd} <approval-id>`);
-      const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
-      await gate.decide(arg, cmd === "approve" ? "approved" : "rejected");
+      await buildGate().decide(arg, cmd === "approve" ? "approved" : "rejected");
       console.log(`${arg} ${cmd === "approve" ? "aprovado e publicado" : "rejeitado"}`);
       break;
     }
@@ -382,6 +479,12 @@ async function main(): Promise<void> {
           "  triggers                 lista os gatilhos e quando o agendador quer a proxima batida",
           "  tick [--wait]            uma batida do agendador nos gatilhos habilitados",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
+          "  startup                  mostra se o Locum sobe junto com o login",
+          "  startup:on               passa a subir no login a partir da proxima subida",
+          "  startup:off              deixa de subir no login",
+          "  secrets                  credenciais guardadas no cofre e quem aponta para elas",
+          "  secret:link <provider|mcp>:<nome> <escopo/nome>",
+          "  secret:unlink <provider|mcp>:<nome>",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
           "  mcp:tools <nome>         lista as ferramentas que o servidor expoe",

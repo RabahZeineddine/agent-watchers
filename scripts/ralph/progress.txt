@@ -13,3 +13,11 @@
 2026-09-19  N.1   feito      reconciliador cruza review humano com achados, grava finding_outcomes e review_signals, tsc limpo
 2026-09-19  N.2   feito      agregacao de finding_outcomes em agent_metrics por versao mais skills, cli ganhou metrics
 2026-09-19  N.3   feito      agendador por cursor de tempo, sem relogio proprio, guarda de cadencia e guarda de evento por run, cli ganhou tick e triggers
+2026-09-19  M3.1  feito      esqueleto Electron com --smoke saindo 0, binding do better-sqlite3 duplicado por ABI em native/
+2026-09-19  M3.2  feito      bandeja com contagem de pendencias, menu abrir, pausar tudo e sair, smoke confere contra listPending
+2026-09-19  M3.3  feito      preferencia de inicio no login no banco, StartupService e SettingsService novos, cli ganhou startup, startup:on e startup:off
+2026-09-19  M3.4  feito      eventos de energia ligados ao agendador, resume bate onWake e o sono vai para o log, smoke simula suspend e resume
+2026-09-19  M3.5  feito      SecretService com safeStorage, credential_ref aponta e o segredo fica cifrado fora do banco
+2026-09-19  M3.6  feito      notificacao nativa por run, NoticeService agrupa criticos e falha, clique aponta a inbox, smoke monta sem exibir
+2026-09-19  M3.7  feito      deep link locum registrado, retorno de OAuth com PKCE e state no cofre, token vira cabecalho e o cadastro guarda so a referencia
+2026-09-19  M3.8  feito      ponte tipada com preload em sandbox, 22 canais sobre os servicos, decisao segue na gate
