@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +36,26 @@ function ensureElectronBinding() {
 }
 
 ensureElectronBinding();
+
+/**
+ * As migracoes viajam como arquivo, ao lado do bundle.
+ *
+ * O migrator do drizzle le os `.sql` do disco na hora de rodar, entao embutir
+ * a pasta no pacote do esbuild nao adiantaria. Copiar para `dist/` faz o
+ * caminho ser o mesmo rodando por `npx electron dist/main.cjs` e dentro do
+ * `.app`, onde `dist/` inteiro entra como recurso.
+ */
+function copyMigrations() {
+  const source = join(appDir, "drizzle");
+  if (!existsSync(join(source, "meta", "_journal.json"))) {
+    throw new Error("nao achei app/drizzle, rode npm run db:generate");
+  }
+  const target = join(appDir, "dist", "drizzle");
+  rmSync(target, { recursive: true, force: true });
+  cpSync(source, target, { recursive: true });
+}
+
+copyMigrations();
 
 await build({
   entryPoints: [join(appDir, "electron", "main.ts")],

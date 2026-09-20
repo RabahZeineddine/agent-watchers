@@ -417,7 +417,7 @@
       "description": "Hoje o esquema nasce de drizzle-kit push, que é ferramenta de desenvolvimento e não existe no aplicativo empacotado: instalado numa máquina limpa, ele subiria sem tabela nenhuma. Gerar migrações com drizzle-kit generate para app/drizzle, embutir a pasta no pacote, e aplicar na subida do processo principal com o migrator do drizzle, antes de qualquer serviço tocar o banco. Banco já existente não pode perder dado.",
       "done_when": "Apagando o banco e subindo o aplicativo, o esquema é criado sozinho e o smoke passa.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

@@ -14,6 +14,7 @@ que a interface vai usar.
 | área | estado |
 |---|---|
 | esquema SQLite com 17 tabelas | pronto |
+| migração de esquema no aplicativo | migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
@@ -77,7 +78,8 @@ não reexecutou os passos concluídos.
 ```bash
 cd app
 npm install
-npm run db:push
+npm run db:push                       # desenvolvimento: empurra o esquema direto
+npm run db:generate                   # gera a migração depois de mexer no schema.ts
 npm run dev seed
 npm run dev demo                      # não precisa de credencial
 npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
@@ -533,6 +535,24 @@ de trabalho: o cliente sobe o processo na raiz do repositório, onde não existe
 `node_modules`. Por isso o registro chama `node` com o caminho do `tsx` dentro
 de `app/node_modules`, em vez de `npm run mcp`, que ainda escreveria o cabeçalho
 do script no stdout e corromperia a sessão.
+
+**O esquema do aplicativo vem de migração, o do desenvolvimento vem de push.**
+O `drizzle-kit push` é ferramenta de desenvolvimento e não existe dentro do
+`.app`: numa máquina limpa o Locum subiria sem tabela nenhuma. Por isso o
+processo principal aplica `app/drizzle` na subida, antes de qualquer serviço
+tocar o banco, inclusive antes do idioma, que mora em `settings`. Quem mexer no
+`schema.ts` precisa rodar `npm run db:generate` junto, senão o pacote sobe com
+um esquema mais velho que o código.
+
+**A pasta de migração viaja como arquivo.** O migrator do drizzle lê os `.sql`
+do disco na hora de rodar, então embutir a pasta no pacote do esbuild não
+adianta. O `build:main` copia `app/drizzle` para `app/dist/drizzle`, e o
+processo principal aponta para lá pelo caminho do próprio bundle.
+
+**Banco que nasceu de `push` é adotado, não recriado.** Ele tem as tabelas e
+nenhum registro de migração, e a primeira migração estouraria em `table agents
+already exists`. Na primeira subida com migração, o Locum reconhece o esquema
+já existente e marca as migrações da pasta como aplicadas, sem tocar em dado.
 
 ## Próximos passos
 

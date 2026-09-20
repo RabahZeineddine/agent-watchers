@@ -2082,6 +2082,23 @@ async function runSecretCommand(): Promise<void> {
  * ausente estoura, como na janela: texto cru num menu da barra do sistema passa
  * despercebido por semanas.
  */
+/**
+ * Cria ou atualiza o esquema antes de qualquer serviço tocar o banco.
+ *
+ * Primeira coisa da subida, antes até do idioma: o dicionário sai de
+ * `settings`, que é tabela, e numa máquina onde o Locum acabou de ser
+ * instalado não existe tabela nenhuma. O `drizzle-kit push` que criava o
+ * esquema é ferramenta de desenvolvimento e não viaja no pacote.
+ *
+ * A pasta vem por caminho explícito porque o migrator lê os `.sql` do disco:
+ * o build copia `drizzle/` para junto do `main.cjs`, e é de lá que ela sai
+ * tanto rodando por `npx electron dist/main.cjs` quanto empacotada.
+ */
+async function migrarEsquema(): Promise<import("../src/db/migrate.js").ResultadoDaMigracao> {
+  const { migrateDb } = await import("../src/db/migrate.js");
+  return migrateDb(join(__dirname, "drizzle"));
+}
+
 async function setupI18n(): Promise<string> {
   const { i18nService } = await import("../src/services/i18n-service.js");
   const { language } = await i18nService.resolve(app.getLocale());
@@ -2150,9 +2167,15 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
 async function main(): Promise<void> {
   await app.whenReady();
 
+  // Antes de tudo que lê o banco, inclusive do idioma, que mora em `settings`.
+  const esquema = await migrarEsquema();
+
   // Antes de qualquer texto: bandeja, notificacao e o proprio smoke falam pelo
   // dicionario, e pedir chave antes disso estoura de proposito.
   await setupI18n();
+
+  if (esquema.criado) console.log(t("schema.created", { count: esquema.disponiveis }));
+  else if (esquema.adotado) console.log(t("schema.adopted", { count: esquema.disponiveis }));
 
   if (flagValue("--set-secret") !== undefined || flagValue("--remove-secret") !== undefined) {
     await runSecretCommand();
@@ -2170,6 +2193,7 @@ async function main(): Promise<void> {
     // continua valendo, porque ela nao pede clique de ninguem para existir.
     app.dock?.hide();
     const agents = await checkCore();
+    const schema = t("smoke.schema", { count: esquema.disponiveis });
 
     const loginItem = await checkLoginItem();
 
@@ -2194,6 +2218,7 @@ async function main(): Promise<void> {
     console.log(
       t("smoke.ok", {
         agents,
+        schema,
         pending,
         loginItem,
         power,

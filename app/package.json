@@ -8,6 +8,7 @@
   },
   "scripts": {
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/mcp-server/index.ts",
     "review": "tsx src/cli.ts review",

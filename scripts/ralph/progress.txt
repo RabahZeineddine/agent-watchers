@@ -35,3 +35,4 @@
 2026-09-20  M4c.4 feito      agents, configuração, barra lateral, paleta, grafo e assistente pelo dicionário; prompt de sistema junto; smoke confere as quatro telas nos dois idiomas
 2026-09-20  M4c.5 feito      check-i18n varrendo renderer e electron por posição, v{version} e ⌘J para o dicionário
 2026-09-20  M4c.6 feito      seleção de idioma na configuração, troca sem recarregar a janela, bandeja e notificação junto
+2026-09-20  M5.1  feito      migrações em app/drizzle aplicadas na subida do processo principal, banco de push adotado sem recriar tabela, smoke em banco vazio e em banco com dado
