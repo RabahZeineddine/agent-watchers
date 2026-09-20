@@ -123,3 +123,20 @@ npm run dev approve <id>
 
 Uma consequência prática: uma story que peça ferramenta de aprovação no servidor
 MCP é para ser recusada, não cumprida.
+
+## Por que gravar agent tambem nao publica
+
+Nao expor `approve` nao basta sozinho. `upsert_agent` grava o spec inteiro, e um
+passo de acao carrega o modo: `approve`, `draft` ou `auto`. Gravar um passo em
+`auto` e chamar `run_agent` publicaria sem clique nenhum, contornando o ADR 0002
+em dois passos.
+
+Por isso a gravacao vinda daqui tem teto. Todo passo de acao que chegue em
+`draft` ou `auto` volta rebaixado para `approve`, e o rebaixamento vem declarado
+no campo `downgrades` da resposta. A excecao e o passo que ja estava naquele
+modo na versao anterior: significa que uma pessoa autorizou antes, pela
+interface ou pela linha de comando, e reeditar outra parte do spec nao pode
+derrubar essa autorizacao.
+
+A regra que vale nao e "nao existe ferramenta de aprovar". E "nada sai sem uma
+pessoa ter dito que sai".

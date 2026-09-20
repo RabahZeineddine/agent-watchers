@@ -28,7 +28,7 @@ export function registerConfigTools(server: McpServer): void {
     "upsert_agent",
     {
       description:
-        "Grava um AgentSpec como versao nova e imutavel. Spec identico ao topo devolve a versao que ja existe. Spec invalido nao grava nada.",
+        "Grava um AgentSpec como versao nova e imutavel. Spec identico ao topo devolve a versao que ja existe. Spec invalido nao grava nada. Passo de acao gravado por aqui nasce em modo de aprovacao: rascunho e automatico sao rebaixados e o rebaixamento vem na resposta.",
       inputSchema: {
         spec: z
           .record(z.string(), z.unknown())
@@ -38,8 +38,22 @@ export function registerConfigTools(server: McpServer): void {
     },
     async ({ spec, note }) =>
       respond(async () => {
-        const version = await agentService.upsert(spec as unknown as AgentSpec, note);
-        return { agentId: version.agentId, version: version.version, note: version.note };
+        // "agent" e o teto: passo de acao gravado daqui nasce em aprovacao, e
+        // qualquer tentativa de subir para rascunho ou automatico volta
+        // rebaixada, com o rebaixamento declarado na resposta.
+        const version = await agentService.upsert(spec as unknown as AgentSpec, note, "agent");
+        return {
+          agentId: version.agentId,
+          version: version.version,
+          note: version.note,
+          downgrades: version.downgrades,
+          ...(version.downgrades.length > 0
+            ? {
+                aviso:
+                  "passo de acao so sobe de modo por decisao de uma pessoa, pela interface ou pela linha de comando",
+              }
+            : {}),
+        };
       }),
   );
 

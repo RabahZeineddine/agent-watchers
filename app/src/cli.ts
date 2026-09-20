@@ -17,7 +17,7 @@ import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
-  const version = await agentService.upsert(prReviewSpec, "seed");
+  const version = await agentService.upsert(prReviewSpec, "seed", "human");
 
   if (machineId !== "minha-maquina") {
     for (const f of fallbacksSemAssinatura) {

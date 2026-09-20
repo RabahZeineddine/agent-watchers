@@ -1,16 +1,28 @@
 import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
-import { AgentBudgetPatch, AgentSpec } from "../config/types.js";
+import { AgentBudgetPatch, AgentSpec, type ActionMode } from "../config/types.js";
 
 type Db = typeof defaultDb;
 
 export type AgentRow = typeof schema.agents.$inferSelect;
 export type AgentVersionRow = typeof schema.agentVersions.$inferSelect;
 
+/** Quem esta gravando. Agent nao sobe modo de passo de acao; pessoa sobe. */
+export type Actor = "human" | "agent";
+
+/** Passo de acao que teve o modo rebaixado na gravacao. */
+export interface ActionDowngrade {
+  step: string;
+  from: ActionMode;
+  to: "approve";
+}
+
 /** Linha de versao com o spec ja validado, que e como o resto do sistema usa. */
 export interface AgentVersion extends Omit<AgentVersionRow, "spec"> {
   spec: AgentSpec;
+  /** Vazio quando nada foi rebaixado. */
+  downgrades: ActionDowngrade[];
 }
 
 /**
@@ -50,11 +62,38 @@ export class AgentService {
    * Grava o spec como versao nova. Spec identico ao topo devolve a versao que
    * ja existe: reeditar sem mudar nada nao pode inflar o historico nem
    * desconectar os runs antigos da versao que eles executaram.
+   *
+   * O `actor` decide se o spec pode subir o modo de um passo de acao. Um agent
+   * nao pode: `approve` e o teto do que ele grava, e qualquer `draft` ou `auto`
+   * que ele mande e rebaixado, com o rebaixamento devolvido na resposta.
+   *
+   * Sem essa trava o ADR 0002 seria contornavel em dois passos. O servidor MCP
+   * nao expoe aprovacao, mas expoe `upsert_agent` e `run_agent`: gravar um passo
+   * de acao em `auto` e mandar rodar publicaria sem clique nenhum. A regra nao e
+   * "nao existe ferramenta de aprovar", e sim "nada sai sem uma pessoa ter dito
+   * que sai", e e essa que precisa valer.
    */
-  async upsert(spec: AgentSpec, note?: string): Promise<AgentVersion> {
+  async upsert(
+    spec: AgentSpec,
+    note?: string,
+    actor: Actor = "agent",
+  ): Promise<AgentVersion> {
     const parsed = AgentSpec.parse(spec);
     const latest = await this.latestRow(parsed.id);
-    if (latest && sameSpec(latest.spec, parsed)) return parseVersion(latest);
+    const guarded = actor === "human" ? { spec: parsed, downgrades: [] } : demoteActions(parsed, latest?.spec);
+
+    return this.write(guarded, latest, note);
+  }
+
+  private async write(
+    guarded: { spec: AgentSpec; downgrades: ActionDowngrade[] },
+    latest: AgentVersionRow | undefined,
+    note?: string,
+  ): Promise<AgentVersion> {
+    const parsed = guarded.spec;
+    if (latest && sameSpec(latest.spec, parsed)) {
+      return { ...parseVersion(latest), downgrades: guarded.downgrades };
+    }
 
     await this.db
       .insert(schema.agents)
@@ -75,7 +114,7 @@ export class AgentService {
       })
       .returning();
 
-    return parseVersion(inserted!);
+    return { ...parseVersion(inserted!), downgrades: guarded.downgrades };
   }
 
   /**
@@ -102,7 +141,8 @@ export class AgentService {
       else budget[key] = value;
     }
 
-    return this.upsert({ ...latest.spec, budget }, note ?? "orcamento ajustado");
+    // Mexer no orcamento nao mexe em passo de acao, entao nao ha o que rebaixar.
+    return this.upsert({ ...latest.spec, budget }, note ?? "orcamento ajustado", "human");
   }
 
   private async latestRow(agentId: string): Promise<AgentVersionRow | undefined> {
@@ -117,7 +157,37 @@ export class AgentService {
 }
 
 function parseVersion(row: AgentVersionRow): AgentVersion {
-  return { ...row, spec: AgentSpec.parse(row.spec) };
+  return { ...row, spec: AgentSpec.parse(row.spec), downgrades: [] };
+}
+
+/**
+ * Rebaixa para `approve` todo passo de acao que suba o modo em relacao ao que
+ * ja estava gravado. Modo que a versao anterior ja tinha para aquele mesmo
+ * passo passa: significa que uma pessoa autorizou antes, e reeditar outra parte
+ * do spec nao pode derrubar essa autorizacao.
+ */
+function demoteActions(
+  spec: AgentSpec,
+  stored: AgentSpec | unknown,
+): { spec: AgentSpec; downgrades: ActionDowngrade[] } {
+  const previous = new Map<string, ActionMode>();
+  const parsedStored = stored === undefined ? undefined : AgentSpec.safeParse(stored);
+  if (parsedStored?.success) {
+    for (const step of parsedStored.data.steps) {
+      if (step.type === "action") previous.set(step.key, step.mode);
+    }
+  }
+
+  const downgrades: ActionDowngrade[] = [];
+  const steps = spec.steps.map((step) => {
+    if (step.type !== "action" || step.mode === "approve") return step;
+    if (previous.get(step.key) === step.mode) return step;
+
+    downgrades.push({ step: step.key, from: step.mode, to: "approve" });
+    return { ...step, mode: "approve" as const };
+  });
+
+  return { spec: { ...spec, steps }, downgrades };
 }
 
 /**
