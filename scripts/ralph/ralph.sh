@@ -26,11 +26,14 @@ WORKTREE="$(dirname "$ORIGEM")/locum-loop"
 TRONCO="main"
 
 # O agente edita a copia que esta no worktree, porque e de la que ele roda. Ler
-# a copia da arvore principal fazia a contagem de pendentes nunca baixar, e o
-# marco so terminava por esgotar o teto de iteracoes.
-PRD_FILE="$WORKTREE/scripts/ralph/prd.json"
-PROGRESS_FILE="$WORKTREE/scripts/ralph/progress.txt"
-[ -d "$WORKTREE" ] || { PRD_FILE="$SCRIPT_DIR/prd.json"; PROGRESS_FILE="$SCRIPT_DIR/progress.txt"; }
+# a copia da arvore principal faz a contagem de pendentes nunca baixar, e o
+# marco so termina por esgotar o teto.
+#
+# A escolha fica depois da criacao do worktree, e nao aqui: na primeira rodada
+# depois de um merge o worktree ainda nao existe quando o script comeca, e
+# decidir agora congelaria o caminho errado pela rodada inteira.
+PRD_FILE=""
+PROGRESS_FILE=""
 
 command -v jq >/dev/null || { echo "ABORTADO: jq nao instalado."; exit 64; }
 
@@ -59,10 +62,16 @@ estado() {
 
 # Depois do merge, a copia do worktree some junto com ele, e o status volta a
 # ler a arvore principal.
-if [ ! -f "$PRD_FILE" ]; then
-  PRD_FILE="$SCRIPT_DIR/prd.json"
-  PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
-fi
+escolhe_estado() {
+  if [ -f "$WORKTREE/scripts/ralph/prd.json" ]; then
+    PRD_FILE="$WORKTREE/scripts/ralph/prd.json"
+    PROGRESS_FILE="$WORKTREE/scripts/ralph/progress.txt"
+  else
+    PRD_FILE="$SCRIPT_DIR/prd.json"
+    PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+  fi
+}
+escolhe_estado
 
 if [ "$ALVO" = "status" ]; then
   estado
