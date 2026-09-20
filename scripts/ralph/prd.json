@@ -175,7 +175,7 @@
       "description": "Criar app/electron/main.ts com processo principal, janela unica e carregamento do nucleo. Build do main com esbuild para app/dist/main.cjs. Rodar electron-rebuild para better-sqlite3 casar com o ABI do Electron, porque modulo nativo compilado para o Node do sistema nao carrega no Electron. Aceitar a flag --smoke, que sobe, verifica que o banco abre, e sai com codigo 0 sem mostrar janela.",
       "done_when": "npm run build:main e npx electron app/dist/main.cjs --smoke sai 0.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

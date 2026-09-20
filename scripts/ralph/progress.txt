@@ -13,3 +13,4 @@
 2026-09-19  N.1   feito      reconciliador cruza review humano com achados, grava finding_outcomes e review_signals, tsc limpo
 2026-09-19  N.2   feito      agregacao de finding_outcomes em agent_metrics por versao mais skills, cli ganhou metrics
 2026-09-19  N.3   feito      agendador por cursor de tempo, sem relogio proprio, guarda de cadencia e guarda de evento por run, cli ganhou tick e triggers
+2026-09-19  M3.1  feito      esqueleto Electron com --smoke saindo 0, binding do better-sqlite3 duplicado por ABI em native/

@@ -34,7 +34,8 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, falta o evento de energia do M3 |
-| casca Electron e interface | não começou |
+| casca Electron | processo principal com `--smoke`, sem interface ainda |
+| interface | não começou |
 
 ## Execução verificada
 
@@ -76,6 +77,9 @@ npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-s
 npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
+npm run build:main                    # empacota o processo principal em dist/main.cjs
+npm run smoke                         # sobe o Electron sem janela e sai 0
+npm start                             # sobe o Electron com janela
 ```
 
 ## Armadilhas encontradas
@@ -93,6 +97,14 @@ publica sai assinado pela mesma conta que revisa a mão. Sem marca no corpo, o
 reconciliador leria o próprio achado como confirmação humana dele mesmo. Por
 isso tudo que sai leva um `<!-- locum -->`, invisível no GitHub, e o
 reconciliador descarta a review e os comentários que a carregam.
+
+**Dois ABIs para o mesmo `better-sqlite3`.** O binário em `node_modules` é
+compilado para o ABI do Node, que a linha de comando usa por `tsx`. O Electron
+tem ABI próprio e recusa esse binário, e os dois não cabem no mesmo caminho.
+O `build:main` recompila para o Electron, guarda a cópia em `app/native/`, e
+devolve o `node_modules` ao estado de Node. Quem carrega escolhe: o processo
+principal aponta `LOCUM_SQLITE_BINDING` para a cópia antes de importar o núcleo,
+e sem a variável vale o caminho padrão.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
