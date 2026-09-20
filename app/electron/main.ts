@@ -1,7 +1,15 @@
 import { app, BrowserWindow } from "electron";
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const smoke = process.argv.includes("--smoke");
+
+/** `--set-secret <ref>` e `--remove-secret <ref>`, com o valor vindo do stdin. */
+function flagValue(name: string): string | undefined {
+  const at = process.argv.indexOf(name);
+  return at < 0 ? undefined : process.argv[at + 1];
+}
 
 // O nucleo abre o banco no import do modulo, entao o caminho do binding nativo
 // precisa estar no ambiente antes de qualquer import dele. Por isso o acesso ao
@@ -122,14 +130,102 @@ async function checkPower(): Promise<string> {
   return "suspend e resume registrados, uma batida depois de 90min de sono";
 }
 
+/**
+ * Prova que o segredo vai e volta pelo keychain, que o que fica no disco esta
+ * cifrado, e que o cadastro guarda so a referencia.
+ *
+ * O segredo de teste e sorteado na hora e apagado no fim, e o servidor MCP de
+ * mentira que serve de alvo tambem: o smoke roda no banco de verdade de quem
+ * desenvolve e nao pode deixar cadastro para tras.
+ */
+async function checkSecrets(): Promise<string> {
+  const { installSecretBackend } = await import("./safe-storage.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { McpService } = await import("../src/services/mcp-service.js");
+
+  if (!installSecretBackend()) throw new Error("keychain indisponivel para o safeStorage");
+
+  const ref = `provider/locum-smoke-${randomUUID().slice(0, 8)}`;
+  const segredo = `valor-de-teste-${randomUUID()}`;
+
+  secretService.set(ref, segredo);
+  if (secretService.get(ref) !== segredo) throw new Error("segredo nao voltou do keychain");
+  if (readFileSync(secretService.pathFor(ref)).includes(segredo)) {
+    throw new Error("o cofre gravou o segredo em claro");
+  }
+
+  // Caminho inteiro: cadastro com marcador, referencia no banco, segredo so na
+  // configuracao que sobe o processo.
+  const mcp = new McpService();
+  const nome = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  try {
+    await mcp.register({ name: nome, transport: "stdio", command: ["true"], env: { TOKEN: "${credential}" } });
+    await mcp.setCredentialRef(nome, ref);
+
+    const cadastro = await mcp.get(nome);
+    if (cadastro?.config.env?.TOKEN !== "${credential}") {
+      throw new Error("o cadastro deixou de guardar o marcador");
+    }
+    if (cadastro.credentialRef !== ref) throw new Error("a referencia nao ficou no banco");
+
+    const paraConectar = (await mcp.enabledConfigs()).find((c) => c.name === nome);
+    if (paraConectar?.env?.TOKEN !== segredo) {
+      throw new Error("o segredo nao chegou na configuracao de conexao");
+    }
+  } finally {
+    await mcp.remove(nome);
+    secretService.remove(ref);
+  }
+
+  if (secretService.get(ref) !== undefined) throw new Error("segredo sobreviveu ao remove");
+  return "segredo cifrado no disco, referencia no banco, valor so na conexao";
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
   return (await approvalService.listPending()).length;
 }
 
+/**
+ * Guarda ou apaga um segredo e sai, sem janela e sem bandeja.
+ *
+ * Enquanto nao existe interface, e o unico jeito de por uma chave no keychain,
+ * porque o `safeStorage` so existe dentro do Electron. O valor entra pelo
+ * stdin, nunca por argumento: argumento aparece na lista de processos.
+ */
+async function runSecretCommand(): Promise<void> {
+  const { installSecretBackend } = await import("./safe-storage.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+
+  if (!installSecretBackend()) throw new Error("keychain indisponivel para o safeStorage");
+
+  const removeRef = flagValue("--remove-secret");
+  if (removeRef !== undefined) {
+    console.log(secretService.remove(removeRef) ? `${removeRef} apagado` : `${removeRef} nao existia`);
+    return;
+  }
+
+  const ref = flagValue("--set-secret");
+  if (ref === undefined) throw new Error("uso: --set-secret <escopo/nome>, com o valor no stdin");
+
+  const pedacos: Buffer[] = [];
+  for await (const pedaco of process.stdin) pedacos.push(pedaco as Buffer);
+  const secret = Buffer.concat(pedacos).toString("utf8").trim();
+  if (secret.length === 0) throw new Error("nada chegou pelo stdin");
+
+  secretService.set(ref, secret);
+  console.log(`${ref} guardado no keychain`);
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
+
+  if (flagValue("--set-secret") !== undefined || flagValue("--remove-secret") !== undefined) {
+    await runSecretCommand();
+    app.exit(0);
+    return;
+  }
 
   // O nucleo abre o banco no import, entao tudo que fala com ele entra por
   // import dinamico, depois da variavel de ambiente do binding.
@@ -155,14 +251,22 @@ async function main(): Promise<void> {
     teardownTray();
 
     const power = await checkPower();
+    const secrets = await checkSecrets();
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
         `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
-        `energia com ${power}`,
+        `energia com ${power}, keychain com ${secrets}`,
     );
     app.exit(0);
     return;
+  }
+
+  // Antes da bandeja e do agendador: qualquer coisa que monte executor precisa
+  // do cofre ja ligado para achar a credencial no keychain.
+  const { installSecretBackend } = await import("./safe-storage.js");
+  if (!installSecretBackend()) {
+    console.log("keychain indisponivel, credenciais vem so do ambiente");
   }
 
   const { applyPreference } = await import("./login-item.js");

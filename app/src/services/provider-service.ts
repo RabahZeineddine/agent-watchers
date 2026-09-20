@@ -5,10 +5,12 @@ import {
   buildProviders,
   resolveModel,
   splitModelId,
+  PROVIDER_SECRET_VARS,
   type FallbackRow,
   type ModelResolution,
   type ProviderEntry,
 } from "../providers/registry.js";
+import { secretService, type SecretService } from "./secret-service.js";
 
 type Db = typeof defaultDb;
 
@@ -40,8 +42,68 @@ export type ModelPreview =
 export class ProviderService {
   constructor(
     private readonly db: Db = defaultDb,
-    private readonly providers: Record<string, ProviderEntry> = buildProviders(),
+    private providers: Record<string, ProviderEntry> = buildProviders(),
+    private readonly secrets: SecretService = secretService,
   ) {}
+
+  /**
+   * Remonta os provedores com o que estiver guardado no keychain.
+   *
+   * Nao acontece na construcao porque o cofre so abre dentro do app Electron, e
+   * o servico e importado tambem pela linha de comando e pelo servidor MCP.
+   * Quem monta o executor chama isto antes, e quem nao chamar continua vendo o
+   * ambiente do processo, que e o comportamento de sempre.
+   */
+  async loadSecrets(): Promise<string[]> {
+    const rows = await this.db.select().from(schema.providers);
+    const secrets: Record<string, string> = {};
+    const carregados: string[] = [];
+
+    for (const row of rows) {
+      if (!row.enabled || !row.credentialRef) continue;
+      const variavel = PROVIDER_SECRET_VARS[row.kind];
+      if (!variavel) continue;
+
+      const secret = this.secrets.get(row.credentialRef);
+      if (secret === undefined) continue;
+      secrets[variavel] = secret;
+      carregados.push(row.id);
+    }
+
+    this.providers = buildProviders(secrets);
+    return carregados;
+  }
+
+  /** Os provedores como estao agora, para quem precisa montar um runtime. */
+  entries(): Record<string, ProviderEntry> {
+    return this.providers;
+  }
+
+  /**
+   * Aponta o provider para uma credencial do cofre, criando a linha se ela
+   * ainda nao existir. `null` desfaz o vinculo e devolve o provider ao
+   * ambiente. O segredo em si nao passa por aqui: isto grava so o endereco.
+   */
+  async setCredentialRef(name: string, ref: string | null): Promise<void> {
+    if (!(name in this.providers)) throw new Error(`provider "${name}" nao existe`);
+    if (ref !== null && !(name in PROVIDER_SECRET_VARS)) {
+      throw new Error(`provider "${name}" nao usa chave de API, nao ha o que guardar`);
+    }
+    if (ref !== null) this.secrets.pathFor(ref);
+
+    await this.db
+      .insert(schema.providers)
+      .values({ id: name, kind: name, credentialRef: ref })
+      .onConflictDoUpdate({ target: schema.providers.id, set: { credentialRef: ref } });
+  }
+
+  /** Para quem administra: qual credencial cada provider aponta. */
+  async credentialRefs(): Promise<Record<string, string>> {
+    const rows = await this.db.select().from(schema.providers);
+    return Object.fromEntries(
+      rows.filter((r) => r.credentialRef).map((r) => [r.id, r.credentialRef!]),
+    );
+  }
 
   listProviders(): ProviderInfo[] {
     return Object.entries(this.providers).map(([name, entry]) => ({

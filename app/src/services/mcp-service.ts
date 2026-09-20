@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { McpRegistry, type McpToolInfo } from "../mcp/registry.js";
 import { McpServerConfig, type McpServerInput } from "../config/types.js";
+import { fillCredential, secretService, type SecretService } from "./secret-service.js";
 
 export type { McpToolInfo };
 
@@ -32,7 +33,10 @@ export interface McpServerEntry {
  * quem entra no executor precisam valer para os tres.
  */
 export class McpService {
-  constructor(private readonly db: Db = defaultDb) {}
+  constructor(
+    private readonly db: Db = defaultDb,
+    private readonly secrets: SecretService = secretService,
+  ) {}
 
   async list(): Promise<McpServerEntry[]> {
     const rows = await this.db.select().from(schema.mcpServers);
@@ -53,7 +57,7 @@ export class McpService {
       .select()
       .from(schema.mcpServers)
       .where(eq(schema.mcpServers.enabled, true));
-    return rows.map((row) => toEntry(row).config);
+    return rows.map((row) => this.connectable(row));
   }
 
   /** Cadastra ou atualiza pelo nome, que e a chave que o passo referencia. */
@@ -84,6 +88,22 @@ export class McpService {
       .where(eq(schema.mcpServers.name, name))
       .returning();
     return deleted.length > 0;
+  }
+
+  /**
+   * Aponta o servidor para uma credencial do cofre. O segredo entra onde o
+   * cadastro tiver o marcador `${credential}`, em `env` ou em `headers`, e
+   * `null` desfaz o vinculo. Isto grava so o endereco, nunca o valor.
+   */
+  async setCredentialRef(name: string, ref: string | null): Promise<void> {
+    if (ref !== null) this.secrets.pathFor(ref);
+
+    const updated = await this.db
+      .update(schema.mcpServers)
+      .set({ credentialRef: ref })
+      .where(eq(schema.mcpServers.name, name))
+      .returning();
+    if (updated.length === 0) throw new Error(`servidor MCP "${name}" nao cadastrado`);
   }
 
   async setEnabled(name: string, enabled: boolean): Promise<void> {
@@ -130,15 +150,33 @@ export class McpService {
    * fecha, sem deixar processo para tras.
    */
   private async probe<T>(name: string, fn: (registry: McpRegistry) => Promise<T>): Promise<T> {
-    const entry = await this.get(name);
-    if (!entry) throw new Error(`servidor MCP "${name}" nao cadastrado`);
+    const row = await this.row(name);
+    if (!row) throw new Error(`servidor MCP "${name}" nao cadastrado`);
 
-    const registry = McpRegistry.fromList([entry.config]);
+    const registry = McpRegistry.fromList([this.connectable(row)]);
     try {
       return await fn(registry);
     } finally {
       await registry.closeAll();
     }
+  }
+
+  /**
+   * O cadastro pronto para conectar, com a credencial ja no lugar do marcador.
+   *
+   * Existe separado do `toEntry` de proposito: o que vai para tela, log ou
+   * ferramenta de leitura sai de la, com o marcador intacto, e so o que sobe um
+   * processo ou abre uma conexao passa por aqui. Assim nao ha caminho em que um
+   * segredo decifrado escape por uma listagem.
+   */
+  private connectable(row: McpServerRow): McpServerConfig {
+    const { config } = toEntry(row);
+    const secret = row.credentialRef ? this.secrets.get(row.credentialRef) : undefined;
+    return {
+      ...config,
+      env: fillCredential(config.env, secret, { envFallback: true }),
+      headers: fillCredential(config.headers, secret, { envFallback: false }),
+    };
   }
 
   private async row(name: string): Promise<McpServerRow | undefined> {

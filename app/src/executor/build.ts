@@ -16,9 +16,13 @@ import { githubReviewHandler } from "../sources/github.js";
  * para reexecutar um passo, e o servidor MCP vai precisar da mesma montagem.
  */
 export async function buildExecutor(): Promise<Executor> {
+  // Credencial guardada no keychain entra aqui, antes de qualquer conexao. Sem
+  // keychain, ou sem nada guardado, vale o ambiente do processo como sempre.
+  await providerService.loadSecrets();
+
   const servers = await mcpService.enabledConfigs();
   const configs = new Map(servers.map((c) => [c.name, c]));
-  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime()]]);
+  const runtimes = new Map<string, Runtime>([["native", new NativeRuntime(providerService.entries())]]);
   if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
   const gate = new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));

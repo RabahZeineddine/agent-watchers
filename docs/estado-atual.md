@@ -35,6 +35,7 @@ executor que a interface vai usar.
 | métricas por versão | pronto |
 | agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
 | casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada e eventos de energia batendo o agendador, sem interface ainda |
+| credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | interface | não começou |
 
 ## Execução verificada
@@ -74,6 +75,9 @@ npm run dev tick                      # uma batida nos gatilhos habilitados
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
+npm run dev secrets                   # credenciais guardadas e quem aponta para elas
+npm run dev secret:link mcp:locum-fixture mcp/locum-fixture
+npm run dev secret:unlink provider:anthropic
 npm run dev startup                   # o Locum sobe junto com o login?
 npm run dev startup:on                # passa a subir, valendo na próxima subida
 npm run dev startup:off               # deixa de subir
@@ -82,6 +86,8 @@ npm run dev approve <id>
 npm run dev resume
 npm run build:main                    # empacota o processo principal em dist/main.cjs
 npm run smoke                         # sobe o Electron sem janela e sai 0
+npx electron dist/main.cjs --set-secret provider/anthropic     # valor pelo stdin
+npx electron dist/main.cjs --remove-secret provider/anthropic
 npm start                             # sobe o Electron com janela
 ```
 
@@ -116,6 +122,21 @@ e nada é registrado. Por isso a preferência guardada no banco é a fonte da
 verdade, e o processo principal reconcilia o sistema com ela a cada subida, em
 vez de ler o sistema e acreditar. A preferência tem três estados: sem linha na
 tabela `settings` quer dizer que ninguém decidiu, e aí o app não mexe em nada.
+
+**Onde o segredo cabe.** O Electron não expõe a API de item do keychain, só o
+`safeStorage`, que guarda a chave de cifra no keychain e devolve texto cifrado
+para quem chamou. Então o par é chave no keychain mais texto cifrado num arquivo
+por credencial dentro da pasta do app, e no banco fica apenas o `credential_ref`.
+Gravar exige o app aberto; quem usa a linha de comando lê `undefined` e cai para
+a variável de ambiente, que é como sempre funcionou.
+
+**Marcador de credencial no cadastro de MCP.** O valor `${credential}` em `env`
+ou `headers` é onde o segredo entra na hora de conectar. A substituição acontece
+num caminho separado do que alimenta tela, log e ferramenta de leitura, para que
+não exista listagem por onde um segredo decifrado escape. Sem nada guardado, a
+entrada de `env` cai para a variável de ambiente de mesmo nome, e não havendo
+nem isso a entrada some do mapa: mandar o marcador adiante viraria um token
+literal numa chamada de rede.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

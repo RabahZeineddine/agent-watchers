@@ -219,7 +219,7 @@
       "description": "Usar safeStorage para guardar segredo, com a referencia em credential_ref das tabelas providers e mcp_servers. Ler do keychain na montagem do executor, caindo para variavel de ambiente quando nao houver nada guardado, para nao quebrar quem usa a linha de comando. Nunca gravar segredo no banco nem em log.",
       "done_when": "Segredo gravado e lido pelo keychain, e o banco guarda so a referencia.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
