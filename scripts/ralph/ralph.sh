@@ -37,6 +37,15 @@ PROGRESS_FILE=""
 
 command -v jq >/dev/null || { echo "ABORTADO: jq nao instalado."; exit 64; }
 
+# Worktree de rodada anterior que ficou para trás faz o estado ser lido de um
+# ponto velho, e o loop reimplementa o que já foi mesclado. Se ele existe mas a
+# branch dele já não está no repositório, ele é lixo e sai.
+if [ -d "$WORKTREE" ] && ! git -C "$ORIGEM" worktree list --porcelain | grep -q "^worktree $WORKTREE$"; then
+  echo "Removendo worktree órfão em $WORKTREE"
+  rm -rf "$WORKTREE"
+  git -C "$ORIGEM" worktree prune
+fi
+
 pendentes() {
   jq --arg m "$1" \
     '[.userStories[] | select(.milestone == $m and .passes != true and .blocked != true)] | length' \
