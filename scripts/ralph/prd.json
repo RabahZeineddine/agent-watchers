@@ -472,7 +472,7 @@
       "description": "Escrever docs/empacotamento.md: como gerar o .dmg, o que acontece ao abrir sem assinatura e como contornar na primeira abertura, o que muda com conta de desenvolvedor Apple, e por que a atualização automática depende dela. Atualizar o README com a seção de instalação.",
       "done_when": "O arquivo existe e cobre os quatro pontos.",
       "verify": "test -f ../docs/empacotamento.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

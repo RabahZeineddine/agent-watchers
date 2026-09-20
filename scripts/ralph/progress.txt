@@ -40,3 +40,4 @@
 2026-09-20  M5.3  feito      empacotamento por electron-builder, native fora do asar com arquitetura no nome, npmRebuild desligado, .app abrindo em banco limpo
 2026-09-20  M5.4  feito      smoke:dist contra o .app, fixture empacotado e guarda de i18n seguindo isPackaged
 2026-09-20  M5.5  feito      atualização automática atrás de interruptor, desligada por padrão, smoke contando requisição de rede
+2026-09-20  M5.6  feito      docs/empacotamento.md com build, Gatekeeper, conta Apple e updater, README com instalação

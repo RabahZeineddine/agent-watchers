@@ -13,19 +13,44 @@ time carregadas como skill conforme os arquivos alterados.
 
 ## Estado
 
-O núcleo headless funciona e foi verificado de ponta a ponta. A casca Electron e
-a interface ainda não existem; por enquanto tudo passa pela linha de comando,
-com o mesmo executor que a interface vai usar.
+O núcleo headless funciona e foi verificado de ponta a ponta, e o aplicativo
+Electron já sobe, carrega a interface e sai empacotado em `.dmg`. Tudo continua
+alcançável pela linha de comando, com o mesmo executor que a interface usa.
 
 ```bash
 cd app
 npm install
-npm run db:push
 npm run dev seed
 npm run dev demo     # pipeline completo num PR sintético, sem credencial
 ```
 
 Detalhes em [docs/estado-atual.md](docs/estado-atual.md).
+
+## Instalação
+
+Não há release publicado: o pacote é gerado a partir deste repositório, numa
+máquina com macOS.
+
+```bash
+cd app
+npm install
+npm run build
+npm run dist         # .dmg e .zip em app/release/
+```
+
+Abra o `.dmg` e arraste o `Locum.app` para `/Applications`.
+
+O pacote não é assinado pela Apple, então a primeira abertura é bloqueada pelo
+Gatekeeper. O contorno é clicar no aplicativo com o botão direito e escolher
+**Abrir**, uma vez só: o sistema registra a decisão e as próximas aberturas são
+normais.
+
+Duas consequências de não assinar: o início automático no login não é honrado
+pelo sistema, e a atualização automática fica desligada, porque o macOS recusa
+instalar atualização não assinada.
+
+O caminho todo, incluindo o que muda com conta de desenvolvedor Apple, está em
+[docs/empacotamento.md](docs/empacotamento.md).
 
 ## Provedores e assinatura
 
@@ -51,6 +76,7 @@ de fallback redireciona os passos afetados para provedores por chave.
 | [ADR 0002](docs/adr/0002-camada-de-servico-e-servidor-mcp.md) | camada de serviço, servidor MCP próprio, e por que aprovação fica fora dele |
 | [ADR 0003](docs/adr/0003-interface-sobre-ai-elements.md) | interface sobre AI Elements, chat como console, e a regra contra injeção de prompt |
 | [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
+| [empacotamento.md](docs/empacotamento.md) | como gerar o `.dmg`, abrir sem assinatura, e o que muda com conta Apple |
 | [prd.json](scripts/ralph/prd.json) | backlog como estado: tarefas atômicas com critério de pronto e comando de verificação |
 
 ## Idioma
