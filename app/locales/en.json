@@ -6,5 +6,51 @@
     "agents_other": "{{count}} agents",
     "runs_one": "{{count}} run",
     "runs_other": "{{count}} runs"
+  },
+  "loginItem": {
+    "applied": "start at login: preference {{preference}}, system {{status}}"
+  },
+  "notification": {
+    "runFailed": {
+      "title": "{{agent}} failed",
+      "noError": "no error message"
+    },
+    "criticalFinding": {
+      "title_one": "{{agent}}: {{count}} critical finding waiting for approval",
+      "title_other": "{{agent}}: {{count}} critical findings waiting for approval",
+      "body_one": "One critical finding is in the queue waiting for a decision.",
+      "body_other": "{{count}} critical findings are in the queue waiting for a decision."
+    }
+  },
+  "smoke": {
+    "ok": "smoke ok: database opened, agents: {{agents}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "loginItem": "preference {{decision}}, system {{status}}",
+    "loginItemUndecided": "undecided",
+    "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
+    "secrets": "secret encrypted on disk, reference in the database, value only in the connection",
+    "notifications": "notice built without showing, three criticals in a single run, click pointing to the run",
+    "deepLink": "locum scheme {{scheme}}, OAuth callback routed, token in the vault and reference in the registry",
+    "schemeRegistered": "registered",
+    "schemeRefused": "not accepted outside a packaged app",
+    "expectedRefusal": "bridge: the next error line is the gate's expected refusal",
+    "bridge": "channels: {{channels}}, window without Node, values matching the services",
+    "renderer": "built page loaded, root mounted, Tailwind sheet in effect, {{routes}}, {{palette}}, {{agents}}, {{config}}, {{runs}}, code block with highlighted spans: {{spans}}, the window reading runs: {{windowRuns}} and pending: {{windowPending}} through the bridge, {{language}}",
+    "routes": "destinations: {{count}}",
+    "palette": "command palette opening and closing by shortcut",
+    "agents": "list with agents: {{agents}}, history of versions: {{versions}} for {{agent}}, comparison pointing the action step from \"{{from}}\" to \"{{to}}\"",
+    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}",
+    "runs": "list with runs: {{runs}} and drawn rows: {{rows}}, detail with steps: {{steps}} and findings: {{findings}} and a rerun button on each, {{graph}}",
+    "graph": "graph with nodes: {{nodes}} and edges: {{edges}}, states {{states}}",
+    "language": "language switching by preference, \"{{pt}}\" in pt-BR and \"{{en}}\" in en, system {{system}} and de-DE falling back to {{fallback}}",
+    "mainText": "tray and notification following the language: \"{{tray}}\" and \"{{notification}}\""
+  },
+  "tray": {
+    "pending_zero": "Nothing waiting for approval",
+    "pending_one": "{{count}} waiting for approval",
+    "pending_other": "{{count}} waiting for approval",
+    "open": "Open",
+    "pause": "Pause everything",
+    "resume": "Resume everything",
+    "quit": "Quit"
   }
 }

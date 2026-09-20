@@ -1,4 +1,5 @@
 import { Notification } from "electron";
+import { t } from "./i18n.js";
 import { noticeService, type Notice } from "../src/services/notice-service.js";
 
 const POLL_MS = 20_000;
@@ -63,15 +64,40 @@ export async function deliverPending(): Promise<number> {
 }
 
 /**
+ * A frase do aviso, no idioma que o processo principal esta falando.
+ *
+ * Ela nao vem pronta do servico: la mora o fato, e o texto e desta casca, que e
+ * quem sabe para quem esta falando. A mensagem de erro do run e a unica parte
+ * que sai como veio, porque ela e do provedor e traduzi-la seria inventar.
+ */
+export function noticeText(notice: Notice): { title: string; body: string } {
+  if (notice.kind === "run_failed") {
+    return {
+      title: t("notification.runFailed.title", { agent: notice.agentName }),
+      body: notice.error ?? t("notification.runFailed.noError"),
+    };
+  }
+
+  return {
+    title: t("notification.criticalFinding.title", {
+      agent: notice.agentName,
+      count: notice.criticalCount,
+    }),
+    body: t("notification.criticalFinding.body", { count: notice.criticalCount }),
+  };
+}
+
+/**
  * Monta a notificacao sem mostrar, com o clique ja apontado para o run.
  *
  * Fica separada do `show()` para que o smoke possa provar o conteudo e o
  * destino do clique sem estourar um alerta na tela de quem esta trabalhando.
  */
 export function buildNotification(notice: Notice): Notification {
+  const { title, body } = noticeText(notice);
   const notification = new Notification({
-    title: notice.title,
-    body: notice.body,
+    title,
+    body,
     // Achado critico espera decisao de uma pessoa, entao o aviso fica na
     // central ate alguem olhar. Falha de run e informativa e pode sumir.
     timeoutType: notice.kind === "critical_finding" ? "never" : "default",

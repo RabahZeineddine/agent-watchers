@@ -362,7 +362,7 @@
       "description": "Menu da bandeja, notificação, item de login e mensagens do --smoke passam pelo mesmo dicionário. O processo principal não pode depender do react-i18next: use a instância base do i18next, compartilhada com a janela pelo mesmo arquivo de dicionário.",
       "done_when": "A bandeja e a notificação saem no idioma escolhido, e o smoke confirma as duas.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

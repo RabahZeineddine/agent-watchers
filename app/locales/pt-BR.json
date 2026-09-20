@@ -6,5 +6,51 @@
     "agents_other": "{{count}} agents",
     "runs_one": "{{count}} execução",
     "runs_other": "{{count}} execuções"
+  },
+  "loginItem": {
+    "applied": "início no login: preferência {{preference}}, sistema {{status}}"
+  },
+  "notification": {
+    "runFailed": {
+      "title": "{{agent}} falhou",
+      "noError": "sem mensagem de erro"
+    },
+    "criticalFinding": {
+      "title_one": "{{agent}}: {{count}} achado crítico aguardando aprovação",
+      "title_other": "{{agent}}: {{count}} achados críticos aguardando aprovação",
+      "body_one": "Um achado crítico está na fila esperando decisão.",
+      "body_other": "{{count}} achados críticos estão na fila esperando decisão."
+    }
+  },
+  "smoke": {
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, keychain com {{secrets}}, notificação com {{notifications}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "loginItem": "preferência {{decision}}, sistema {{status}}",
+    "loginItemUndecided": "não decidida",
+    "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
+    "secrets": "segredo cifrado no disco, referência no banco, valor só na conexão",
+    "notifications": "aviso montado sem exibir, três críticos num run só, clique apontando para o run",
+    "deepLink": "esquema locum {{scheme}}, retorno de OAuth roteado, token no cofre e referência no cadastro",
+    "schemeRegistered": "registrado",
+    "schemeRefused": "não aceito fora de app empacotado",
+    "expectedRefusal": "ponte: a próxima linha de erro é a recusa esperada da gate",
+    "bridge": "canais: {{channels}}, janela sem Node, valores batendo com os serviços",
+    "renderer": "página construída carregada, raiz montada, folha do Tailwind valendo, {{routes}}, {{palette}}, {{agents}}, {{config}}, {{runs}}, bloco de código com trechos destacados: {{spans}}, a janela lendo execuções: {{windowRuns}} e pendências: {{windowPending}} pela ponte, {{language}}",
+    "routes": "destinos: {{count}}",
+    "palette": "paleta abrindo e fechando pelo atalho",
+    "agents": "lista com agents: {{agents}}, histórico de versões: {{versions}} de {{agent}}, comparação apontando o passo de ação de \"{{from}}\" para \"{{to}}\"",
+    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}",
+    "runs": "lista com execuções: {{runs}} e linhas desenhadas: {{rows}}, detalhe com passos: {{steps}} e achados: {{findings}} e botão de reexecutar em cada, {{graph}}",
+    "graph": "grafo com nós: {{nodes}} e arestas: {{edges}}, estados {{states}}",
+    "language": "idioma trocando pela preferência, \"{{pt}}\" em pt-BR e \"{{en}}\" em en, sistema {{system}} e de-DE caindo em {{fallback}}",
+    "mainText": "bandeja e notificação seguindo o idioma: \"{{tray}}\" e \"{{notification}}\""
+  },
+  "tray": {
+    "pending_zero": "Nada aguardando aprovação",
+    "pending_one": "{{count}} aguardando aprovação",
+    "pending_other": "{{count}} aguardando aprovação",
+    "open": "Abrir",
+    "pause": "Pausar tudo",
+    "resume": "Retomar tudo",
+    "quit": "Sair"
   }
 }

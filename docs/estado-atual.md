@@ -49,6 +49,7 @@ que a interface vai usar.
 | tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
+| texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
 
 ## Execução verificada
 
@@ -159,6 +160,15 @@ não exista listagem por onde um segredo decifrado escape. Sem nada guardado, a
 entrada de `env` cai para a variável de ambiente de mesmo nome, e não havendo
 nem isso a entrada some do mapa: mandar o marcador adiante viraria um token
 literal numa chamada de rede.
+
+**O serviço entrega o fato, a casca escreve a frase.** O `NoticeService` passou
+a devolver o nome do agent e a contagem de críticos em vez de título e corpo
+prontos. Texto montado no serviço prenderia o aviso a um idioma só, e a linha de
+comando e o servidor MCP não falam necessariamente o mesmo da janela. A exceção
+é a mensagem de erro do run, que sai como veio: ela é do provedor, e traduzir
+seria inventar. O processo principal monta a própria instância do i18next, sem
+`react-i18next`, e o que ele compartilha com a janela é o par de arquivos de
+dicionário, não o módulo que cria a instância.
 
 **Notificação é sobre o que chegou agora.** A primeira leitura da fila na
 subida só marca o que já estava lá, sem mostrar nada: subir o Locum depois de

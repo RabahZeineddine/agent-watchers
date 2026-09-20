@@ -2,6 +2,7 @@ import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
 import en from "../locales/en.json";
 import ptBR from "../locales/pt-BR.json";
 import { join } from "node:path";
@@ -200,8 +201,9 @@ async function checkLoginItem(): Promise<string> {
   }
 
   const state = await applyPreference();
-  const decision = state.preference === null ? "nao decidida" : String(state.preference);
-  return `preferencia ${decision}, sistema ${state.status}`;
+  const decision =
+    state.preference === null ? t("smoke.loginItemUndecided") : String(state.preference);
+  return t("smoke.loginItem", { decision, status: state.status });
 }
 
 /**
@@ -244,7 +246,7 @@ async function checkPower(): Promise<string> {
     throw new Error("ouvinte de energia sobrou depois do teardown");
   }
 
-  return "suspend e resume registrados, uma batida depois de 90min de sono";
+  return t("smoke.power", { minutes: sleep / 60_000 });
 }
 
 /**
@@ -295,7 +297,7 @@ async function checkSecrets(): Promise<string> {
   }
 
   if (secretService.get(ref) !== undefined) throw new Error("segredo sobreviveu ao remove");
-  return "segredo cifrado no disco, referencia no banco, valor so na conexao";
+  return t("smoke.secrets");
 }
 
 /**
@@ -354,7 +356,7 @@ async function checkNotifications(): Promise<string> {
   }
   teardownNotifications();
 
-  return "aviso montado sem exibir, tres criticos num run so, clique aponta para o run";
+  return t("smoke.notifications");
 }
 
 /**
@@ -467,10 +469,9 @@ async function checkDeepLink(): Promise<string> {
     secretService.remove(`mcp/${nome}`);
   }
 
-  return (
-    `esquema locum ${protocolo.registered ? "registrado" : "nao aceito fora de app empacotado"}, ` +
-    "retorno de OAuth roteado, token no cofre e referencia no cadastro"
-  );
+  return t("smoke.deepLink", {
+    scheme: t(protocolo.registered ? "smoke.schemeRegistered" : "smoke.schemeRefused"),
+  });
 }
 
 /**
@@ -539,7 +540,7 @@ async function checkBridge(): Promise<string> {
     // recusa. A ponte nao tem o que dizer sobre publicar. O Electron registra
     // sozinho todo erro de handler de IPC, entao a recusa esperada vai aparecer
     // no log logo abaixo: e o teste passando, nao o smoke quebrando.
-    console.log("ponte: a proxima linha de erro e a recusa esperada da gate");
+    console.log(t("smoke.expectedRefusal"));
     const recusa = (await window.webContents.executeJavaScript(
       `globalThis.${BRIDGE_GLOBAL}.approvals.decide("nao-existe", "approved").then(() => "passou", (e) => String(e.message))`,
     )) as string;
@@ -551,7 +552,7 @@ async function checkBridge(): Promise<string> {
     teardownBridge();
   }
 
-  return `${canais} canais no ar, janela sem Node, valores batendo com os servicos`;
+  return t("smoke.bridge", { channels: canais });
 }
 
 /**
@@ -674,13 +675,17 @@ async function checkRenderer(): Promise<string> {
 
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
 
-    return (
-      "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
-      `${rotas} navegando, ${paleta}, ${agents}, ${configuracao}, ${execucoes}, ` +
-      `bloco de codigo com ${destacado} trecho(s) destacado(s), a janela lendo ` +
-      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte, ` +
-      `${idioma}`
-    );
+    return t("smoke.renderer", {
+      routes: rotas,
+      palette: paleta,
+      agents,
+      config: configuracao,
+      runs: execucoes,
+      spans: destacado,
+      windowRuns: ponte.runs,
+      windowPending: ponte.pendencias,
+      language: idioma,
+    });
   } finally {
     window.destroy();
     teardownBridge();
@@ -818,7 +823,7 @@ async function checkRoutes(window: BrowserWindow): Promise<string> {
     throw new Error(`hash desconhecido levou a janela para ${desconhecido}`);
   }
 
-  return `${barra.length} destino(s)`;
+  return t("smoke.routes", { count: barra.length });
 }
 
 /**
@@ -852,7 +857,7 @@ async function checkPalette(window: BrowserWindow): Promise<string> {
   );
   if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
 
-  return "paleta abrindo e fechando pelo atalho";
+  return t("smoke.palette");
 }
 
 /**
@@ -1016,10 +1021,13 @@ async function checkAgents(window: BrowserWindow): Promise<string> {
     throw new Error(`${botoes} botao(oes) de contar token para ${comFerramenta} passo(s) com ferramenta`);
   }
 
-  return (
-    `lista com ${lista.total} agent(s), historico de ${versoes.length} versao(oes) de ${alvo} e ` +
-    `comparacao apontando o passo de acao de "${de}" para "${para}"`
-  );
+  return t("smoke.agents", {
+    agents: lista.total,
+    versions: versoes.length,
+    agent: alvo,
+    from: de,
+    to: para,
+  });
 }
 
 /**
@@ -1180,11 +1188,14 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
-  return (
-    `${provedores.length} provedor(es), ${fallbacks.length} substituicao(oes), ` +
-    `${servidores.length} servidor(es) com ${FIXTURE_SERVER} respondendo ` +
-    `${resultado.ferramentas} ferramenta(s) na interface, e ${orcamentos.length} orcamento(s)`
-  );
+  return t("smoke.config", {
+    providers: provedores.length,
+    fallbacks: fallbacks.length,
+    servers: servidores.length,
+    fixture: FIXTURE_SERVER,
+    tools: resultado.ferramentas,
+    budgets: orcamentos.length,
+  });
 }
 
 /**
@@ -1277,11 +1288,13 @@ async function checkRuns(window: BrowserWindow, runId: string): Promise<string> 
 
   const grafo = await checkGrafo(window, doBanco);
 
-  return (
-    `lista com ${lista.total} execucao(oes) e ${desenhadas} linha(s) desenhada(s), ` +
-    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada, ` +
-    grafo
-  );
+  return t("smoke.runs", {
+    runs: lista.total,
+    rows: desenhadas,
+    steps: detalhe.passos,
+    findings: detalhe.achados,
+    graph: grafo,
+  });
 }
 
 /**
@@ -1357,7 +1370,11 @@ async function checkGrafo(
     }
   }
 
-  return `grafo com ${chaves.length} no(s) e ${visto.desenhadas} aresta(s), estados ${visto.estados}`;
+  return t("smoke.graph", {
+    nodes: chaves.length,
+    edges: visto.desenhadas,
+    states: visto.estados,
+  });
 }
 
 /**
@@ -1387,24 +1404,48 @@ async function esperarProbe<T>(
 type Dicionario = typeof en;
 
 /**
- * A forma de plural que o dicionário tem para esta contagem neste idioma.
+ * O texto que o dicionário tem para uma chave, lido do arquivo.
  *
- * A escolha sai do `Intl.PluralRules`, que é exatamente o que o i18next usa do
- * outro lado. Reimplementar a regra aqui, ainda que com um `if`, faria o exame
+ * O exame não pergunta pelo mesmo `t` que monta a bandeja e a notificação: duas
+ * chamadas à mesma porta concordariam entre si até com o dicionário vazio. Aqui
+ * o JSON é lido direto, e o que está sendo comparado é o texto que o tradutor
+ * escreveu com o que apareceu no menu.
+ *
+ * A forma de plural sai do `Intl.PluralRules`, que é o que o i18next usa do
+ * outro lado. Reimplementar a regra, ainda que com um `if`, faria o exame
  * concordar consigo mesmo: em português a forma "one" cobre o zero, e um exame
- * que não soubesse disso passaria a exigir o texto errado.
+ * que não soubesse disso passaria a exigir o texto errado. O `_zero` é a
+ * exceção que o próprio i18next abre para contagem zero, e vem antes das formas.
  */
-function plural(
+function doDicionario(
   dicionario: Dicionario,
   idioma: string,
-  chave: "agents" | "runs",
-  count: number,
+  caminho: string,
+  vars: Record<string, string | number> = {},
 ): string {
-  const formas = dicionario.bridge as unknown as Record<string, string | undefined>;
-  const forma = new Intl.PluralRules(idioma).select(count);
-  const modelo = formas[`${chave}_${forma}`] ?? formas[`${chave}_other`];
-  if (modelo === undefined) throw new Error(`o dicionario ${idioma} nao tem plural de ${chave}`);
-  return modelo.replace("{{count}}", String(count));
+  const partes = caminho.split(".");
+  const folha = partes.pop() ?? "";
+  let no: unknown = dicionario;
+  for (const parte of partes) no = (no as Record<string, unknown>)[parte];
+  const formas = no as Record<string, string | undefined>;
+
+  const count = vars["count"];
+  const chaves =
+    typeof count === "number"
+      ? [
+          ...(count === 0 ? [`${folha}_zero`] : []),
+          `${folha}_${new Intl.PluralRules(idioma).select(count)}`,
+          `${folha}_other`,
+        ]
+      : [folha];
+
+  const modelo = chaves.map((chave) => formas[chave]).find((texto) => texto !== undefined);
+  if (modelo === undefined) throw new Error(`o dicionario ${idioma} nao tem ${caminho}`);
+
+  return Object.entries(vars).reduce(
+    (texto, [nome, valor]) => texto.replaceAll(`{{${nome}}}`, String(valor)),
+    modelo,
+  );
 }
 
 interface IdiomaVisto {
@@ -1494,7 +1535,7 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     if (portugues.estrito !== "true") {
       throw new Error("fora de app empacotado a guarda de chave ausente devia estar ligada");
     }
-    const esperadoPt = plural(ptBR, "pt-BR", "runs", portugues.runs);
+    const esperadoPt = doDicionario(ptBR, "pt-BR", "bridge.runs", { count: portugues.runs });
     if (!portugues.rodape.includes(esperadoPt)) {
       throw new Error(`o rodape em pt-BR ficou "${portugues.rodape}" e devia trazer "${esperadoPt}"`);
     }
@@ -1503,7 +1544,7 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
     if (ingles.idioma !== "en" || ingles.preferencia !== "en") {
       throw new Error(`a preferencia en deixou a janela em ${ingles.idioma}`);
     }
-    const esperadoEn = plural(en, "en", "runs", ingles.runs);
+    const esperadoEn = doDicionario(en, "en", "bridge.runs", { count: ingles.runs });
     if (!ingles.rodape.includes(esperadoEn)) {
       throw new Error(`o rodape em en ficou "${ingles.rodape}" e devia trazer "${esperadoEn}"`);
     }
@@ -1526,15 +1567,120 @@ async function checkI18n(window: BrowserWindow): Promise<string> {
       throw new Error(`maquina em de-DE caiu em ${desconhecido.language} e nao no idioma base`);
     }
 
-    return (
-      `idioma trocando pela preferencia, "${portugues.rodape}" em pt-BR e ` +
-      `"${ingles.rodape}" em en, sistema ${doSistema.idioma} e de-DE caindo em ${FALLBACK_LANGUAGE}`
-    );
+    return t("smoke.language", {
+      pt: portugues.rodape,
+      en: ingles.rodape,
+      system: doSistema.idioma,
+      fallback: FALLBACK_LANGUAGE,
+    });
   } finally {
     // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima
     // subida do Locum nesta maquina abriria no idioma da ultima verificacao.
     await i18nService.setPreference(original);
   }
+}
+
+/**
+ * Prova que a bandeja e a notificação saem no idioma escolhido.
+ *
+ * Nada é pendurado na barra do sistema nem exibido: o menu é montado e lido em
+ * memória, e a notificação nasce sem `show()`. O loop roda sem ninguém olhando,
+ * e alerta na tela de quem estiver usando a máquina não é coisa que um exame
+ * possa fazer.
+ *
+ * O esperado sai do arquivo de dicionário, e a comparação entre os dois idiomas
+ * entra junto: texto igual nos dois significa tradução esquecida, que é
+ * exatamente o que passa despercebido num menu que quase ninguém abre.
+ */
+async function checkMainText(): Promise<string> {
+  const { trayMenuLabels, trayPendingCount } = await import("./tray.js");
+  const { noticeText } = await import("./notify.js");
+
+  const antes = idiomaAtual();
+  const idiomas: [string, Dicionario][] = [
+    ["pt-BR", ptBR],
+    ["en", en],
+  ];
+
+  const aviso = {
+    key: "critical_finding:run-smoke-texto",
+    runId: "run-smoke-texto",
+    kind: "critical_finding" as const,
+    agentName: "pr-review",
+    criticalCount: 3,
+    at: 1_760_000_000,
+  };
+
+  const bandeja: string[] = [];
+  const avisos: string[] = [];
+
+  try {
+    for (const [idioma, dicionario] of idiomas) {
+      await aplicarIdioma(idioma);
+
+      // A contagem é a que a bandeja leu da fila mais cedo: o que está sendo
+      // provado aqui é o idioma, e reler o banco só traria outra oportunidade
+      // de a contagem mudar no meio do exame.
+      const pendentes = trayPendingCount();
+      const rotulos = trayMenuLabels();
+      const esperados = [
+        doDicionario(dicionario, idioma, "tray.pending", { count: pendentes }),
+        "",
+        doDicionario(dicionario, idioma, "tray.open"),
+        doDicionario(dicionario, idioma, "tray.pause"),
+        "",
+        doDicionario(dicionario, idioma, "tray.quit"),
+      ];
+      if (rotulos.join("|") !== esperados.join("|")) {
+        throw new Error(
+          `a bandeja em ${idioma} montou "${rotulos.join("|")}" e o dicionario pede "${esperados.join("|")}"`,
+        );
+      }
+
+      const texto = noticeText(aviso);
+      const titulo = doDicionario(dicionario, idioma, "notification.criticalFinding.title", {
+        agent: aviso.agentName,
+        count: aviso.criticalCount,
+      });
+      const corpo = doDicionario(dicionario, idioma, "notification.criticalFinding.body", {
+        count: aviso.criticalCount,
+      });
+      if (texto.title !== titulo || texto.body !== corpo) {
+        throw new Error(
+          `a notificacao em ${idioma} saiu como "${texto.title}" e "${texto.body}"`,
+        );
+      }
+
+      // Run que falhou sem deixar mensagem: o corpo vem do dicionario. Com
+      // mensagem ele sai como veio, porque a frase e do provedor.
+      const semMensagem = noticeText({ ...aviso, kind: "run_failed", criticalCount: 0 });
+      const esperadoSemMensagem = doDicionario(
+        dicionario,
+        idioma,
+        "notification.runFailed.noError",
+      );
+      if (semMensagem.body !== esperadoSemMensagem) {
+        throw new Error(`a falha sem mensagem em ${idioma} saiu como "${semMensagem.body}"`);
+      }
+      const comMensagem = noticeText({ ...aviso, kind: "run_failed", error: "socket hang up" });
+      if (comMensagem.body !== "socket hang up") {
+        throw new Error(`o erro do provedor foi reescrito para "${comMensagem.body}"`);
+      }
+
+      bandeja.push(rotulos[2] ?? "");
+      avisos.push(texto.title);
+    }
+
+    if (bandeja[0] === bandeja[1] || avisos[0] === avisos[1]) {
+      throw new Error(`o texto do processo principal nao mudou de idioma: ${bandeja.join(", ")}`);
+    }
+  } finally {
+    // O exame trocou o idioma da instância que a bandeja e a notificação usam
+    // de verdade. Sem devolver, o resto do smoke sairia no último idioma visto.
+    await aplicarIdioma(antes);
+  }
+
+  return t("smoke.mainText", { tray: bandeja.join(" / "), notification: avisos.join(" / ") });
 }
 
 /**
@@ -1601,8 +1747,28 @@ async function runSecretCommand(): Promise<void> {
   console.log(`${ref} guardado no keychain`);
 }
 
+/**
+ * Poe o processo principal no idioma de quem esta na maquina.
+ *
+ * Qual idioma vale sai do mesmo servico que responde a janela, entao a bandeja
+ * e a tela nunca discordam; o que a casca traz e so a etiqueta do sistema, que
+ * e a unica parte que depende do Electron. Fora de app empacotado, chave
+ * ausente estoura, como na janela: texto cru num menu da barra do sistema passa
+ * despercebido por semanas.
+ */
+async function setupI18n(): Promise<string> {
+  const { i18nService } = await import("../src/services/i18n-service.js");
+  const { language } = await i18nService.resolve(app.getLocale());
+  iniciarI18n({ idioma: language, estrito: !app.isPackaged });
+  return language;
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
+
+  // Antes de qualquer texto: bandeja, notificacao e o proprio smoke falam pelo
+  // dicionario, e pedir chave antes disso estoura de proposito.
+  await setupI18n();
 
   if (flagValue("--set-secret") !== undefined || flagValue("--remove-secret") !== undefined) {
     await runSecretCommand();
@@ -1631,6 +1797,7 @@ async function main(): Promise<void> {
         `bandeja marca ${trayPendingCount()} pendencia(s) e a fila tem ${pending}`,
       );
     }
+    const mainText = await checkMainText();
     teardownTray();
 
     const power = await checkPower();
@@ -1641,10 +1808,18 @@ async function main(): Promise<void> {
     const renderer = await checkRenderer();
 
     console.log(
-      `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
-        `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}, ` +
-        `energia com ${power}, keychain com ${secrets}, notificacao com ${avisos}, ` +
-        `deep link com ${deepLink}, ponte com ${ponte}, interface com ${renderer}`,
+      t("smoke.ok", {
+        agents,
+        pending,
+        loginItem,
+        power,
+        secrets,
+        notifications: avisos,
+        deepLink,
+        bridge: ponte,
+        renderer,
+        mainText,
+      }),
     );
     app.exit(0);
     return;
@@ -1670,7 +1845,9 @@ async function main(): Promise<void> {
   const { applyPreference } = await import("./login-item.js");
   const startup = await applyPreference();
   if (startup.preference !== null) {
-    console.log(`inicio no login: preferencia ${startup.preference}, sistema ${startup.status}`);
+    console.log(
+      t("loginItem.applied", { preference: startup.preference, status: startup.status }),
+    );
   }
 
   await setupTray({ openWindow: showWindow });
