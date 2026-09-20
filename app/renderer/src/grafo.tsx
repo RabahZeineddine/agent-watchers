@@ -72,7 +72,7 @@ export function GrafoDaExecucao({ detalhe }: { detalhe: Detalhe }) {
 
   return (
     <div
-      className="h-80 w-full overflow-hidden rounded-lg border border-border"
+      className="bg-card border-border h-96 w-full overflow-hidden rounded-lg border"
       data-arestas={arestas.map((a) => a.id).join(",")}
       data-locum-probe="grafo"
       data-nos={nos.map((n) => n.id).join(",")}
@@ -85,6 +85,12 @@ export function GrafoDaExecucao({ detalhe }: { detalhe: Detalhe }) {
         // arrastar caixa e puxar ligacao, e o desenho passaria a discordar do
         // spec sem nada gravado em lugar nenhum.
         elementsSelectable={false}
+        // Sem enquadrar, o desenho nasce no canto e os nós das colunas da
+        // direita ficam cortados pela borda. A margem evita que a caixa encoste
+        // na moldura.
+        fitView
+        fitViewOptions={{ padding: 0.18, minZoom: 0.4, maxZoom: 1 }}
+        proOptions={{ hideAttribution: true }}
         nodes={nos}
         nodesConnectable={false}
         nodesDraggable={false}

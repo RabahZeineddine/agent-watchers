@@ -32,7 +32,7 @@ export const LARGURA_DO_NO = 232;
 export const ALTURA_DO_NO = 108;
 
 const VAO_X = 88;
-const VAO_Y = 28;
+const VAO_Y = 40;
 
 /**
  * Posiciona cada passo e lista as arestas.

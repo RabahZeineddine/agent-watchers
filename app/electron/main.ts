@@ -2102,14 +2102,43 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
   mkdirSync(destino, { recursive: true });
   janela.setSize(1280, 860);
 
-  for (const id of ["inbox", "execucoes", "agents", "configuracao"]) {
-    await irPara(janela, id);
+  // O detalhe de execução e o assistente também entram: eles são metade do
+  // aplicativo e não apareciam em captura nenhuma, que é como a lista de
+  // execuções passou dias mostrando carimbo de máquina sem ninguém ver.
+  // Importado aqui e não no topo: o módulo nativo do SQLite só carrega depois
+  // que o processo aponta o binding compilado para o Electron, e um import de
+  // topo puxaria o banco antes disso.
+  const { runService } = await import("../src/services/run-service.js");
+  const primeiroRun = (await runService.list({ limit: 1 }))[0]?.id;
+
+  const destinos: [string, string | undefined][] = [
+    ["inbox", undefined],
+    ["execucoes", undefined],
+    ["execucoes", primeiroRun],
+    ["agents", undefined],
+    ["configuracao", undefined],
+  ];
+
+  for (const [id, detalhe] of destinos) {
+    await irPara(janela, id, detalhe);
     // A tela pede dado pela ponte ao montar, e fotografar antes da resposta
     // registraria o esqueleto em vez do conteúdo.
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const imagem = await janela.webContents.capturePage();
-    writeFileSync(join(destino, `${id}.png`), imagem.toPNG());
+    writeFileSync(join(destino, `${id}${detalhe ? "-detalhe" : ""}.png`), imagem.toPNG());
   }
+
+  // O painel do assistente abre por atalho, então a captura usa o mesmo caminho.
+  await irPara(janela, "inbox");
+  await janela.webContents.executeJavaScript(
+    `(() => {
+      const evento = new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true });
+      globalThis.dispatchEvent(evento);
+      return null;
+    })()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  writeFileSync(join(destino, "assistente.png"), (await janela.webContents.capturePage()).toPNG());
 
   console.log(`capturas em ${destino}`);
 }

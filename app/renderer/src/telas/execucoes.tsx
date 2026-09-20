@@ -331,7 +331,14 @@ function PassoDaExecucao({
         </Reasoning>
       ) : null}
 
-      {passo.input !== null ? <Json rotulo={t("runs.step.input")} valor={passo.input} /> : null}
+      {/*
+        Entrada vazia não vira bloco. O primeiro passo de um pipeline não
+        depende de ninguém, e mostrar `{"needs": []}` num bloco de código
+        ocupa oito linhas para dizer nada.
+      */}
+      {temConteudo(passo.input) ? (
+        <Json rotulo={t("runs.step.input")} valor={passo.input} />
+      ) : null}
       {passo.output !== null ? (
         <Json marcado={marcado} rotulo={t("runs.step.output")} valor={passo.output} />
       ) : null}
@@ -454,6 +461,16 @@ const TINTA_DE_ESTADO: Record<string, string> = {
   failed: "text-sev-critical",
   cancelled: "text-muted-foreground",
 };
+
+/** Vazio, objeto sem chave, ou objeto cujas chaves estão todas vazias. */
+function temConteudo(valor: unknown): boolean {
+  if (valor === null || valor === undefined) return false;
+  if (Array.isArray(valor)) return valor.length > 0;
+  if (typeof valor !== "object") return true;
+
+  const entradas = Object.values(valor as Record<string, unknown>);
+  return entradas.length > 0 && entradas.some((v) => temConteudo(v));
+}
 
 function Estado({ status }: { status: string }) {
   const { t } = useTranslation();
