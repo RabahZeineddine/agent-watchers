@@ -351,7 +351,7 @@
       "description": "Instalar i18next e react-i18next. Dicionários em app/locales/en.json e app/locales/pt-BR.json, idioma base en, chave em inglês. O idioma vem de app.getLocale() no processo principal e chega à janela por um canal novo, com preferência gravada em settings sobrepondo a do sistema. Plural por Intl.PluralRules, nunca por ternário no componente. Configurar para falhar em desenvolvimento quando uma chave não existir, em vez de mostrar a chave crua.",
       "done_when": "A janela troca de idioma pela preferência e o texto muda, com en como retorno padrão.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

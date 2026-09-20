@@ -1,6 +1,7 @@
 import type { AgentService } from "../src/services/agent-service.js";
 import type { ApprovalService } from "../src/services/approval-service.js";
 import type { CredentialService } from "../src/services/credential-service.js";
+import type { Language, LanguageState } from "../src/services/i18n-service.js";
 import type { MachineService } from "../src/services/machine-service.js";
 import type { McpService } from "../src/services/mcp-service.js";
 import type { MetricsService } from "../src/services/metrics-service.js";
@@ -30,6 +31,19 @@ type Asyncify<F> = F extends (...args: infer A) => infer R
 export interface DecisionResult {
   approvalId: string;
   decision: "approved" | "rejected";
+}
+
+/**
+ * O idioma resolvido, do jeito que a janela precisa dele.
+ *
+ * É o estado do serviço mais o `strict`, que não é assunto de idioma e sim de
+ * empacotamento: o serviço não sabe se está rodando numa instalação ou numa
+ * árvore de trabalho, e essa é justamente a pergunta que decide se chave de
+ * tradução faltando estoura ou vira texto cru.
+ */
+export interface WindowLanguage extends LanguageState {
+  /** Fora de app empacotado, chave ausente estoura em vez de chegar na tela. */
+  strict: boolean;
 }
 
 interface ServiceApi {
@@ -88,6 +102,17 @@ interface ServiceApi {
   "startup.get": StartupService["getPreference"];
   "startup.set": StartupService["setPreference"];
 
+  /**
+   * Em que idioma a janela fala.
+   *
+   * A etiqueta do sistema só existe do lado do Electron, então a janela não
+   * tem como resolver isso sozinha: ela pergunta, e quem responde já aplicou a
+   * preferência guardada por cima do que a máquina disse. `setPreference`
+   * devolve o estado novo para a janela trocar de idioma na hora, sem recarregar.
+   */
+  "i18n.state": () => Promise<WindowLanguage>;
+  "i18n.setPreference": (language: Language | null) => Promise<WindowLanguage>;
+
   /** Run para onde o ultimo clique de notificacao mandou, ou nulo. */
   "window.inboxTarget": () => string | null;
 
@@ -141,6 +166,8 @@ export const BRIDGE_CHANNELS = [
   "triggers.setEnabled",
   "startup.get",
   "startup.set",
+  "i18n.state",
+  "i18n.setPreference",
   "window.inboxTarget",
   "chat.status",
   "chat.setModel",

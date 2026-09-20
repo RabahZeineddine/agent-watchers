@@ -1,0 +1,10 @@
+{
+  "bridge": {
+    "loading": "lendo pela ponte...",
+    "refused": "a ponte recusou {{channel}}: {{message}}",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "runs_one": "{{count}} execução",
+    "runs_other": "{{count}} execuções"
+  }
+}

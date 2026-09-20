@@ -1,14 +1,16 @@
-import { ipcMain, type BrowserWindow, type WebContents } from "electron";
+import { app, ipcMain, type BrowserWindow, type WebContents } from "electron";
 import { chatSession } from "./chat.js";
 import {
   BRIDGE_CHANNELS,
   type BridgeChannel,
   type LocumApi,
+  type WindowLanguage,
 } from "./bridge-contract.js";
 import { buildGate } from "../src/executor/build.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
 import { credentialService } from "../src/services/credential-service.js";
+import { i18nService } from "../src/services/i18n-service.js";
 import { machineService } from "../src/services/machine-service.js";
 import { mcpService } from "../src/services/mcp-service.js";
 import { metricsService } from "../src/services/metrics-service.js";
@@ -60,6 +62,18 @@ function assertTrusted(sender: WebContents, channel: BridgeChannel): void {
  * escolhida na subida.
  */
 let remetente: WebContents | null = null;
+
+/**
+ * O idioma resolvido, com a etiqueta que o sistema devolve.
+ *
+ * `app.getLocale()` só responde depois do `ready`, e por isso a chamada fica
+ * aqui dentro e não numa constante de módulo: a ponte só atende pedido de
+ * janela, que por definição já subiu.
+ */
+async function idiomaDaJanela(): Promise<WindowLanguage> {
+  const estado = await i18nService.resolve(app.getLocale());
+  return { ...estado, strict: !app.isPackaged };
+}
 
 function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
   return {
@@ -117,6 +131,12 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "startup.get": () => startupService.getPreference(),
     "startup.set": (enabled) => startupService.setPreference(enabled),
+
+    "i18n.state": () => idiomaDaJanela(),
+    "i18n.setPreference": async (language) => {
+      await i18nService.setPreference(language);
+      return idiomaDaJanela();
+    },
 
     "window.inboxTarget": async () => bridgeHandlers.inboxTarget(),
   };

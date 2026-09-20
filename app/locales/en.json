@@ -1,0 +1,10 @@
+{
+  "bridge": {
+    "loading": "reading through the bridge...",
+    "refused": "the bridge refused {{channel}}: {{message}}",
+    "agents_one": "{{count}} agent",
+    "agents_other": "{{count}} agents",
+    "runs_one": "{{count}} run",
+    "runs_other": "{{count}} runs"
+  }
+}

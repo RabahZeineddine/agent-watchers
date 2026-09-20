@@ -2,6 +2,8 @@ import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import en from "../locales/en.json";
+import ptBR from "../locales/pt-BR.json";
 import { join } from "node:path";
 // So tipo: o `import type` e apagado no build, e um import de valor vindo de
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
@@ -614,19 +616,26 @@ async function checkRenderer(): Promise<string> {
   try {
     await window.loadFile(RENDERER);
 
-    const visto = (await window.webContents.executeJavaScript(
+    // A espera nao e frescura: a janela pergunta o idioma pela ponte antes de
+    // desenhar, e conferir logo depois do `loadFile` pegaria a raiz ainda
+    // vazia. Montar em ingles e corrigir depois faria a tela piscar em toda
+    // subida de quem escolheu portugues, entao quem espera e o exame.
+    const visto = await esperarProbe<{ raiz: number; marca: string; folha: string }>(
+      window,
+      "raiz",
       `(() => {
+        const raiz = document.getElementById("root");
+        if (raiz === null || raiz.childElementCount === 0) return null;
         const probe = document.querySelector("[data-locum-probe=tailwind]");
         return {
-          raiz: document.getElementById("root")?.childElementCount ?? 0,
+          raiz: raiz.childElementCount,
           marca: document.querySelector("[data-locum-probe=marca]")?.textContent ?? "",
           folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
         };
       })()`,
-    )) as { raiz: number; marca: string; folha: string };
+    );
 
     if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
-    if (visto.raiz === 0) throw new Error("a raiz #root ficou vazia, o React nao montou");
     if (visto.marca !== "Locum") throw new Error(`a barra lateral montou com a marca ${visto.marca}`);
     if (visto.folha !== "none") {
       throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
@@ -646,6 +655,9 @@ async function checkRenderer(): Promise<string> {
     // aparece.
     const destacado = await esperarDestaque(window);
     const ponte = await esperarPonte(window);
+    // Por ultimo de proposito: o exame recarrega a janela, e recarregar antes
+    // jogaria fora o destino em que os outros exames deixaram a pagina.
+    const idioma = await checkI18n(window);
 
     const agentes = (await agentService.list()).map((a) => a.id).join(",");
     if (ponte.agents !== agentes) {
@@ -665,8 +677,9 @@ async function checkRenderer(): Promise<string> {
     return (
       "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
       `${rotas} navegando, ${paleta}, ${agents}, ${configuracao}, ${execucoes}, ` +
-      `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
-      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
+      `bloco de codigo com ${destacado} trecho(s) destacado(s), a janela lendo ` +
+      `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte, ` +
+      `${idioma}`
     );
   } finally {
     window.destroy();
@@ -1369,6 +1382,159 @@ async function esperarProbe<T>(
   }
 
   throw new Error(`o marcador ${nome} nao ficou pronto dentro de ${limiteMs / 1000}s`);
+}
+
+type Dicionario = typeof en;
+
+/**
+ * A forma de plural que o dicionário tem para esta contagem neste idioma.
+ *
+ * A escolha sai do `Intl.PluralRules`, que é exatamente o que o i18next usa do
+ * outro lado. Reimplementar a regra aqui, ainda que com um `if`, faria o exame
+ * concordar consigo mesmo: em português a forma "one" cobre o zero, e um exame
+ * que não soubesse disso passaria a exigir o texto errado.
+ */
+function plural(
+  dicionario: Dicionario,
+  idioma: string,
+  chave: "agents" | "runs",
+  count: number,
+): string {
+  const formas = dicionario.bridge as unknown as Record<string, string | undefined>;
+  const forma = new Intl.PluralRules(idioma).select(count);
+  const modelo = formas[`${chave}_${forma}`] ?? formas[`${chave}_other`];
+  if (modelo === undefined) throw new Error(`o dicionario ${idioma} nao tem plural de ${chave}`);
+  return modelo.replace("{{count}}", String(count));
+}
+
+interface IdiomaVisto {
+  idioma: string;
+  documento: string;
+  preferencia: string;
+  estrito: string;
+  rodape: string;
+  runs: number;
+}
+
+/**
+ * O que a janela aplicou de idioma, junto do rodapé que ela desenhou.
+ *
+ * O rodapé entra porque atributo de marcador prova que o estado chegou, e não
+ * que o texto mudou: uma tradução esquecida deixaria o marcador em `pt-BR` com
+ * a tela inteira em inglês. O exame espera as leituras terminarem antes de
+ * olhar, senão pegaria o texto de "carregando" em vez do plural.
+ */
+async function lerIdioma(window: BrowserWindow): Promise<IdiomaVisto> {
+  return esperarProbe<IdiomaVisto>(
+    window,
+    "idioma",
+    `(() => {
+      const idioma = document.querySelector("[data-locum-probe=idioma]");
+      const ponte = document.querySelector("[data-locum-probe=ponte]");
+      if (idioma === null || ponte === null) return null;
+      if (ponte.dataset.estado !== "pronto") return null;
+      return {
+        idioma: idioma.dataset.idioma,
+        documento: document.documentElement.lang,
+        preferencia: idioma.dataset.preferencia,
+        estrito: idioma.dataset.estrito,
+        rodape: (ponte.textContent ?? "").trim(),
+        runs: Number(ponte.dataset.runs),
+      };
+    })()`,
+  );
+}
+
+/** Recarrega a página e espera ela terminar de carregar. */
+async function recarregar(window: BrowserWindow): Promise<void> {
+  const carregou = new Promise<void>((resolve) => {
+    window.webContents.once("did-finish-load", () => resolve());
+  });
+  window.webContents.reload();
+  await carregou;
+}
+
+/**
+ * Prova que a preferência de idioma manda na janela e que o texto muda com ela.
+ *
+ * A troca é pedida de dentro da página, pelo mesmo canal que a tela de
+ * configuração vai usar, e não por chamada direta ao serviço deste lado: o que
+ * interessa saber é que o caminho inteiro funciona, da janela até `settings` e
+ * de volta. A página recarrega entre uma e outra porque quem aplica sem
+ * recarregar é a tela de escolha, que ainda não existe.
+ *
+ * O retorno padrão é conferido no serviço, com uma etiqueta de sistema que o
+ * Locum não fala: a máquina do loop está num idioma só, e esperar que ela
+ * esteja em alemão para exercitar o `en` seria um exame que nunca roda.
+ */
+async function checkI18n(window: BrowserWindow): Promise<string> {
+  const { BRIDGE_GLOBAL } = await import("./bridge-contract.js");
+  const { FALLBACK_LANGUAGE, i18nService, matchLanguage } = await import(
+    "../src/services/i18n-service.js"
+  );
+
+  const original = await i18nService.getPreference();
+
+  async function preferir(idioma: string | null): Promise<IdiomaVisto> {
+    const argumento = idioma === null ? "null" : JSON.stringify(idioma);
+    await window.webContents.executeJavaScript(
+      `globalThis.${BRIDGE_GLOBAL}.i18n.setPreference(${argumento}).then(() => null)`,
+    );
+    await recarregar(window);
+    return lerIdioma(window);
+  }
+
+  try {
+    const portugues = await preferir("pt-BR");
+    if (portugues.idioma !== "pt-BR" || portugues.documento !== "pt-BR") {
+      throw new Error(
+        `a preferencia pt-BR deixou a janela em ${portugues.idioma} e o documento em ${portugues.documento}`,
+      );
+    }
+    if (portugues.estrito !== "true") {
+      throw new Error("fora de app empacotado a guarda de chave ausente devia estar ligada");
+    }
+    const esperadoPt = plural(ptBR, "pt-BR", "runs", portugues.runs);
+    if (!portugues.rodape.includes(esperadoPt)) {
+      throw new Error(`o rodape em pt-BR ficou "${portugues.rodape}" e devia trazer "${esperadoPt}"`);
+    }
+
+    const ingles = await preferir("en");
+    if (ingles.idioma !== "en" || ingles.preferencia !== "en") {
+      throw new Error(`a preferencia en deixou a janela em ${ingles.idioma}`);
+    }
+    const esperadoEn = plural(en, "en", "runs", ingles.runs);
+    if (!ingles.rodape.includes(esperadoEn)) {
+      throw new Error(`o rodape em en ficou "${ingles.rodape}" e devia trazer "${esperadoEn}"`);
+    }
+    if (ingles.rodape === portugues.rodape) {
+      throw new Error(`o texto nao mudou de idioma, ficou "${ingles.rodape}" nos dois`);
+    }
+
+    // Sem preferencia, quem manda e a maquina, e o exame confere contra o que o
+    // servico resolve para a etiqueta que o Electron devolveu.
+    const doSistema = await preferir(null);
+    const daMaquina = matchLanguage(app.getLocale()) ?? FALLBACK_LANGUAGE;
+    if (doSistema.preferencia !== "" || doSistema.idioma !== daMaquina) {
+      throw new Error(
+        `sem preferencia a janela ficou em ${doSistema.idioma} e o sistema pede ${daMaquina}`,
+      );
+    }
+
+    const desconhecido = await i18nService.resolve("de-DE");
+    if (desconhecido.language !== FALLBACK_LANGUAGE) {
+      throw new Error(`maquina em de-DE caiu em ${desconhecido.language} e nao no idioma base`);
+    }
+
+    return (
+      `idioma trocando pela preferencia, "${portugues.rodape}" em pt-BR e ` +
+      `"${ingles.rodape}" em en, sistema ${doSistema.idioma} e de-DE caindo em ${FALLBACK_LANGUAGE}`
+    );
+  } finally {
+    // O exame escreve em `settings`, que sobrevive a ele. Sem isto, a proxima
+    // subida do Locum nesta maquina abriria no idioma da ultima verificacao.
+    await i18nService.setPreference(original);
+  }
 }
 
 /**

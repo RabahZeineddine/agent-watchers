@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 19 de setembro de 2026.
+Atualizado em 20 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -39,7 +39,7 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 25 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 33 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
@@ -48,6 +48,7 @@ que a interface vai usar.
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
 | tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
+| base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 
 ## Execução verificada
 
@@ -143,6 +144,13 @@ para quem chamou. Então o par é chave no keychain mais texto cifrado num arqui
 por credencial dentro da pasta do app, e no banco fica apenas o `credential_ref`.
 Gravar exige o app aberto; quem usa a linha de comando lê `undefined` e cai para
 a variável de ambiente, que é como sempre funcionou.
+
+**A janela não desenha antes de saber o idioma.** A etiqueta do sistema só
+existe do lado do Electron, então o provedor de idioma espera a resposta da
+ponte antes de montar a árvore. Montar em inglês e corrigir depois faria a tela
+piscar em toda subida de quem escolheu português. A consequência é que o smoke
+não pode conferir `#root` logo depois do `loadFile`: ele espera o marcador, como
+já fazia com as leituras da ponte.
 
 **Marcador de credencial no cadastro de MCP.** O valor `${credential}` em `env`
 ou `headers` é onde o segredo entra na hora de conectar. A substituição acontece

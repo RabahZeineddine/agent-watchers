@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useRead } from "@/lib/bridge";
 import { useRota } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,10 @@ import { ROTA_IDS, ROTA_PADRAO, ROTAS } from "./rotas";
  * comparar o que a janela enxergou com o que os servicos devolvem do outro
  * lado. Ele carrega os identificadores dos agents, e nao so a contagem, porque
  * contagem igual por acaso passaria sem a ponte ter trazido nada.
+ *
+ * O texto sai do dicionário, com plural de verdade: em português a contagem
+ * troca a palavra, e um "execucao(oes)" entre parênteses é o que se escreve
+ * quando não há de onde tirar a forma certa.
  */
 function Ponte({
   agents,
@@ -30,6 +35,8 @@ function Ponte({
   execucoes: number;
   naFila: number;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="border-border border-t px-3 py-3 text-muted-foreground text-xs"
@@ -41,14 +48,13 @@ function Ponte({
       data-runs={execucoes}
     >
       {erro !== undefined ? (
-        <span>
-          a ponte recusou {erro.channel}: {erro.message}
-        </span>
+        <span>{t("bridge.refused", { channel: erro.channel, message: erro.message })}</span>
       ) : estado === "carregando" ? (
-        <span>lendo pela ponte...</span>
+        <span>{t("bridge.loading")}</span>
       ) : (
         <span>
-          {agents.length} agent(s), {execucoes} execucao(oes)
+          {t("bridge.agents", { count: agents.length })},{" "}
+          {t("bridge.runs", { count: execucoes })}
         </span>
       )}
     </div>
