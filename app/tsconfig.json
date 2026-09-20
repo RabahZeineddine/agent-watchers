@@ -14,7 +14,13 @@
     "types": [
       "node"
     ],
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./renderer/*"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts",

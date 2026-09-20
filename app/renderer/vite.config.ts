@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -10,6 +11,13 @@ import { defineConfig } from "vite";
  */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    // O mesmo apelido que o tsconfig do renderer declara. Os componentes
+    // vendorizados do shadcn chegam do registry importando por `@/`, e
+    // reescrever import em arquivo de terceiro so criaria conflito na
+    // proxima atualizacao.
+    alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
+  },
   base: "./",
   build: {
     outDir: "../dist/renderer",

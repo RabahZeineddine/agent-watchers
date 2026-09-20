@@ -554,6 +554,11 @@ async function checkBridge(): Promise<string> {
  * pagina: raiz montada prova o React, nao prova que o CSS chegou. E o console
  * do renderer entra no exame porque modulo que falha ao carregar deixa a raiz
  * vazia sem estourar deste lado.
+ *
+ * O bloco de codigo tambem entra, e ele so fica pronto depois da pagina: o
+ * shiki destaca de forma assincrona e busca a gramatica da linguagem num
+ * pedaco separado do pacote. Por isso a espera abaixo, que e o unico jeito de
+ * saber que o import dinamico funciona carregando do disco, sem servidor.
  */
 async function checkRenderer(): Promise<string> {
   if (!existsSync(RENDERER)) throw new Error(`renderer nao foi construido em ${RENDERER}`);
@@ -584,11 +589,44 @@ async function checkRenderer(): Promise<string> {
     if (visto.folha !== "none") {
       throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
     }
+
+    const destacado = await esperarDestaque(window);
+    if (erros.length > 0) throw new Error(`o renderer registrou erro: ${erros.join(", ")}`);
+
+    return (
+      "pagina construida carregada, raiz montada, folha do Tailwind valendo " +
+      `e bloco de codigo com ${destacado} trecho(s) destacado(s)`
+    );
   } finally {
     window.destroy();
   }
+}
 
-  return "pagina construida carregada, raiz montada e folha do Tailwind valendo";
+/**
+ * Espera o shiki terminar e devolve quantos trechos ele coloriu.
+ *
+ * O destaque nao esta no HTML construido: ele acontece no navegador, depois de
+ * um import dinamico do pacote da linguagem. Contar `span` com cor e o que
+ * separa "o componente montou" de "o destaque funcionou": sem a gramatica o
+ * shiki ainda desenha o `pre`, so que com o codigo todo na mesma cor.
+ */
+async function esperarDestaque(window: BrowserWindow): Promise<number> {
+  const limite = Date.now() + 20_000;
+
+  while (Date.now() < limite) {
+    const coloridos = (await window.webContents.executeJavaScript(
+      `(() => {
+        const bloco = document.querySelector("[data-locum-probe=code-block] pre.shiki");
+        if (bloco === null) return 0;
+        return bloco.querySelectorAll("span[style*='color']").length;
+      })()`,
+    )) as number;
+
+    if (coloridos > 0) return coloridos;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  throw new Error("o bloco de codigo nao ficou destacado dentro de 20s");
 }
 
 /** Quantas pendencias a fila tem, lida direto do servico. */

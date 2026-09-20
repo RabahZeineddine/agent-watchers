@@ -274,7 +274,7 @@
       "description": "Instalar shadcn/ui e os componentes do AI Elements pelo registry, vendorizados em app/renderer/components. Trazer so o que as telas usam: conversa, mensagem, raciocinio, ferramenta, bloco de codigo, tarefa. Tema escuro por padrao. Nao adicionar dependencia de rede em tempo de execucao: os componentes entram como fonte.",
       "done_when": "Os componentes existem como arquivo no repositorio e a pagina renderiza um bloco de codigo com destaque.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

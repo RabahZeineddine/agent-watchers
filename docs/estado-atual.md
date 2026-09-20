@@ -41,6 +41,7 @@ que a interface vai usar.
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
 | ponte entre janela e serviços | preload em sandbox, 22 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela |
+| componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 
 ## Execução verificada
 
@@ -211,6 +212,45 @@ processo principal.
 linha de comando: a opção é o argumento posicional, e passar a flag aborta com
 `Unknown option`. O `build:renderer` chama
 `vite build --config renderer/vite.config.ts renderer`.
+
+**O `shadcn add` não roda sozinho.** Ele pergunta a biblioteca de componente
+(Base UI, React Aria, Radix UI) mesmo com `--yes`, e a resposta não cabe no
+`components.json`: o campo não existe no esquema. Para trazer o vendor deste
+marco a escolha foi empurrada pela entrada padrão, com
+`printf '\033[B\033[B\n' |` antes do comando, que é o Radix, que é o que o AI
+Elements espera. E ele só roda onde existe `package.json`, por isso o
+`components.json` mora em `app/` e não em `app/renderer/`, com o apelido `@/`
+declarado nos dois `tsconfig.json`. O que vem do registry do AI Elements cai em
+`app/src/components/ai-elements`, porque a CLI vê a pasta `src` e se guia por
+ela; o lugar certo é `app/renderer/components/ai-elements`, e mover é parte do
+trabalho.
+
+**O `cn` mudou de casa.** Os componentes novos do shadcn importam de um pacote
+`cn`, que é o `clsx` mais o `tailwind-merge` compilados, e não mais de
+`@/lib/utils`. Os do AI Elements continuam pedindo `@/lib/utils`. Por isso
+`app/renderer/lib/utils.ts` é uma reexportação de uma linha: duas
+implementações de merge brigariam no mesmo elemento.
+
+**Token do shadcn não vem do `add`.** Só o `init` escreve a folha, e o estilo v4
+manda importar `shadcn/tailwind.css`, que é a própria CLI virando dependência de
+build por causa de um arquivo. Em vez disso os tokens da paleta zinc foram
+copiados do registry para dentro de `renderer/src/index.css`, pelo mesmo motivo
+dos componentes: nada da interface pode depender de rede. O que veio de pacote
+foi só o `tw-animate-css`, porque os componentes usam `animate-in` e
+`slide-in-from-top-2`.
+
+**O shiki traz todas as gramáticas.** O `codeToHtml` do pacote raiz alcança o
+conjunto inteiro de linguagens, e o Vite parte isso em mais de 600 pedaços
+separados, carregados sob demanda. Funciona de `file://`, e o smoke prova isso
+esperando o destaque aparecer: import dinâmico do disco é justamente o que o
+teste exercita. O preço é o tamanho de `dist/renderer`, que só importa quando o
+empacotamento entrar.
+
+**Destaque de código não está no HTML construído.** O shiki colore no navegador,
+depois que a página montou, e ainda espera a gramática chegar. Conferir logo
+depois do `loadFile` encontraria o `pre` vazio. Por isso o smoke gira até
+aparecer `span` com cor dentro do bloco, e sem gramática o `pre` até existiria,
+só que com o código todo da mesma cor.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 
