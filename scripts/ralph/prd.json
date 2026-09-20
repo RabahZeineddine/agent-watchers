@@ -307,7 +307,7 @@
       "description": "Lista de execucoes com estado, custo e agent, e detalhe com a linha do tempo dos passos: entrada, saida, modelo usado com substituicao quando houver, ferramentas chamadas, tokens e erro. Usar os componentes de raciocinio e de codigo. Lista virtualizada, porque log longo redesenhando come CPU a toa. Botao de reexecutar passo chamando runs.rerunStep.",
       "done_when": "O detalhe de um run mostra os quatro passos do agent semente e o smoke confere a contagem.",
       "verify": "npx tsc --noEmit && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

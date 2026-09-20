@@ -575,6 +575,13 @@ async function checkRenderer(): Promise<string> {
   const { setupBridge, teardownBridge, trustWindow } = await import("./bridge.js");
   const { agentService } = await import("../src/services/agent-service.js");
   const { runService } = await import("../src/services/run-service.js");
+  const { ensureDemoRun } = await import("../src/fixtures/demo-run.js");
+
+  // Banco vazio faz a tela de execucoes passar sem provar nada: lista vazia e
+  // detalhe inexistente batem com servico vazio por acidente. O fixture planta
+  // uma execucao pronta, e nao roda o pipeline, que custaria minutos de
+  // assinatura a cada verificacao do loop.
+  const fixture = await ensureDemoRun();
 
   setupBridge({ inboxTarget: pendingInboxTarget });
 
@@ -609,10 +616,11 @@ async function checkRenderer(): Promise<string> {
     const rotas = await checkRoutes(window);
     const paleta = await checkPalette(window);
 
-    // O bloco de codigo mora na tela de execucoes, que e quem vai usa-lo de
-    // verdade. O `checkRoutes` devolve a janela ao destino padrao, entao a ida
-    // ate la e explicita.
-    await irPara(window, "execucoes");
+    const execucoes = await checkRuns(window, fixture);
+    // O bloco de codigo mora no detalhe de uma execucao, que e quem vai usa-lo
+    // de verdade: a saida de cada passo sai como JSON destacado. O `checkRuns`
+    // deixa a janela nesse detalhe, entao o destaque e conferido de onde ele
+    // aparece.
     const destacado = await esperarDestaque(window);
     const ponte = await esperarPonte(window);
 
@@ -620,9 +628,9 @@ async function checkRenderer(): Promise<string> {
     if (ponte.agents !== agentes) {
       throw new Error(`a janela leu os agents ${ponte.agents} e o servico tem ${agentes}`);
     }
-    const execucoes = (await runService.list()).length;
-    if (ponte.runs !== execucoes) {
-      throw new Error(`a janela leu ${ponte.runs} execucao(oes) e o servico tem ${execucoes}`);
+    const total = (await runService.list()).length;
+    if (ponte.runs !== total) {
+      throw new Error(`a janela leu ${ponte.runs} execucao(oes) e o servico tem ${total}`);
     }
     const pendencias = await countPending();
     if (ponte.pendencias !== pendencias) {
@@ -633,7 +641,7 @@ async function checkRenderer(): Promise<string> {
 
     return (
       "pagina construida carregada, raiz montada, folha do Tailwind valendo, " +
-      `${rotas} navegando, ${paleta}, ` +
+      `${rotas} navegando, ${paleta}, ${execucoes}, ` +
       `bloco de codigo com ${destacado} trecho(s) destacado(s) e a janela lendo ` +
       `${ponte.runs} execucao(oes) e ${ponte.pendencias} pendencia(s) pela ponte`
     );
@@ -690,23 +698,28 @@ async function esperarPonte(
  * o hash e exatamente o que o clique na barra lateral faz: o caminho exercitado
  * aqui e o mesmo que uma pessoa usa.
  */
-async function irPara(window: BrowserWindow, id: string): Promise<void> {
-  await window.webContents.executeJavaScript(`(location.hash = "#/${id}", null)`);
+async function irPara(window: BrowserWindow, id: string, detalhe?: string): Promise<void> {
+  const cauda = detalhe === undefined ? "" : `/${encodeURIComponent(detalhe)}`;
+  const esperado = `${id}|${detalhe ?? ""}`;
+  await window.webContents.executeJavaScript(`(location.hash = "#/${id}${cauda}", null)`);
 
   const limite = Date.now() + 10_000;
   let ultimo = "sem marcador";
 
   while (Date.now() < limite) {
-    const ativo = (await window.webContents.executeJavaScript(
-      `document.querySelector("[data-locum-probe=rota]")?.dataset.ativo ?? null`,
+    const onde = (await window.webContents.executeJavaScript(
+      `(() => {
+        const probe = document.querySelector("[data-locum-probe=rota]");
+        return probe === null ? null : probe.dataset.ativo + "|" + probe.dataset.detalhe;
+      })()`,
     )) as string | null;
 
-    if (ativo === id) return;
-    if (ativo !== null) ultimo = ativo;
+    if (onde === esperado) return;
+    if (onde !== null) ultimo = onde;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  throw new Error(`a janela ficou em "${ultimo}" depois de pedir o destino ${id}`);
+  throw new Error(`a janela ficou em "${ultimo}" depois de pedir o destino ${esperado}`);
 }
 
 /**
@@ -804,6 +817,117 @@ async function checkPalette(window: BrowserWindow): Promise<string> {
   if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
 
   return "paleta abrindo e fechando pelo atalho";
+}
+
+/**
+ * Confere a lista de execucoes e o detalhe de uma delas.
+ *
+ * Os dois lados sao comparados contra o mesmo servico, e nao contra numeros
+ * escritos aqui: o que o loop precisa saber e se a janela mostra o que o banco
+ * tem, nao se alguem lembrou de atualizar uma constante deste lado.
+ *
+ * O botao de reexecutar e conferido por existir, e nunca clicado. Clicar
+ * soltaria o executor de verdade, que gasta minutos de assinatura e leva o run
+ * junto: o que esta sendo provado aqui e a fiacao, e um passo por botao.
+ *
+ * Ao sair, a janela fica no detalhe, porque e la que vive o bloco de codigo
+ * que a verificacao do destaque procura.
+ */
+async function checkRuns(window: BrowserWindow, runId: string): Promise<string> {
+  const { runService } = await import("../src/services/run-service.js");
+
+  await irPara(window, "execucoes");
+  const lista = await esperarProbe<{ estado: string; runs: string; total: number }>(
+    window,
+    "execucoes",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucoes]");
+      if (probe === null || probe.dataset.estado !== "ready") return null;
+      return { estado: probe.dataset.estado, runs: probe.dataset.runs, total: Number(probe.dataset.total) };
+    })()`,
+  );
+
+  const doServico = (await runService.list({ limit: 500 })).map((r) => r.id);
+  if (lista.runs !== doServico.join(",")) {
+    throw new Error(`a lista mostrou ${lista.runs} e o servico devolveu ${doServico.join(",")}`);
+  }
+  if (!doServico.includes(runId)) {
+    throw new Error(`o run plantado ${runId} nao apareceu na lista`);
+  }
+
+  // A linha so existe no DOM se a janela virtual a desenhou: lista vazia de
+  // linhas com o total certo passaria pela conferencia acima.
+  const desenhadas = (await window.webContents.executeJavaScript(
+    `document.querySelectorAll("[data-locum-run]").length`,
+  )) as number;
+  if (desenhadas === 0) throw new Error("a lista de execucoes nao desenhou nenhuma linha");
+
+  await irPara(window, "execucoes", runId);
+  const detalhe = await esperarProbe<{ run: string; passos: number; chaves: string; achados: number }>(
+    window,
+    "execucao",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=execucao]");
+      // Os passos e os achados sao duas leituras, e a segunda demora mais.
+      // O menos um e o "ainda lendo" das duas, entao girar enquanto ele
+      // aparecer e o que separa conferir o estado final de conferir o inicial.
+      if (probe === null || probe.dataset.passos === "-1" || probe.dataset.achados === "-1") return null;
+      return {
+        run: probe.dataset.run,
+        passos: Number(probe.dataset.passos),
+        chaves: probe.dataset.chaves,
+        achados: Number(probe.dataset.achados),
+      };
+    })()`,
+  );
+
+  const doBanco = await runService.get(runId);
+  if (doBanco === undefined) throw new Error(`o run plantado ${runId} sumiu do banco`);
+
+  const chaves = doBanco.spec.steps.map((p) => p.key);
+  if (chaves.length !== 4) {
+    throw new Error(`o agent semente passou a ter ${chaves.length} passos e o smoke espera quatro`);
+  }
+  if (detalhe.passos !== doBanco.steps.length) {
+    throw new Error(`o detalhe mostrou ${detalhe.passos} passo(s) e o run tem ${doBanco.steps.length}`);
+  }
+  if (detalhe.chaves !== doBanco.steps.map((p) => p.stepKey).join(",")) {
+    throw new Error(`o detalhe listou os passos ${detalhe.chaves}`);
+  }
+
+  const achados = (await runService.findings(runId)).length;
+  if (detalhe.achados !== achados) {
+    throw new Error(`o detalhe mostrou ${detalhe.achados} achado(s) e o servico tem ${achados}`);
+  }
+
+  const rerun = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-rerun]")).map((b) => b.dataset.locumRerun).join(",")`,
+  )) as string;
+  if (rerun !== detalhe.chaves) {
+    throw new Error(`os botoes de reexecutar cobrem ${rerun} e os passos sao ${detalhe.chaves}`);
+  }
+
+  return (
+    `lista com ${lista.total} execucao(oes) e ${desenhadas} linha(s) desenhada(s), ` +
+    `detalhe de ${detalhe.passos} passo(s) com ${detalhe.achados} achado(s) e botao de reexecutar em cada`
+  );
+}
+
+/** Gira ate o marcador responder com algo que nao seja nulo. */
+async function esperarProbe<T>(
+  window: BrowserWindow,
+  nome: string,
+  script: string,
+): Promise<T> {
+  const limite = Date.now() + 20_000;
+
+  while (Date.now() < limite) {
+    const visto = (await window.webContents.executeJavaScript(script)) as T | null;
+    if (visto !== null) return visto;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`o marcador ${nome} nao ficou pronto dentro de 20s`);
 }
 
 /**

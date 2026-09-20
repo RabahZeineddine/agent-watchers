@@ -43,7 +43,8 @@ que a interface vai usar.
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
-| layout e roteamento | barra lateral com os quatro destinos, rota por hash, paleta de comandos pelo atalho, ainda sem comando |
+| layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
+| tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 
 ## Execução verificada
 
@@ -70,6 +71,7 @@ npm install
 npm run db:push
 npm run dev seed
 npm run dev demo                      # não precisa de credencial
+npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
 npm run dev inbox
@@ -273,6 +275,41 @@ quebraria isso na hora.
 objeto literal, que muda de referência a cada render, e comparar por identidade
 dispararia a leitura em laço. Os argumentos de verdade viajam numa `ref`, porque
 espalhá-los na lista traria a identidade de volta.
+
+**A execução do smoke é plantada, não rodada.** Um `demo` de verdade custa
+minutos de assinatura, e o smoke roda a cada iteração do loop. Por isso
+`app/src/fixtures/demo-run.ts` escreve direto no banco uma execução pronta, com
+os números da execução verificada acima, e o smoke chama `ensureDemoRun()` antes
+de carregar a página. Ela é idempotente pelos identificadores fixos, então
+chamar de novo não acumula linha. O que ela não faz é decidir nada: o passo de
+ação nasce parado na fila, como o de verdade nasceu.
+
+**O botão de reexecutar nunca é clicado no smoke.** Clicar solta o executor de
+verdade, que gasta assinatura e leva o run junto. O que a verificação prova é a
+fiação: um botão por passo, com a chave do passo escrita nele. O canal
+`runs.rerunStep` chega à janela por `ACTION_CHANNELS`, uma segunda lista escrita
+à mão em `renderer/lib/bridge.ts`, separada da de leitura porque quem lê dispara
+sozinho ao montar a tela e quem age precisa de alguém clicando. A guarda de tipo
+que mantém `approvals.decide` fora passou a cobrir as duas listas.
+
+**Virtualização escrita à mão.** A lista de execuções tem linha de altura fixa,
+então a primeira visível é uma divisão e não há o que medir: `renderer/lib/janela.ts`
+resolve isso em trinta linhas, e um virtualizador de pacote só ganharia se a
+altura variasse. O smoke confere as duas coisas separadas, o total que a janela
+leu e quantas linhas existem de fato no DOM, porque uma lista que desenhasse
+zero linha ainda mostraria o total certo no marcador.
+
+**Detalhe de execução mora no hash, depois do destino.** `#/execucoes/<run-id>`.
+O roteador devolve o primeiro segmento como destino e o resto inteiro como
+detalhe, sem quebrar de novo, e destino desconhecido descarta o resto e cai na
+inbox. As telas recebem o detalhe do layout em vez de chamarem `useRota` por
+conta própria: dois ouvintes de `hashchange` discordariam por um quadro na troca
+de destino.
+
+**Marcador com menos um quer dizer lendo.** O detalhe faz duas leituras pela
+ponte, os passos e os achados, e a segunda termina depois. O smoke gira enquanto
+qualquer um dos dois estiver em menos um, senão conferiria o estado inicial
+achando que era o final.
 
 **Banco vazio faz o smoke passar sem provar nada.** A comparação entre o que a
 janela leu e o que o serviço devolve é verdadeira por acidente quando os dois

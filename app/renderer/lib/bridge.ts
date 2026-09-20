@@ -26,7 +26,8 @@ import type {
  * Fora da lista de proposito: `approvals.decide`, que e o clique de uma pessoa
  * na inbox e passa pela gate; e `runs.rerunStep`, `triggers.setEnabled`,
  * `startup.set`, `mcp.test` e `mcp.tools`, que escrevem ou sobem processo e
- * nao cabem num hook que dispara sozinho ao montar a tela.
+ * nao cabem num hook que dispara sozinho ao montar a tela. O que dessas a
+ * janela ja pode pedir esta em `ACTION_CHANNELS`, logo abaixo.
  */
 export const READ_CHANNELS = [
   "agents.list",
@@ -49,8 +50,29 @@ export const READ_CHANNELS = [
 
 export type ReadChannel = (typeof READ_CHANNELS)[number];
 
-export type ReadArgs<C extends ReadChannel> = Parameters<LocumApi[C]>;
-export type ReadResult<C extends ReadChannel> = Awaited<ReturnType<LocumApi[C]>>;
+/**
+ * O catalogo de acao, tambem escrito a mao, e tambem canal por canal.
+ *
+ * Aqui mora o que a janela pode mandar fazer, e nao so perguntar. A lista e
+ * separada da de leitura de proposito: quem le dispara sozinho ao montar a
+ * tela, quem age precisa de alguem clicando, e misturar os dois num catalogo
+ * so faria um hook de leitura alcancar escrita por descuido.
+ *
+ * Fora da lista, e pela mesma emenda 5 do ADR 0003 que rege a de leitura:
+ * `approvals.decide`. Ela nao e uma acao da janela, e o clique de uma pessoa
+ * na inbox, e chega ao processo principal por um caminho que a inbox monta,
+ * nao por um catalogo que qualquer tela enxerga.
+ */
+export const ACTION_CHANNELS = [
+  "runs.rerunStep",
+] as const satisfies readonly BridgeChannel[];
+
+export type ActionChannel = (typeof ACTION_CHANNELS)[number];
+
+type AnyChannel = ReadChannel | ActionChannel;
+
+export type ReadArgs<C extends AnyChannel> = Parameters<LocumApi[C]>;
+export type ReadResult<C extends AnyChannel> = Awaited<ReturnType<LocumApi[C]>>;
 
 /**
  * Guarda de compilacao contra o catalogo crescer para o lado errado.
@@ -59,7 +81,7 @@ export type ReadResult<C extends ReadChannel> = Awaited<ReturnType<LocumApi[C]>>
  * `READ_CHANNELS`, o `Extract` deixa de ser `never` e o `npm run build` para
  * antes de a janela enxergar o canal.
  */
-type SemDecisao = [Extract<ReadChannel, "approvals.decide">] extends [never] ? true : never;
+type SemDecisao = [Extract<AnyChannel, "approvals.decide">] extends [never] ? true : never;
 const _semDecisao: SemDecisao = true;
 void _semDecisao;
 
@@ -90,7 +112,7 @@ function bridge(): LocumBridge {
  * isso, uma tela com quatro leituras mostra "pendencia nao encontrada" sem
  * dizer de onde veio.
  */
-export async function read<C extends ReadChannel>(
+async function invoke<C extends AnyChannel>(
   channel: C,
   ...args: ReadArgs<C>
 ): Promise<ReadResult<C>> {
@@ -109,6 +131,28 @@ export async function read<C extends ReadChannel>(
   } catch (erro) {
     throw new BridgeError(channel, erro instanceof Error ? erro.message : String(erro));
   }
+}
+
+export async function read<C extends ReadChannel>(
+  channel: C,
+  ...args: ReadArgs<C>
+): Promise<ReadResult<C>> {
+  return invoke(channel, ...args);
+}
+
+/**
+ * Manda o processo principal fazer alguma coisa e espera o desfecho.
+ *
+ * E a mesma viagem de `read`, com outro catalogo na entrada. A funcao separada
+ * nao e cerimonia: ela e o que impede um hook de leitura de aceitar canal de
+ * escrita por engano, porque os dois tipos de canal nao se encontram em lugar
+ * nenhum da assinatura.
+ */
+export async function call<C extends ActionChannel>(
+  channel: C,
+  ...args: ReadArgs<C>
+): Promise<ReadResult<C>> {
+  return invoke(channel, ...args);
 }
 
 export type ReadState<T> =

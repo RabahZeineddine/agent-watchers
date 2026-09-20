@@ -344,6 +344,14 @@ async function main(): Promise<void> {
     case "demo":
       await start("sintetico");
       break;
+    case "fixture:run": {
+      // Execucao plantada, sem chamar modelo. Ela existe para a interface e
+      // para o smoke terem o que mostrar num banco novo sem gastar assinatura.
+      const { ensureDemoRun } = await import("./fixtures/demo-run.js");
+      const id = await ensureDemoRun();
+      await printRun(id);
+      break;
+    }
     case "review":
       if (!arg) throw new Error('uso: review owner/repo#123');
       await start(arg);
@@ -470,6 +478,7 @@ async function main(): Promise<void> {
           "",
           "  seed                     grava a versao do agent semente",
           "  demo                     roda o pipeline num PR sintetico, sem credencial",
+          "  fixture:run              planta uma execucao pronta no banco, sem chamar modelo",
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
           "  inbox                    lista aprovacoes pendentes",

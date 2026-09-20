@@ -59,7 +59,7 @@ function Ponte({
  * titulo do destino ativo, e a tela dele no corpo.
  */
 export function Layout() {
-  const { ativa, navegar } = useRota(ROTA_IDS, ROTA_PADRAO);
+  const { ativa, detalhe, navegar } = useRota(ROTA_IDS, ROTA_PADRAO);
   const rota = ROTAS.find((r) => r.id === ativa) ?? ROTAS[0];
   const { Tela } = rota;
 
@@ -126,9 +126,10 @@ export function Layout() {
         <main
           className="min-h-0 flex-1 overflow-auto px-6 py-6"
           data-ativo={ativa}
+          data-detalhe={detalhe ?? ""}
           data-locum-probe="rota"
         >
-          <Tela />
+          <Tela detalhe={detalhe} navegar={navegar} />
         </main>
       </div>
 

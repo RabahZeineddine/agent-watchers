@@ -6,6 +6,19 @@ import { Execucoes } from "./telas/execucoes";
 import { Inbox } from "./telas/inbox";
 
 /**
+ * O que uma tela recebe do layout.
+ *
+ * O detalhe sai do roteador do layout, e nao de um `useRota` dentro de cada
+ * tela: o ouvinte de `hashchange` e um so e a tela recebe o que ele leu. Dois
+ * ouvintes discordariam por um quadro na troca de destino.
+ */
+export interface TelaProps {
+  /** O que veio depois do destino no hash, ou nulo. */
+  detalhe: string | null;
+  navegar: (id: RotaId, detalhe?: string) => void;
+}
+
+/**
  * Os quatro destinos da janela, na ordem em que aparecem na barra lateral.
  *
  * A lista e escrita a mao, e e a unica fonte tanto da barra quanto do hash:
@@ -21,7 +34,7 @@ export const ROTAS = [
   id: string;
   titulo: string;
   icone: ComponentType<{ className?: string }>;
-  Tela: ComponentType;
+  Tela: ComponentType<TelaProps>;
 }[];
 
 export type RotaId = (typeof ROTAS)[number]["id"];
