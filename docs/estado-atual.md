@@ -34,7 +34,7 @@ executor que a interface vai usar.
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
 | agendador por cursor | pronto, falta o evento de energia do M3 |
-| casca Electron | processo principal com `--smoke` e bandeja com contagem de pendencias, sem interface ainda |
+| casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências e início no login por preferência guardada, sem interface ainda |
 | interface | não começou |
 
 ## Execução verificada
@@ -74,6 +74,9 @@ npm run dev tick                      # uma batida nos gatilhos habilitados
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
+npm run dev startup                   # o Locum sobe junto com o login?
+npm run dev startup:on                # passa a subir, valendo na próxima subida
+npm run dev startup:off               # deixa de subir
 npm run mcp                           # servidor MCP próprio, por stdio
 npm run dev approve <id>
 npm run dev resume
@@ -105,6 +108,14 @@ O `build:main` recompila para o Electron, guarda a cópia em `app/native/`, e
 devolve o `node_modules` ao estado de Node. Quem carrega escolhe: o processo
 principal aponta `LOCUM_SQLITE_BINDING` para a cópia antes de importar o núcleo,
 e sem a variável vale o caminho padrão.
+
+**Item de login fora de app empacotado.** O macOS só aceita
+`app.setLoginItemSettings` de aplicativo empacotado, assinado e notarizado.
+Rodando por `npx electron` a chamada volta com `Operation not permitted` no log
+e nada é registrado. Por isso a preferência guardada no banco é a fonte da
+verdade, e o processo principal reconcilia o sistema com ela a cada subida, em
+vez de ler o sistema e acreditar. A preferência tem três estados: sem linha na
+tabela `settings` quer dizer que ninguém decidiu, e aí o app não mexe em nada.
 
 **Nome do helper do AI SDK.** É `stepCountIs`, não `isStepCount`.
 

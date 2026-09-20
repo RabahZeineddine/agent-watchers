@@ -48,6 +48,37 @@ async function checkCore(): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Prova que a preferencia de subir no login vai e volta do banco e que o
+ * sistema responde. A gravacao no sistema repete o estado que ja estava la de
+ * proposito: o smoke roda na maquina de quem desenvolve e nao pode sair
+ * ligando o Locum no login de ninguem.
+ */
+async function checkLoginItem(): Promise<string> {
+  const { applyPreference, readLoginItem, writeLoginItem } = await import("./login-item.js");
+  const { startupService } = await import("../src/services/startup-service.js");
+
+  const before = await startupService.getPreference();
+  for (const value of [true, false]) {
+    await startupService.setPreference(value);
+    if ((await startupService.getPreference()) !== value) {
+      throw new Error(`preferencia ${value} nao voltou do banco`);
+    }
+  }
+  if (before === null) await startupService.clearPreference();
+  else await startupService.setPreference(before);
+
+  const system = readLoginItem();
+  const rewritten = writeLoginItem(system.openAtLogin);
+  if (rewritten.openAtLogin !== system.openAtLogin) {
+    throw new Error("regravar o mesmo estado mudou o item de login");
+  }
+
+  const state = await applyPreference();
+  const decision = state.preference === null ? "nao decidida" : String(state.preference);
+  return `preferencia ${decision}, sistema ${state.status}`;
+}
+
 /** Quantas pendencias a fila tem, lida direto do servico. */
 async function countPending(): Promise<number> {
   const { approvalService } = await import("../src/services/approval-service.js");
@@ -68,6 +99,8 @@ async function main(): Promise<void> {
     app.dock?.hide();
     const agents = await checkCore();
 
+    const loginItem = await checkLoginItem();
+
     const tray = await setupTray({ openWindow: showWindow });
     const pending = await countPending();
     if (tray.isDestroyed()) throw new Error("bandeja nao sobreviveu a criacao");
@@ -80,10 +113,16 @@ async function main(): Promise<void> {
 
     console.log(
       `smoke ok: banco abriu, ${agents} agent(s) cadastrado(s), ` +
-        `bandeja criada com ${pending} pendencia(s)`,
+        `bandeja criada com ${pending} pendencia(s), inicio no login com ${loginItem}`,
     );
     app.exit(0);
     return;
+  }
+
+  const { applyPreference } = await import("./login-item.js");
+  const startup = await applyPreference();
+  if (startup.preference !== null) {
+    console.log(`inicio no login: preferencia ${startup.preference}, sistema ${startup.status}`);
   }
 
   await setupTray({ openWindow: showWindow });

@@ -10,6 +10,7 @@ import { mcpService } from "./services/mcp-service.js";
 import { providerService } from "./services/provider-service.js";
 import { reconcileService } from "./services/reconcile-service.js";
 import { runService, type RunSummary } from "./services/run-service.js";
+import { startupService } from "./services/startup-service.js";
 import { triggerService } from "./services/trigger-service.js";
 import { githubReviewHandler, pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
@@ -256,6 +257,27 @@ async function tick(wait: boolean): Promise<void> {
   );
 }
 
+/**
+ * Estado da preferencia de subir junto com o login.
+ *
+ * A linha de comando so mexe no que esta guardado: quem fala com o item de
+ * login do macOS e o processo do Electron, entao o que se grava aqui vale a
+ * partir da proxima vez que o Locum subir.
+ */
+async function startup(decision: boolean | null): Promise<void> {
+  if (decision !== null) await startupService.setPreference(decision);
+
+  const preference = await startupService.getPreference();
+  if (preference === null) {
+    console.log("inicio no login: nao decidido, e o app nao liga sozinho");
+    return;
+  }
+  console.log(
+    `inicio no login: ${preference ? "ligado" : "desligado"}` +
+      (decision === null ? "" : ", valendo na proxima vez que o Locum subir"),
+  );
+}
+
 async function main(): Promise<void> {
   const [cmd, ...args] = process.argv.slice(2);
   const arg = args[0];
@@ -301,6 +323,15 @@ async function main(): Promise<void> {
       break;
     case "providers":
       await providers();
+      break;
+    case "startup":
+      await startup(null);
+      break;
+    case "startup:on":
+      await startup(true);
+      break;
+    case "startup:off":
+      await startup(false);
       break;
     case "mcp":
       await mcpList();
@@ -382,6 +413,9 @@ async function main(): Promise<void> {
           "  triggers                 lista os gatilhos e quando o agendador quer a proxima batida",
           "  tick [--wait]            uma batida do agendador nos gatilhos habilitados",
           "  providers                lista provedores, substituicoes e a resolucao de cada passo",
+          "  startup                  mostra se o Locum sobe junto com o login",
+          "  startup:on               passa a subir no login a partir da proxima subida",
+          "  startup:off              deixa de subir no login",
           "  mcp                      lista os servidores MCP cadastrados",
           "  mcp:register <nome> <transporte> <comando-ou-url>",
           "  mcp:tools <nome>         lista as ferramentas que o servidor expoe",

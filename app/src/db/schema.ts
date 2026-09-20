@@ -279,3 +279,17 @@ export const usageDaily = sqliteTable(
   },
   (t) => [uniqueIndex("usage_daily_unq").on(t.day, t.agentId)],
 );
+
+/* --------------------------------------------------------------- ajustes */
+
+/**
+ * Preferencia da instalacao, uma linha por chave. Fica no banco em vez de num
+ * arquivo proprio porque linha de comando e casca Electron sao dois processos
+ * e o banco ja e o unico ponto de encontro dos dois. Ausencia de linha tem
+ * significado: quer dizer que ninguem decidiu ainda.
+ */
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull().default(now),
+});

@@ -15,3 +15,4 @@
 2026-09-19  N.3   feito      agendador por cursor de tempo, sem relogio proprio, guarda de cadencia e guarda de evento por run, cli ganhou tick e triggers
 2026-09-19  M3.1  feito      esqueleto Electron com --smoke saindo 0, binding do better-sqlite3 duplicado por ABI em native/
 2026-09-19  M3.2  feito      bandeja com contagem de pendencias, menu abrir, pausar tudo e sair, smoke confere contra listPending
+2026-09-19  M3.3  feito      preferencia de inicio no login no banco, StartupService e SettingsService novos, cli ganhou startup, startup:on e startup:off

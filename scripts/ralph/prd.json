@@ -197,7 +197,7 @@
       "description": "app.setLoginItemSettings com preferencia guardada, mais comandos na linha de comando para ligar e desligar. Nao ligar sozinho na primeira execucao: e decisao de quem instala.",
       "done_when": "O estado do login item e lido e escrito, e a preferencia sobrevive a reinicio do app.",
       "verify": "npx tsc --noEmit && npm run build:main && npx electron dist/main.cjs --smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
