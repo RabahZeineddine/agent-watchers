@@ -25,6 +25,22 @@ export const SLACK_SINCE_ARG_PADRAO = "oldest";
  */
 export const SLACK_LIMITE_PADRAO = 50;
 
+/**
+ * Ferramenta e argumentos da resposta, também de estreia.
+ *
+ * São outros que os da leitura de propósito: a ferramenta que lista histórico
+ * costuma chamar o canal de `channel_id`, e a que publica chama de `channel`.
+ * Guardar um nome só para os dois faria a resposta sair com o canal no campo
+ * errado no dia em que alguém clicasse.
+ *
+ * Cadastrar não publica nada. Isto aqui só diz por onde a resposta sairia
+ * depois que uma pessoa tivesse clicado nela na fila.
+ */
+export const SLACK_POST_TOOL_PADRAO = "chat_postMessage";
+export const SLACK_POST_CHANNEL_ARG_PADRAO = "channel";
+export const SLACK_TEXT_ARG_PADRAO = "text";
+export const SLACK_THREAD_ARG_PADRAO = "thread_ts";
+
 const SlackWatchSchema = z.object({
   /** Servidor MCP de Slack cadastrado, ou nulo enquanto ninguém escolheu. */
   server: z.string().min(1).nullable().default(null),
@@ -34,6 +50,11 @@ const SlackWatchSchema = z.object({
   /** Nome do argumento que recebe a janela de tempo. */
   sinceArg: z.string().min(1).default(SLACK_SINCE_ARG_PADRAO),
   limit: z.number().int().min(1).max(1000).default(SLACK_LIMITE_PADRAO),
+  /** Ferramenta que responde em thread, e os nomes dos argumentos dela. */
+  postTool: z.string().min(1).default(SLACK_POST_TOOL_PADRAO),
+  postChannelArg: z.string().min(1).default(SLACK_POST_CHANNEL_ARG_PADRAO),
+  textArg: z.string().min(1).default(SLACK_TEXT_ARG_PADRAO),
+  threadArg: z.string().min(1).default(SLACK_THREAD_ARG_PADRAO),
   /** Canais observados, pelo identificador que o Slack usa. */
   channels: z.array(z.string().min(1)).default([]),
 });
@@ -57,8 +78,10 @@ export const SLACK_SEM_CADASTRO: SlackWatch = SlackWatchSchema.parse({});
  * máquina: um servidor, uma ferramenta e a lista de canais. Tabela daria
  * migração e chave estrangeira para guardar o que cabe num objeto.
  *
- * Nada aqui publica. Este serviço só descreve o que ler; responder em thread é
- * passo de ação, e ele para na fila de aprovação como qualquer escrita externa.
+ * Nada aqui publica. O cadastro descreve o que ler e por onde uma resposta
+ * sairia, e nenhuma das duas coisas acontece por estar cadastrada: responder em
+ * thread é passo de ação, e ele para na fila de aprovação como qualquer escrita
+ * externa.
  */
 export class SlackService {
   constructor(private readonly settings: SettingsService = settingsService) {}

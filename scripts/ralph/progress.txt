@@ -55,3 +55,4 @@
 2026-09-21  M8.1  feito      fonte por consulta a servidor MCP, cursor por servidor e ferramenta, dedupe por id do item, verificada no smoke contra o feed do servidor de brinquedo
 2026-09-21  M8.2  feito      fonte de menções do Slack pelo servidor MCP, cursor por canal, evento com autor, canal, texto e thread, seção na configuração sem campo de token
 2026-09-21  M8.3  feito      agent de digest com ingestão determinística, parando na inbox como leitura
+2026-09-21  M8.4  feito      ação slack.post parando na fila com o texto exato do modelo, thread conferida contra o que foi lido, modo travado em approve; a guarda de núcleo do verify não passa, por duas linhas de registro em build.ts

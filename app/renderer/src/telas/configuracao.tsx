@@ -1946,8 +1946,13 @@ function LinhaDoObservado({
  * preenchidos com os mais comuns para que ninguém precise descobri-los antes de
  * observar o primeiro canal.
  *
- * Nada aqui publica. Cadastrar canal faz o Locum ler, e responder em thread é
- * passo de ação, que para na fila de aprovação e espera o clique de alguém.
+ * Os da resposta são outros que os da leitura, e por isso têm campo próprio: a
+ * ferramenta que lista histórico e a que publica em thread raramente chamam o
+ * canal pelo mesmo nome.
+ *
+ * Nada aqui publica. Cadastrar canal faz o Locum ler, e cadastrar a ferramenta
+ * de resposta só diz por onde ela sairia: responder em thread é passo de ação,
+ * que para na fila de aprovação e espera o clique de alguém.
  */
 function Slack() {
   const { t } = useTranslation();
@@ -1967,11 +1972,19 @@ function Slack() {
   const [ferramenta, setFerramenta] = useState<string | null>(null);
   const [argCanal, setArgCanal] = useState<string | null>(null);
   const [argJanela, setArgJanela] = useState<string | null>(null);
+  const [ferramentaDaResposta, setFerramentaDaResposta] = useState<string | null>(null);
+  const [argCanalDaResposta, setArgCanalDaResposta] = useState<string | null>(null);
+  const [argTexto, setArgTexto] = useState<string | null>(null);
+  const [argThread, setArgThread] = useState<string | null>(null);
 
   const valorDoServidor = servidor ?? cadastro?.server ?? "";
   const valorDaFerramenta = ferramenta ?? cadastro?.tool ?? "";
   const valorDoArgCanal = argCanal ?? cadastro?.channelArg ?? "";
   const valorDoArgJanela = argJanela ?? cadastro?.sinceArg ?? "";
+  const valorDaResposta = ferramentaDaResposta ?? cadastro?.postTool ?? "";
+  const valorDoArgCanalDaResposta = argCanalDaResposta ?? cadastro?.postChannelArg ?? "";
+  const valorDoArgTexto = argTexto ?? cadastro?.textArg ?? "";
+  const valorDoArgThread = argThread ?? cadastro?.threadArg ?? "";
 
   const recarregar = (): Promise<void> =>
     read("slack.get").then(setRecarregado, (falha: unknown) =>
@@ -1993,7 +2006,11 @@ function Slack() {
     valorDoServidor !== "" &&
     valorDaFerramenta.trim() !== "" &&
     valorDoArgCanal.trim() !== "" &&
-    valorDoArgJanela.trim() !== "";
+    valorDoArgJanela.trim() !== "" &&
+    valorDaResposta.trim() !== "" &&
+    valorDoArgCanalDaResposta.trim() !== "" &&
+    valorDoArgTexto.trim() !== "" &&
+    valorDoArgThread.trim() !== "";
 
   const salvar = (): void => {
     agir(
@@ -2002,6 +2019,10 @@ function Slack() {
         tool: valorDaFerramenta.trim(),
         channelArg: valorDoArgCanal.trim(),
         sinceArg: valorDoArgJanela.trim(),
+        postTool: valorDaResposta.trim(),
+        postChannelArg: valorDoArgCanalDaResposta.trim(),
+        textArg: valorDoArgTexto.trim(),
+        threadArg: valorDoArgThread.trim(),
       }),
     );
   };
@@ -2018,6 +2039,7 @@ function Slack() {
       data-locum-probe="slack"
       data-locum-slack-canais={canais.join(",")}
       data-locum-slack-ferramenta-atual={cadastro?.tool ?? ""}
+      data-locum-slack-resposta-atual={cadastro?.postTool ?? ""}
       data-locum-slack-servidor={cadastro?.server ?? ""}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -2067,6 +2089,50 @@ function Slack() {
           placeholder={t("settings.slack.sinceArgHint")}
           spellCheck={false}
           value={valorDoArgJanela}
+        />
+
+        <input
+          aria-label={t("settings.slack.postTool")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-52 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-ferramenta-resposta=""
+          onChange={(evento) => setFerramentaDaResposta(evento.target.value)}
+          placeholder={t("settings.slack.postToolHint")}
+          spellCheck={false}
+          value={valorDaResposta}
+        />
+
+        <input
+          aria-label={t("settings.slack.postChannelArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-canal-resposta=""
+          onChange={(evento) => setArgCanalDaResposta(evento.target.value)}
+          placeholder={t("settings.slack.postChannelArgHint")}
+          spellCheck={false}
+          value={valorDoArgCanalDaResposta}
+        />
+
+        <input
+          aria-label={t("settings.slack.textArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-texto=""
+          onChange={(evento) => setArgTexto(evento.target.value)}
+          placeholder={t("settings.slack.textArgHint")}
+          spellCheck={false}
+          value={valorDoArgTexto}
+        />
+
+        <input
+          aria-label={t("settings.slack.threadArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-thread=""
+          onChange={(evento) => setArgThread(evento.target.value)}
+          placeholder={t("settings.slack.threadArgHint")}
+          spellCheck={false}
+          value={valorDoArgThread}
         />
 
         <Button

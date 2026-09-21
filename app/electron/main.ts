@@ -2693,7 +2693,7 @@ async function semSlack(): Promise<SlackService> {
 async function checkSlack(): Promise<string> {
   const { db, schema } = await import("../src/db/index.js");
   const { and, eq, inArray } = await import("drizzle-orm");
-  const { SlackService } = await import("../src/services/slack-service.js");
+  const { SlackService, SLACK_SEM_CADASTRO } = await import("../src/services/slack-service.js");
   const { ensureFixtureServer, FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
   const { pollSlack, slackCursorKey, slackSource } = await import("../src/sources/slack.js");
 
@@ -2725,6 +2725,7 @@ async function checkSlack(): Promise<string> {
   // O cadastro do exame vive so nesta funcao: gravar no servico de verdade
   // sobrescreveria o Slack de quem desenvolve.
   const watch = {
+    ...SLACK_SEM_CADASTRO,
     server: FIXTURE_SERVER,
     tool: "slack_history",
     channelArg: "channel_id",
@@ -3137,6 +3138,213 @@ async function checkDigest(): Promise<string> {
   } finally {
     // O smoke roda no banco de quem desenvolve: o que foi plantado sai daqui
     // mesmo quando uma linha acima estourou.
+    await limpar();
+  }
+}
+
+/**
+ * Prova que responder no Slack para na fila com o texto exato que sairia.
+ *
+ * Nenhum Slack é alcançado, e o servidor de brinquedo nem sobe: o que a story
+ * pede acontece antes de qualquer chamada de ferramenta, e a publicação só
+ * existe depois do clique de uma pessoa, que este exame não dá. A mensagem é
+ * plantada direto na tabela de eventos, com a mesma cara que a fonte do M8.2
+ * dá a ela.
+ *
+ * Quatro coisas estão sendo provadas. Que o passo de ação para o run e cria a
+ * pendência. Que o que fica gravado nela é o texto do modelo, palavra por
+ * palavra, com canal e thread vindos do evento e não do modelo. Que a thread é
+ * conferida contra o que o Locum leu, então carimbo inventado não vira
+ * pendência. E que a gate recusa `draft` e `auto`, que é a trava de código que
+ * mantém a mensagem assinada por uma pessoa dependendo dessa pessoa.
+ *
+ * O passo de modelo entra plantado como `done`, como no exame do digest: o
+ * exame já sabe o texto que ele devolveria, e ouvi-lo do modelo custaria um
+ * minuto de assinatura por iteração do loop.
+ */
+async function checkSlackPost(): Promise<string> {
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { AgentSpec } = await import("../src/config/types.js");
+  const { buildExecutor, buildGate } = await import("../src/executor/build.js");
+  const { slackReplySpec } = await import("../src/seed/slack-reply.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { approvalService } = await import("../src/services/approval-service.js");
+  const { SlackPostProposal } = await import("../src/slack/proposal.js");
+  const { slackSource } = await import("../src/sources/slack.js");
+
+  // Servidor, canal e agent sorteados pelo mesmo motivo dos outros exames: o
+  // smoke roda no banco de quem desenvolve, e o que ficasse para tras se a
+  // limpeza falhasse nao pode se confundir com cadastro de verdade.
+  const server = `locum-smoke-reply-${randomUUID().slice(0, 8)}`;
+  const agentId = `locum-smoke-reply-${randomUUID().slice(0, 6)}`;
+  const canal = `C-smoke-r-${randomUUID().slice(0, 8)}`;
+  const source = slackSource(server);
+
+  const abertura = `${Math.floor(Date.parse("2026-03-02T12:00:00.000Z") / 1000)}.000100`;
+  const pergunta = "Alguem sabe se a emissao do nota 4471 voltou?";
+  const permalink = `https://exemplo.invalido/${canal}/${abertura}`;
+  const externalId = `slack:${canal}:${abertura}`;
+
+  // O que o passo de modelo teria escrito. Confirmado adiante caractere por
+  // caractere: a fila so vale como ultima leitura se o que ela mostra for o
+  // que sai.
+  const resposta = "Voltou as 11h40. A fila zerou e o nota 4471 saiu com o resto.";
+
+  let runId: string | undefined;
+
+  const limpar = async (): Promise<void> => {
+    if (runId !== undefined) {
+      await db.delete(schema.approvals).where(eq(schema.approvals.runId, runId));
+      await db.delete(schema.steps).where(eq(schema.steps.runId, runId));
+      await db.delete(schema.runs).where(eq(schema.runs.id, runId));
+    }
+    await db.delete(schema.agentVersions).where(eq(schema.agentVersions.agentId, agentId));
+    await db.delete(schema.agents).where(eq(schema.agents.id, agentId));
+    await db
+      .delete(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, [externalId])));
+  };
+
+  await limpar();
+
+  try {
+    const [evento] = await db
+      .insert(schema.events)
+      .values({
+        id: randomUUID(),
+        source,
+        externalId,
+        receivedAt: Math.floor(Date.now() / 1000),
+        payload: {
+          repo: `slack/${canal}`,
+          changedFiles: [],
+          server,
+          channel: canal,
+          author: "alice.exemplo",
+          text: pergunta,
+          ts: abertura,
+          threadTs: abertura,
+          reply: false,
+          permalink,
+          item: { ts: abertura },
+          at: abertura,
+        },
+      })
+      .returning({ id: schema.events.id });
+    if (evento === undefined) throw new Error("o exame nao conseguiu plantar a mensagem do Slack");
+
+    // O `target` do passo aponta para o servidor sorteado. No agent semente ele
+    // fica ausente de proposito, e ai vale o Slack cadastrado na maquina; aqui
+    // ele existe justamente para o exame nao tocar nesse cadastro.
+    const spec = AgentSpec.parse({
+      ...slackReplySpec,
+      id: agentId,
+      name: `Smoke ${agentId}`,
+      steps: slackReplySpec.steps.map((passo) =>
+        passo.type === "action" ? { ...passo, target: server } : passo,
+      ),
+    });
+    const versao = await agentService.upsert(spec, `smoke ${agentId}`, "human");
+
+    const executor = await buildExecutor();
+    runId = await executor.createRun(versao.id, evento.id);
+
+    await db.insert(schema.steps).values({
+      id: `${runId}-write`,
+      runId,
+      idx: 0,
+      stepKey: "write",
+      name: "Escrever a resposta",
+      status: "done",
+      output: { text: resposta, threadTs: abertura },
+    });
+
+    const estado = await executor.execute(runId);
+    if (estado !== "paused") throw new Error(`o run terminou como "${estado}", e nao parado na fila`);
+
+    const passos = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
+    const acao = passos.find((p) => p.stepKey === "post");
+    if (acao?.status !== "awaiting_approval") {
+      throw new Error(`o passo de resposta ficou "${String(acao?.status)}"`);
+    }
+
+    const pendencias = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (pendencias.length !== 1) throw new Error(`o passo criou ${pendencias.length} pendencia(s)`);
+    const pendencia = pendencias[0]!;
+    if (pendencia.kind !== "slack.post" || pendencia.status !== "pending") {
+      throw new Error(`a pendencia saiu como "${pendencia.kind}" em "${pendencia.status}"`);
+    }
+
+    const fila = await approvalService.listPending();
+    if (!fila.some((p) => p.id === pendencia.id)) {
+      throw new Error("a resposta nao apareceu na inbox");
+    }
+
+    const proposta = SlackPostProposal.parse(pendencia.payload);
+    if (proposta.text !== resposta) {
+      throw new Error(`a fila guardou "${proposta.text}" e o modelo escreveu outra coisa`);
+    }
+    if (proposta.channel !== canal || proposta.threadTs !== abertura || proposta.server !== server) {
+      throw new Error(`a proposta aponta para ${proposta.server}, canal ${proposta.channel}, thread ${proposta.threadTs}`);
+    }
+    // Assunto e endereco saem da mensagem lida, e nao do modelo: e por eles que
+    // quem abre a fila sabe a que conversa a resposta esta entrando.
+    if (proposta.subject !== pergunta || proposta.permalink !== permalink) {
+      throw new Error("a proposta nao trouxe a mensagem original da thread");
+    }
+
+    const gate = buildGate();
+    const carga = { repo: `slack/${canal}`, text: resposta, threadTs: abertura };
+
+    // As travas do handler: mensagem em canal aparece assinada por uma pessoa,
+    // entao ela nao sai sozinha, e rascunho de mensagem de thread nao existe no
+    // Slack. A recusa acontece antes de gravar, entao nem pendencia orfa fica.
+    for (const modo of ["draft", "auto"] as const) {
+      const recusou = await gate
+        .submit({ runId, stepId: acao.id, kind: "slack.post", payload: carga, target: server }, modo)
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`a gate aceitou responder no Slack em modo "${modo}"`);
+    }
+
+    // Carimbo que o Locum nunca leu nao vira pendencia. E a trava que faz a
+    // thread continuar vindo do evento mesmo tendo passado pelo modelo.
+    const inventada = await gate
+      .submit(
+        {
+          runId,
+          stepId: acao.id,
+          kind: "slack.post",
+          payload: { ...carga, threadTs: "1700000000.000999" },
+          target: server,
+        },
+        "approve",
+      )
+      .then(
+        () => false,
+        () => true,
+      );
+    if (!inventada) throw new Error("a gate propos resposta para uma thread que ninguem leu");
+
+    const semTexto = await gate
+      .submit(
+        { runId, stepId: acao.id, kind: "slack.post", payload: { ...carga, text: "   " }, target: server },
+        "approve",
+      )
+      .then(
+        () => false,
+        () => true,
+      );
+    if (!semTexto) throw new Error("a gate propos resposta sem texto nenhum");
+
+    const depois = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (depois.length !== 1) throw new Error(`as recusas deixaram ${depois.length} pendencia(s)`);
+
+    return t("smoke.slackPost", { channel: canal, thread: abertura });
+  } finally {
     await limpar();
   }
 }
@@ -4991,6 +5199,7 @@ async function main(): Promise<void> {
     const varreduraMcp = await checkMcpPoll();
     const slack = await checkSlack();
     const digest = await checkDigest();
+    const respostaNoSlack = await checkSlackPost();
     const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
@@ -5011,6 +5220,7 @@ async function main(): Promise<void> {
         mcpPoll: varreduraMcp,
         slack,
         digest,
+        slackPost: respostaNoSlack,
         trackerIssue: tarefa,
         deepLink,
         bridge: ponte,

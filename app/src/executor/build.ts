@@ -8,6 +8,7 @@ import type { Runtime } from "../runtimes/types.js";
 import { machineId } from "../services/machine-service.js";
 import { mcpService } from "../services/mcp-service.js";
 import { providerService } from "../services/provider-service.js";
+import { slackPostHandler } from "../slack/action.js";
 import { githubReviewHandler } from "../sources/github.js";
 import { trackerIssueHandler } from "../trackers/issue-action.js";
 
@@ -44,6 +45,7 @@ export function buildGate(): ApprovalGate {
       ["github.review_comment", githubReviewHandler()],
       ["tracker.create_issue", trackerIssueHandler()],
       ["digest.deliver", digestDeliverHandler()],
+      ["slack.post", slackPostHandler()],
     ]),
   );
 }

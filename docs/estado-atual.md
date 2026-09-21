@@ -28,6 +28,7 @@ que a interface vai usar.
 | fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
 | agent de digest do Slack | pronto e verificado com conversa sintética; a ingestão agrupa por canal e por thread e filtra ruído antes do modelo, e o digest para na inbox como proposta de leitura, sem ação de saída |
+| ação de resposta no Slack | pronta e verificada com evento sintético; o texto vem do passo de modelo, o canal do evento e a thread é conferida contra o que já foi lido, e a pendência guarda o texto exato que sairia; publicar só depois do clique |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
@@ -809,3 +810,37 @@ proposta, mostra a pendência na inbox e registra quando ela foi resolvida, e um
 digest que aparecesse por fora disso seria uma segunda inbox com regra própria.
 O handler recusa `auto` e `draft`, por código: digest entregue sozinho sai da
 fila sem ninguém ter lido, que é o contrário do que ele existe para fazer.
+
+## A resposta no Slack
+
+`app/src/slack/action.ts` é o handler de `slack.post`. Ele responde em thread
+pelo mesmo servidor MCP que lê o canal, e não tem token próprio. Nasce e
+permanece em `approve`: mensagem em canal aparece assinada por uma pessoa, e
+quem lê não tem como saber que quem escreveu foi um agent. O modo automático
+fica fora enquanto não houver medição que o sustente, e a recusa é de código, em
+`modes`, não configuração de spec. Não há `draft`, porque rascunho de mensagem
+de thread não existe no Slack e emular um publicando e apagando deixaria a
+notificação na tela de todo mundo.
+
+O texto vem do passo de modelo, e o handler só entrega. Quem diz o destino é o
+evento e o cadastro: o canal sai do `repo` que a fonte grava (`slack/<canal>`),
+o servidor sai do `target` do passo ou do Slack cadastrado na máquina, e a
+thread, que passa pelo modelo, é conferida em `app/src/slack/thread.ts` contra
+as mensagens que o Locum leu daquele canal. Carimbo inventado não acha thread
+nenhuma e o passo falha antes de virar pendência.
+
+A proposta é montada em `propose`, antes de a pendência ser gravada, então o que
+a fila mostra é exatamente o texto que sairia, junto da mensagem que abriu a
+thread e do endereço dela. O agent semente é `slack-reply`, com um passo de
+modelo e um de ação.
+
+Os nomes da ferramenta e dos argumentos da resposta ficam no cadastro do Slack,
+separados dos da leitura: a ferramenta que lista histórico costuma chamar o
+canal de `channel_id` e a que publica chama de `channel`. Cadastrar não publica
+nada; só diz por onde a resposta sairia depois do clique.
+
+Registrar a ação custou duas linhas em `app/src/executor/build.ts`, que é onde a
+gate é montada. É a única mudança de núcleo do M8, e é de propósito: a gate só
+vale como porta única se ela for sempre a mesma porta, e um mapa de handlers
+montado em cada chamador deixaria um deles registrar handler diferente sem
+ninguém notar. Fonte nova não encosta no núcleo; ação nova entra por essa linha.
