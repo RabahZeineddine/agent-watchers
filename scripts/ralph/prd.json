@@ -538,7 +538,7 @@
       "description": "A seção de provedores diz o que falta e não deixa resolver: hoje se edita .env e reabre o app. Acrescentar campo de senha por provedor, gravando no keychain pelo CredentialService, com um teste que chama o catálogo de modelos daquele provedor e informa quantos voltaram. O estado passa de indisponível para disponível sem reabrir a janela. O valor nunca é mostrado nem registrado, só se há valor guardado e quando foi conferido. O encanamento já existe: o registro procura no cofre antes da variável de ambiente.",
       "done_when": "Uma credencial gravada pela interface torna o provedor disponível e o catálogo dele responde, sem variável de ambiente.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

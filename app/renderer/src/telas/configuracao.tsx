@@ -13,6 +13,8 @@ type Fallback = ReadResult<"providers.fallbacks">[number];
 type Servidor = ReadResult<"mcp.list">[number];
 type Orcamento = ReadResult<"agents.budgets">[number];
 type Credencial = ReadResult<"credentials.overview">["refs"][number];
+type ChaveDeProvedor = ReadResult<"providers.credentials">[number];
+type ConferenciaDeProvedor = ReadResult<"providers.checkSecret">;
 type EstadoDoGithub = ReadResult<"github.status">;
 type ConferenciaDoGithub = ReadResult<"github.check">;
 type Gatilho = ReadResult<"triggers.schedule">[number];
@@ -39,6 +41,28 @@ export function Configuracao() {
   const machineId = maquina.data?.machineId ?? null;
 
   const provedores = useRead("providers.list");
+  const chaves = useRead("providers.credentials");
+  /*
+   * Guardar chave muda duas leituras ao mesmo tempo: a chave em si e a
+   * disponibilidade do provedor. Elas voltam juntas para que a linha nunca
+   * apareça com chave guardada e provedor ainda apagado, que é o meio segundo
+   * em que alguém acharia que não funcionou.
+   */
+  const [provedoresRecarregados, setProvedoresRecarregados] = useState<{
+    lista: Provedor[];
+    chaves: ChaveDeProvedor[];
+  } | null>(null);
+
+  const recarregarProvedores = (): Promise<void> =>
+    Promise.all([read("providers.list"), read("providers.credentials")]).then(
+      ([lista, novasChaves]) => setProvedoresRecarregados({ lista, chaves: novasChaves }),
+      () => undefined,
+    );
+
+  const listaDeProvedores = provedoresRecarregados?.lista ?? provedores.data ?? [];
+  const chavesPorProvedor = new Map(
+    (provedoresRecarregados?.chaves ?? chaves.data ?? []).map((c) => [c.provider, c]),
+  );
   // A tabela de substituicao e por maquina, e o identificador chega por outra
   // leitura. Com ele ainda nulo o canal responde lista vazia sem tocar no
   // banco, e a tela repinta quando ele chegar.
@@ -47,7 +71,7 @@ export function Configuracao() {
   const orcamentos = useRead("agents.budgets");
   const credenciais = useRead("credentials.overview");
 
-  const leituras = [provedores, fallbacks, servidores, orcamentos, credenciais];
+  const leituras = [provedores, chaves, fallbacks, servidores, orcamentos, credenciais];
   const erro = leituras.find((l) => l.status === "error")?.error;
   const pronto =
     machineId !== null && leituras.every((l) => l.status === "ready");
@@ -71,7 +95,7 @@ export function Configuracao() {
       data-locum-maquina={machineId ?? ""}
       data-locum-orcamentos={(orcamentos.data ?? []).map((o) => o.agentId).join(",")}
       data-locum-probe="configuracao"
-      data-locum-provedores={(provedores.data ?? []).map((p) => p.name).join(",")}
+      data-locum-provedores={listaDeProvedores.map((p) => p.name).join(",")}
       data-locum-servidores={(servidores.data ?? []).map((s) => s.config.name).join(",")}
     >
       {erro === undefined ? null : (
@@ -98,11 +122,12 @@ export function Configuracao() {
         descricao={t("settings.providers.description")}
         titulo={t("settings.providers.title")}
       >
-        {(provedores.data ?? []).map((provedor) => (
+        {listaDeProvedores.map((provedor) => (
           <LinhaDoProvedor
-            credencial={porCadastro.get(`provider:${provedor.name}`)}
+            chave={chavesPorProvedor.get(provedor.name)}
             key={provedor.name}
             provedor={provedor}
+            recarregar={recarregarProvedores}
           />
         ))}
       </Secao>
@@ -283,50 +308,255 @@ function EscolhaDoIdioma() {
 /* --------------------------------------------------------------- provedores */
 
 function LinhaDoProvedor({
-  credencial,
+  chave,
   provedor,
+  recarregar,
 }: {
-  credencial: Credencial | undefined;
+  chave: ChaveDeProvedor | undefined;
   provedor: Provedor;
+  recarregar: () => Promise<void>;
 }) {
   const { t } = useTranslation();
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
+      className="flex flex-col gap-2 px-3 py-2 text-sm"
+      data-locum-chave-ambiente={chave?.env === true ? "sim" : "nao"}
+      data-locum-chave-conferida={chave?.checkedAt ?? ""}
+      data-locum-chave-guardada={chave === undefined ? "" : chave.stored ? "sim" : "nao"}
+      data-locum-chave-modelos={chave?.modelCount ?? ""}
+      data-locum-chave-ref={chave?.ref ?? ""}
       data-locum-disponivel={provedor.available ? "sim" : "nao"}
       data-locum-provider={provedor.name}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          provedor.available ? "bg-chart-2" : "bg-muted-foreground/40",
-        )}
-      />
-      <span className="w-36 shrink-0 truncate font-mono text-[13px]">{provedor.name}</span>
-      <span
-        className={cn(
-          "shrink-0 text-xs",
-          provedor.available ? "text-chart-2" : "text-muted-foreground",
-        )}
-      >
-        {t(provedor.available ? "settings.providers.available" : "settings.providers.unavailable")}
-      </span>
-      {provedor.subscription ? (
-        <span className="text-muted-foreground border-border shrink-0 rounded border px-1.5 text-[11px]">
-          {t("settings.providers.subscription")}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            provedor.available ? "bg-chart-2" : "bg-muted-foreground/40",
+          )}
+        />
+        <span className="w-36 shrink-0 truncate font-mono text-[13px]">{provedor.name}</span>
+        <span
+          className={cn(
+            "shrink-0 text-xs",
+            provedor.available ? "text-chart-2" : "text-muted-foreground",
+          )}
+        >
+          {t(
+            provedor.available ? "settings.providers.available" : "settings.providers.unavailable",
+          )}
         </span>
-      ) : null}
-      <Credenciais credencial={credencial} />
-      {provedor.requires.length > 0 ? (
-        <span className="text-muted-foreground text-xs">
-          {t(provedor.available ? "settings.providers.uses" : "settings.providers.missing", {
-            requirements: provedor.requires.join(", "),
-          })}
-        </span>
-      ) : null}
+        {provedor.subscription ? (
+          <span className="text-muted-foreground border-border shrink-0 rounded border px-1.5 text-[11px]">
+            {t("settings.providers.subscription")}
+          </span>
+        ) : null}
+        {chave === undefined || chave.ref === null ? null : (
+          <Badge
+            data-locum-credencial={chave.ref}
+            data-locum-guardado={chave.stored ? "sim" : "nao"}
+            variant={chave.stored ? "secondary" : "outline"}
+          >
+            {t(chave.stored ? "settings.credential.stored" : "settings.credential.missing", {
+              ref: chave.ref,
+            })}
+          </Badge>
+        )}
+        {provedor.requires.length > 0 ? (
+          <span className="text-muted-foreground text-xs">
+            {t(provedor.available ? "settings.providers.uses" : "settings.providers.missing", {
+              requirements: provedor.requires.join(", "),
+            })}
+          </span>
+        ) : null}
+      </div>
+
+      {chave === undefined || chave.variable === null ? null : (
+        <ChaveDoProvedor chave={chave} provedor={provedor} recarregar={recarregar} />
+      )}
     </div>
+  );
+}
+
+type Exame =
+  | { fase: "parado" }
+  | { fase: "conferindo" }
+  | { fase: "respondeu"; resultado: ConferenciaDeProvedor }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * A chave de um provedor: guardar, esquecer e perguntar o catálogo.
+ *
+ * Mesma viagem de mão única da credencial do GitHub. O valor digitado sai
+ * daqui para o keychain e nunca volta, porque não existe canal que devolva
+ * segredo: o que fica visível é se há algo guardado, quando foi a última
+ * conferência e quantos modelos ela contou.
+ *
+ * Guardar deixa o provedor disponível na hora, sem reabrir a janela. Quem faz
+ * isso é o serviço, que remonta o registro com a chave nova antes de
+ * responder; aqui só se relê o que mudou.
+ *
+ * Conferir fica atrás de um clique pela mesma razão do teste de servidor MCP:
+ * ele sai para a rede, e abrir a tela de configuração não é pedir exame.
+ */
+function ChaveDoProvedor({
+  chave,
+  provedor,
+  recarregar,
+}: {
+  chave: ChaveDeProvedor;
+  provedor: Provedor;
+  recarregar: () => Promise<void>;
+}) {
+  const { i18n, t } = useTranslation();
+  const [valor, setValor] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [exame, setExame] = useState<Exame>({ fase: "parado" });
+
+  const guardar = (): void => {
+    setSalvando(true);
+    // O campo é limpo antes mesmo da resposta, como no token do GitHub: o que
+    // foi digitado já está a caminho do cofre, e deixá-lo na tela só aumenta a
+    // chance de ele aparecer numa captura ou num ombro alheio.
+    const digitado = valor;
+    setValor("");
+    call("providers.saveSecret", provedor.name, digitado)
+      .then(recarregar, () => undefined)
+      .finally(() => {
+        setSalvando(false);
+        // A conferência anterior era da chave antiga, e o serviço já a apagou.
+        setExame({ fase: "parado" });
+      });
+  };
+
+  const esquecer = (): void => {
+    call("providers.forgetSecret", provedor.name)
+      .then(recarregar, () => undefined)
+      .finally(() => setExame({ fase: "parado" }));
+  };
+
+  const conferir = (): void => {
+    setExame({ fase: "conferindo" });
+    call("providers.checkSecret", provedor.name).then(
+      (resultado) => {
+        setExame({ fase: "respondeu", resultado });
+        void recarregar();
+      },
+      // `checkSecret` devolve a recusa do provedor como dado, então chegar
+      // aqui quer dizer que a ponte recusou, e não que a chave está errada.
+      (erro: unknown) =>
+        setExame({
+          fase: "recusado",
+          erro: erro instanceof Error ? erro.message : String(erro),
+        }),
+    );
+  };
+
+  const conferidaEm =
+    chave.checkedAt === null ? null : new Date(chave.checkedAt * 1000).toLocaleString(i18n.language);
+
+  return (
+    <div className="flex flex-col gap-1.5 pl-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.providerKey.field", { provider: provedor.name })}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-chave-campo={provedor.name}
+          disabled={!chave.vault}
+          onChange={(evento) => setValor(evento.target.value)}
+          placeholder={t(
+            chave.vault ? "settings.providerKey.placeholder" : "settings.providerKey.noVault",
+            { variable: chave.variable },
+          )}
+          spellCheck={false}
+          type="password"
+          value={valor}
+        />
+        <Button
+          data-locum-chave-salvar={provedor.name}
+          disabled={salvando || !chave.vault || valor.trim().length === 0}
+          onClick={guardar}
+          size="sm"
+          variant="secondary"
+        >
+          {t(salvando ? "settings.providerKey.saving" : "settings.providerKey.save")}
+        </Button>
+        <Button
+          data-locum-chave-conferir={provedor.name}
+          disabled={exame.fase === "conferindo"}
+          onClick={conferir}
+          size="sm"
+          variant="ghost"
+        >
+          {t(
+            exame.fase === "conferindo"
+              ? "settings.providerKey.checking"
+              : "settings.providerKey.check",
+          )}
+        </Button>
+        {chave.stored ? (
+          <Button
+            data-locum-chave-esquecer={provedor.name}
+            onClick={esquecer}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.providerKey.forget")}
+          </Button>
+        ) : null}
+      </div>
+
+      {chave.env && !chave.stored ? (
+        <p className="text-muted-foreground text-xs">
+          {t("settings.providerKey.fromEnv", { variable: chave.variable })}
+        </p>
+      ) : null}
+
+      {conferidaEm === null ? null : (
+        <p className="text-muted-foreground text-xs" data-locum-chave-historico={provedor.name}>
+          {t("settings.providerKey.lastCheck", {
+            count: chave.modelCount ?? 0,
+            when: conferidaEm,
+          })}
+        </p>
+      )}
+
+      <ResultadoDaChave exame={exame} provedor={provedor.name} />
+    </div>
+  );
+}
+
+function ResultadoDaChave({ exame, provedor }: { exame: Exame; provedor: string }) {
+  const { t } = useTranslation();
+
+  if (exame.fase === "parado" || exame.fase === "conferindo") return null;
+
+  if (exame.fase === "recusado") {
+    return (
+      <p className="text-destructive text-xs" data-locum-chave-resultado="recusado">
+        {t("settings.providerKey.bridgeRefused", { message: exame.erro })}
+      </p>
+    );
+  }
+
+  const { resultado } = exame;
+  if (resultado.ok) {
+    return (
+      <p className="text-chart-2 text-xs" data-locum-chave-resultado="ok">
+        {t("settings.providerKey.answered", { count: resultado.count, provider: provedor })}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-destructive text-xs" data-locum-chave-resultado={resultado.reason}>
+      {resultado.reason === "missing"
+        ? t("settings.providerKey.missing", { provider: provedor })
+        : t("settings.providerKey.failed", { message: resultado.message })}
+    </p>
   );
 }
 

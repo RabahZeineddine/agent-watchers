@@ -102,6 +102,23 @@ interface ServiceApi {
   "providers.allModels": ProviderService["listAllModels"];
 
   /**
+   * A chave de cada provedor, no mesmo desenho da do GitHub.
+   *
+   * O segredo atravessa numa direção só: `saveSecret` leva o que alguém
+   * digitou até o keychain, e nenhum canal o traz de volta. `credentials`
+   * responde endereço, se há valor guardado e o que a última conferência
+   * descobriu, que é tudo que a tela mostra.
+   *
+   * `checkSecret` é o que fala com a rede daqui, e não publica nada: pergunta
+   * ao provedor o catálogo de modelos e conta quantos vieram. Sem credencial
+   * ela responde de dentro da máquina, sem sair.
+   */
+  "providers.credentials": ProviderService["credentials"];
+  "providers.saveSecret": ProviderService["setSecret"];
+  "providers.forgetSecret": ProviderService["clearSecret"];
+  "providers.checkSecret": ProviderService["check"];
+
+  /**
    * Onde cada credencial mora e se ha valor guardado nela. Nunca o valor: o
    * cofre so se abre no caminho de quem vai conectar, e a janela nao e esse.
    */
@@ -212,6 +229,10 @@ export const BRIDGE_CHANNELS = [
   "providers.preview",
   "providers.models",
   "providers.allModels",
+  "providers.credentials",
+  "providers.saveSecret",
+  "providers.forgetSecret",
+  "providers.checkSecret",
   "credentials.overview",
   "github.status",
   "github.save",

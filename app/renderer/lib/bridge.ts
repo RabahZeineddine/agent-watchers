@@ -50,6 +50,9 @@ export const READ_CHANNELS = [
   "providers.fallbacks",
   "providers.preview",
   "credentials.overview",
+  // Mesma razão de `credentials.overview`: endereço, sim ou não, e o que a
+  // última conferência contou. Valor de chave não volta por canal nenhum.
+  "providers.credentials",
   // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
   // que a última conferência descobriu. O token não volta por canal nenhum.
   "github.status",
@@ -97,6 +100,12 @@ export const ACTION_CHANNELS = [
   // Conferir sai para a rede e responde quem é a conta, então fica atrás de um
   // clique pelo mesmo motivo de `mcp.test`: abrir a tela não é pedir exame.
   "github.check",
+  // A chave de provedor indo para o keychain, e o exame que pergunta o
+  // catálogo àquele provedor. Escrita e rede, os dois atrás de um clique, pelo
+  // mesmo motivo dos canais do GitHub logo acima.
+  "providers.saveSecret",
+  "providers.forgetSecret",
+  "providers.checkSecret",
   "mcp.test",
   "mcp.tools",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um

@@ -1454,6 +1454,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
+  const providerKeys = await checkProviderKeys(window);
   const github = await checkGithub(window);
   const watched = await checkWatched(window);
 
@@ -1464,8 +1465,213 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     fixture: FIXTURE_SERVER,
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
+    providerKeys,
     github,
     watched,
+  });
+}
+
+/**
+ * Confere a chave de provedor pela interface, sem chave de verdade e sem rede.
+ *
+ * O caminho inteiro da story cabe dentro da maquina. O que sairia daqui e a
+ * resposta de um provedor a uma chave, e ela e exercitada contra um provedor
+ * de mentira, montado so para este exame, cujo catalogo e um servidor de tres
+ * linhas escutando em 127.0.0.1. Nenhuma chave de ninguem e usada, e nenhum
+ * pacote passa da placa de loopback.
+ *
+ * O provedor de mentira nao e luxo: os provedores de verdade compartilham o
+ * endereco `provider/<nome>` no cofre de quem desenvolve, e gravar neles para
+ * provar o caminho destruiria uma chave que pode estar em uso. E por isso
+ * tambem que o servico e construido aqui em vez de usar o singleton: o
+ * registro dele so conhece provedor de verdade.
+ *
+ * Na interface o exame e o que da para fazer sem estragar nada: conferir que o
+ * campo aparece para quem tem chave e nao aparece para quem nao tem, que o sim
+ * ou nao bate com o cofre, e clicar em conferir so num provedor sem credencial,
+ * onde a resposta sai de dentro da maquina.
+ */
+async function checkProviderKeys(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { ProviderService, providerCredentialRef, providerService } = await import(
+    "../src/services/provider-service.js"
+  );
+
+  if (!secretService.available) throw new Error("keychain indisponivel para chave de provedor");
+
+  const nome = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const variavel = "LOCUM_SMOKE_PROVIDER_KEY";
+  const chave = `chave-de-mentira-${randomUUID()}`;
+  const ref = providerCredentialRef(nome);
+
+  const autorizacoes: (string | undefined)[] = [];
+  const catalogo = createServer((requisicao, resposta) => {
+    autorizacoes.push(requisicao.headers.authorization);
+    resposta.setHeader("content-type", "application/json");
+    resposta.end(JSON.stringify({ data: [{ id: "um" }, { id: "dois" }, { id: "tres" }] }));
+  });
+  await new Promise<void>((resolve) => {
+    catalogo.listen(0, "127.0.0.1", resolve);
+  });
+  const porta = (catalogo.address() as { port: number }).port;
+
+  // O registro de mentira, remontado a cada gravacao como o de verdade: e a
+  // funcao inteira que entra no servico, e nao so o resultado dela.
+  const fazer = (segredos: Record<string, string>) => ({
+    [nome]: {
+      available: () => Boolean(segredos[variavel]),
+      requires: [variavel],
+      secretVar: variavel,
+      catalog: () => ({
+        url: `http://127.0.0.1:${porta}/models`,
+        headers: { Authorization: `Bearer ${segredos[variavel] ?? ""}` },
+      }),
+    },
+  });
+  const servico = new ProviderService(db, fazer({}), secretService, settingsService, fazer);
+
+  try {
+    const [vazia] = await servico.credentials();
+    if (vazia === undefined) throw new Error("o provedor de mentira nao apareceu no cadastro");
+    if (vazia.ref !== ref) throw new Error(`a chave nasceu apontando para ${vazia.ref}`);
+    if (vazia.stored) throw new Error(`a referencia sorteada ${ref} ja tinha valor`);
+    if (vazia.checkedAt !== null || vazia.modelCount !== null) {
+      throw new Error("uma chave nova nasceu com conferencia");
+    }
+
+    // Sem chave, a conferencia responde de dentro da maquina: o servidor de
+    // catalogo nao e procurado, e e por isso que a lista continua vazia logo
+    // abaixo.
+    const semChave = await servico.check(nome);
+    if (semChave.ok || semChave.reason !== "missing") {
+      throw new Error(`sem chave a conferencia respondeu ${JSON.stringify(semChave)}`);
+    }
+    if (autorizacoes.length > 0) throw new Error("a conferencia saiu perguntando sem ter chave");
+    if (servico.isAvailable(nome)) throw new Error("o provedor nasceu disponivel sem chave");
+
+    await servico.setSecret(nome, chave);
+    if (readFileSync(secretService.pathFor(ref)).includes(chave)) {
+      throw new Error("a chave do provedor foi para o disco em claro");
+    }
+
+    // O coracao da story: guardar torna o provedor disponivel na hora, sem
+    // ninguem reabrir janela nem montar executor.
+    if (!servico.isAvailable(nome)) {
+      throw new Error("o provedor continuou indisponivel depois de guardar a chave");
+    }
+
+    const conferida = await servico.check(nome);
+    if (!conferida.ok) throw new Error(`a conferencia recusou: ${JSON.stringify(conferida)}`);
+    if (conferida.count !== 3) throw new Error(`o catalogo contou ${conferida.count} modelo(s)`);
+    if (autorizacoes.at(-1) !== `Bearer ${chave}`) {
+      throw new Error("o catalogo foi chamado sem a chave que a tela guardou");
+    }
+
+    const depois = (await servico.credentials())[0]!;
+    if (!depois.stored) throw new Error("a chave nao ficou guardada");
+    if (depois.checkedAt === null || depois.modelCount !== 3) {
+      throw new Error("a conferencia nao sobreviveu ao cadastro");
+    }
+    if (depois.env) throw new Error(`${variavel} existe no ambiente e falseia o exame`);
+
+    // Trocar a chave joga fora o catalogo que era dela. Sem isso a tela
+    // mostraria a contagem antiga ao lado de uma chave nova, com cara de dado
+    // conferido.
+    await servico.setSecret(nome, `${chave}-outra`);
+    const trocada = (await servico.credentials())[0]!;
+    if (trocada.checkedAt !== null || trocada.modelCount !== null) {
+      throw new Error("a conferencia da chave anterior sobreviveu a troca");
+    }
+
+    if (!(await servico.clearSecret(nome))) throw new Error("esquecer nao achou o que apagar");
+    if (servico.isAvailable(nome)) throw new Error("o provedor sobreviveu ao esquecer");
+    if ((await servico.credentials())[0]!.stored) {
+      throw new Error("a chave sobreviveu ao esquecer");
+    }
+  } finally {
+    secretService.remove(ref);
+    await settingsService.remove(`provider:${ref}:checkedAt`);
+    await settingsService.remove(`provider:${ref}:models`);
+    await db.delete(schema.providers).where(eq(schema.providers.id, nome));
+    await new Promise<void>((resolve) => catalogo.close(() => resolve()));
+  }
+
+  // Agora a interface, que e o que a story entrega. A tela ja esta montada, e
+  // o que se confere nela nao grava nada.
+  const linhas = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-provider]")).map((e) => ({
+      nome: e.dataset.locumProvider,
+      guardada: e.dataset.locumChaveGuardada,
+      referencia: e.dataset.locumChaveRef,
+      campo: e.querySelector("[data-locum-chave-campo]") !== null,
+      disponivel: e.dataset.locumDisponivel,
+    }))`,
+  )) as { nome: string; guardada: string; referencia: string; campo: boolean; disponivel: string }[];
+
+  const cadastro = await providerService.credentials();
+  for (const esperada of cadastro) {
+    const naTela = linhas.find((l) => l.nome === esperada.provider);
+    if (naTela === undefined) throw new Error(`o provedor ${esperada.provider} sumiu da tela`);
+
+    // Campo de senha so para quem tem chave a guardar. A assinatura vive da
+    // sessao do binario e o servidor local nao pede credencial: oferecer um
+    // campo a eles seria convidar alguem a guardar um segredo que nada le.
+    if (naTela.campo !== (esperada.variable !== null)) {
+      throw new Error(
+        `o provedor ${esperada.provider} ${naTela.campo ? "ofereceu" : "escondeu"} campo de chave indevidamente`,
+      );
+    }
+    if (esperada.variable === null) continue;
+
+    if (naTela.referencia !== esperada.ref) {
+      throw new Error(
+        `a tela aponta ${esperada.provider} para ${naTela.referencia} e o servico diz ${esperada.ref}`,
+      );
+    }
+    const guardada = esperada.stored ? "sim" : "nao";
+    if (naTela.guardada !== guardada) {
+      throw new Error(
+        `a tela diz "${naTela.guardada}" para a chave de ${esperada.provider} e o cofre diz "${guardada}"`,
+      );
+    }
+  }
+
+  // Conferir pela tela, num provedor que nao tem credencial nenhuma: a
+  // resposta e "nao ha chave" e nao sai da maquina. Num provedor com chave
+  // isto viraria uma chamada autenticada a API de alguem, feita por um loop
+  // que roda sem ninguem olhando.
+  const semCredencial = cadastro.find((c) => c.variable !== null && !c.stored && !c.env);
+  if (semCredencial === undefined) {
+    return t("smoke.providerKeys", { path: t("smoke.providerKeysStored") });
+  }
+
+  const clicou = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector('[data-locum-chave-conferir="${semCredencial.provider}"]');
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (clicou !== true) {
+    throw new Error(`a tela nao ofereceu botao de conferir ${semCredencial.provider}`);
+  }
+
+  const resposta = await esperarProbe<string>(
+    window,
+    `conferencia de ${semCredencial.provider}`,
+    `document.querySelector("[data-locum-chave-resultado]")?.dataset.locumChaveResultado ?? null`,
+  );
+  if (resposta !== "missing") {
+    throw new Error(`a tela respondeu "${resposta}" para conferir sem chave`);
+  }
+
+  return t("smoke.providerKeys", {
+    path: t("smoke.providerKeysRoundTrip", { provider: semCredencial.provider }),
   });
 }
 
@@ -2982,6 +3188,14 @@ async function main(): Promise<void> {
   if (!installSecretBackend()) {
     console.log("keychain indisponivel, credenciais vem so do ambiente");
   }
+
+  // Logo depois do cofre, e nao so quando um executor for montado: a tela de
+  // configuracao pergunta a disponibilidade dos provedores assim que abre, e
+  // sem isto quem guardou a chave pelo app apareceria como indisponivel ate a
+  // primeira execucao reconstruir o registro.
+  const { providerService } = await import("../src/services/provider-service.js");
+  const doCofre = await providerService.loadSecrets();
+  if (doCofre.length > 0) console.log(`cofre: chave de ${doCofre.join(", ")}`);
 
   // Depois do cofre, porque o retorno de OAuth guarda token, e antes da janela,
   // para que a URL que subiu o app nao fique esperando na fila.

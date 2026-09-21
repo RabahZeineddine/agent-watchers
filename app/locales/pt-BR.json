@@ -250,6 +250,24 @@
       "uses": "usa {{requirements}}",
       "missing": "falta {{requirements}}"
     },
+    "providerKey": {
+      "field": "chave de API do {{provider}}",
+      "placeholder": "cole a chave aqui, ela vai para o keychain",
+      "noVault": "keychain fora de alcance neste processo, use {{variable}} no ambiente",
+      "save": "guardar",
+      "saving": "guardando...",
+      "forget": "esquecer",
+      "check": "conferir catálogo",
+      "checking": "conferindo...",
+      "fromEnv": "sem chave no keychain, valendo {{variable}} do ambiente",
+      "lastCheck_one": "{{count}} modelo no último catálogo, conferido em {{when}}",
+      "lastCheck_other": "{{count}} modelos no último catálogo, conferido em {{when}}",
+      "answered_one": "o {{provider}} respondeu {{count}} modelo",
+      "answered_other": "o {{provider}} respondeu {{count}} modelos",
+      "missing": "o {{provider}} não tem chave nesta máquina: guarde uma acima",
+      "failed": "o catálogo recusou: {{message}}",
+      "bridgeRefused": "a ponte recusou: {{message}}"
+    },
     "credential": {
       "stored": "{{ref}} · guardada",
       "missing": "{{ref}} · sem valor no cofre"
@@ -367,7 +385,10 @@
     "routes": "destinos: {{count}}",
     "palette": "paleta abrindo e fechando pelo atalho",
     "agents": "lista com agents: {{agents}}, histórico de versões: {{versions}} de {{agent}}, comparação apontando o passo de ação de \"{{from}}\" para \"{{to}}\"",
-    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, GitHub: {{github}}, observados: {{watched}}",
+    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, {{providerKeys}}, GitHub: {{github}}, observados: {{watched}}",
+    "providerKeys": "chaves de provedor: {{path}}",
+    "providerKeysStored": "todo provedor com chave já tem credencial, cadastro conferido sem sair da máquina",
+    "providerKeysRoundTrip": "guardou, ficou disponível na hora, contou o catálogo e esqueceu; {{provider}} conferido sem chave pela tela",
     "github": "credencial: {{path}}",
     "githubStored": "cofre já tem token de quem desenvolve, cadastro conferido sem sair da máquina",
     "githubRoundTrip": "guardou, leu do cofre sem GITHUB_TOKEN, conferiu e esqueceu pela tela",

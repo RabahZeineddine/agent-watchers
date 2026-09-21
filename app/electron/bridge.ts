@@ -126,6 +126,10 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "providers.preview": (models, machine) => providerService.resolvePreviews(models, machine),
     "providers.models": (nome) => providerService.listModels(nome),
     "providers.allModels": () => providerService.listAllModels(),
+    "providers.credentials": () => providerService.credentials(),
+    "providers.saveSecret": (nome, chave) => providerService.setSecret(nome, chave),
+    "providers.forgetSecret": (nome) => providerService.clearSecret(nome),
+    "providers.checkSecret": (nome) => providerService.check(nome),
 
     "credentials.overview": () => credentialService.overview(),
 

@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 20 de setembro de 2026.
+Atualizado em 21 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -16,7 +16,7 @@ que a interface vai usar.
 | esquema SQLite com 17 tabelas | pronto |
 | migração de esquema no aplicativo | migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
-| registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço |
+| registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
@@ -40,14 +40,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 42 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 46 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade e campo de chave por provedor, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -159,6 +159,22 @@ e nada é registrado. Por isso a preferência guardada no banco é a fonte da
 verdade, e o processo principal reconcilia o sistema com ela a cada subida, em
 vez de ler o sistema e acreditar. A preferência tem três estados: sem linha na
 tabela `settings` quer dizer que ninguém decidiu, e aí o app não mexe em nada.
+
+**A chave do provedor precisa valer sem reabrir a janela.** Guardar no cofre
+não basta: o registro de provedores é um mapa de closures montado uma vez, e
+quem já o tinha em mãos continuaria vendo o provedor apagado. Por isso
+`setSecret` e `clearSecret` terminam em `loadSecrets`, que remonta o registro
+inteiro, e por isso o processo principal chama `loadSecrets` logo depois de
+ligar o cofre, e não só quando um executor é montado: a tela de configuração
+pergunta a disponibilidade assim que abre.
+
+Junto com isso, a variável de ambiente que cada chave preenche saiu da tabela
+`PROVIDER_SECRET_VARS` e foi para `secretVar`, dentro da própria entrada do
+registro. Era o único lugar onde ela não pode discordar do `requires` e do
+`available` que estão duas linhas acima, e é também o que torna possível
+examinar o caminho com um provedor inventado: o smoke monta um, com catálogo
+num servidor em 127.0.0.1, porque gravar em `provider/anthropic` para provar o
+caminho destruiria a chave de quem desenvolve.
 
 **Onde o segredo cabe.** O Electron não expõe a API de item do keychain, só o
 `safeStorage`, que guarda a chave de cifra no keychain e devolve texto cifrado

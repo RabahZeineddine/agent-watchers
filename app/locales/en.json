@@ -250,6 +250,24 @@
       "uses": "uses {{requirements}}",
       "missing": "missing {{requirements}}"
     },
+    "providerKey": {
+      "field": "{{provider}} API key",
+      "placeholder": "paste the key here, it goes to the keychain",
+      "noVault": "keychain out of reach in this process, use {{variable}} in the environment",
+      "save": "save",
+      "saving": "saving...",
+      "forget": "forget",
+      "check": "check catalog",
+      "checking": "checking...",
+      "fromEnv": "no key in the keychain, falling back to {{variable}} from the environment",
+      "lastCheck_one": "{{count}} model in the last catalog, checked on {{when}}",
+      "lastCheck_other": "{{count}} models in the last catalog, checked on {{when}}",
+      "answered_one": "{{provider}} answered with {{count}} model",
+      "answered_other": "{{provider}} answered with {{count}} models",
+      "missing": "{{provider}} has no key on this machine: save one above",
+      "failed": "the catalog refused: {{message}}",
+      "bridgeRefused": "the bridge refused: {{message}}"
+    },
     "credential": {
       "stored": "{{ref}} · stored",
       "missing": "{{ref}} · no value in the vault"
@@ -367,7 +385,10 @@
     "routes": "destinations: {{count}}",
     "palette": "command palette opening and closing by shortcut",
     "agents": "list with agents: {{agents}}, history of versions: {{versions}} for {{agent}}, comparison pointing the action step from \"{{from}}\" to \"{{to}}\"",
-    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, GitHub: {{github}}, watched: {{watched}}",
+    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, {{providerKeys}}, GitHub: {{github}}, watched: {{watched}}",
+    "providerKeys": "provider keys: {{path}}",
+    "providerKeysStored": "every provider with a key already has a credential, registration checked without leaving the machine",
+    "providerKeysRoundTrip": "saved, became available at once, counted the catalog and forgot it; {{provider}} checked without a key from the screen",
     "github": "credential: {{path}}",
     "githubStored": "the vault already holds the developer's token, registration checked without leaving the machine",
     "githubRoundTrip": "stored, read from the vault with no GITHUB_TOKEN, checked and forgotten through the screen",

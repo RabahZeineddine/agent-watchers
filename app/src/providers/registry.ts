@@ -32,22 +32,17 @@ export type ProviderEntry = {
    * gateway expoe o que quiser: lista fixa no codigo envelhece e mente.
    */
   catalog?: () => { url: string; headers: Record<string, string> };
-};
-
-/**
- * Variavel de ambiente que o `credential_ref` de cada provider preenche.
- *
- * `claude-code` e `ollama` ficam de fora de proposito: um vive da sessao do
- * binario e o outro roda local, entao nenhum dos dois tem segredo a guardar.
- * Nos compativeis com OpenAI so a chave vem do keychain; a URL base nao e
- * segredo e continua no ambiente.
- */
-export const PROVIDER_SECRET_VARS: Record<string, string> = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  google: "GOOGLE_GENERATIVE_AI_API_KEY",
-  glm: "GLM_API_KEY",
-  gateway: "GATEWAY_API_KEY",
+  /**
+   * A variavel de ambiente que o segredo do cofre preenche, quando existe uma.
+   *
+   * Mora na propria entrada, e nao numa tabela em paralelo, porque e o unico
+   * lugar onde ela nao pode discordar do `requires` e do `available` logo
+   * acima. Ausente quer dizer que nao ha chave a guardar: a assinatura vive da
+   * sessao do binario e o servidor local nao pede credencial. Nos compativeis
+   * com OpenAI so a chave entra aqui; a URL base nao e segredo e continua no
+   * ambiente.
+   */
+  secretVar?: string;
 };
 
 let claudeBinaryChecked: boolean | undefined;
@@ -81,6 +76,7 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
     return {
       available: () => Boolean(apiKey && baseURL),
       requires: [keyVar, urlVar],
+      secretVar: keyVar,
       model: (id: string) =>
         createOpenAICompatible({ name, apiKey: apiKey!, baseURL: baseURL! }).chatModel(id),
       catalog: () => ({
@@ -96,6 +92,7 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
     anthropic: {
       available: () => Boolean(env("ANTHROPIC_API_KEY")),
       requires: ["ANTHROPIC_API_KEY"],
+      secretVar: "ANTHROPIC_API_KEY",
       model: (id) => createAnthropic({ apiKey: env("ANTHROPIC_API_KEY")! })(id),
       catalog: () => ({
         url: "https://api.anthropic.com/v1/models",
@@ -108,6 +105,7 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
     openai: {
       available: () => Boolean(env("OPENAI_API_KEY")),
       requires: ["OPENAI_API_KEY"],
+      secretVar: "OPENAI_API_KEY",
       model: (id) => createOpenAI({ apiKey: env("OPENAI_API_KEY")! })(id),
       catalog: () => ({
         url: "https://api.openai.com/v1/models",
@@ -117,6 +115,7 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
     google: {
       available: () => Boolean(env("GOOGLE_GENERATIVE_AI_API_KEY")),
       requires: ["GOOGLE_GENERATIVE_AI_API_KEY"],
+      secretVar: "GOOGLE_GENERATIVE_AI_API_KEY",
       model: (id) => createGoogleGenerativeAI({ apiKey: env("GOOGLE_GENERATIVE_AI_API_KEY")! })(id),
     },
 
