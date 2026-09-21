@@ -77,6 +77,7 @@ de fallback redireciona os passos afetados para provedores por chave.
 | [ADR 0003](docs/adr/0003-interface-sobre-ai-elements.md) | interface sobre AI Elements, chat como console, e a regra contra injeção de prompt |
 | [roadmap.md](docs/roadmap.md) | marcos M1 a M5, até o `.dmg` |
 | [empacotamento.md](docs/empacotamento.md) | como gerar o `.dmg`, abrir sem assinatura, e o que muda com conta Apple |
+| [primeira-execucao.md](docs/primeira-execucao.md) | ligar num repositório de verdade: token, gatilho, primeira varredura e a fila |
 | [prd.json](scripts/ralph/prd.json) | backlog como estado: tarefas atômicas com critério de pronto e comando de verificação |
 
 ## Idioma

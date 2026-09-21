@@ -527,7 +527,7 @@
       "description": "Escrever docs/primeira-execucao.md: criar o token com as permissões mínimas, guardar pela interface, escolher o repositório, habilitar o gatilho, o que esperar na primeira varredura, e como ler o primeiro review na fila. Deixar claro que o passo de comentar nasce em aprovação e que nada sai sem clique.",
       "done_when": "O arquivo existe e cobre os seis pontos, na ordem em que alguém faria.",
       "verify": "test -f ../docs/primeira-execucao.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]
