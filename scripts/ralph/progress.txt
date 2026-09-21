@@ -52,3 +52,4 @@
 2026-09-21  M7.4  feito      passo tracker.create_issue propondo o item e parando na fila, modo travado em approve pelo handler, corpo vindo do passo de modelo
 2026-09-21  M7.5  feito      filtro de autoria no gatilho de varredura, conta do token vinda da conferência guardada, tela cadastrando e smoke com dois gatilhos no mesmo tick
 2026-09-21  M7.6  feito      guia com passo de provedor pela interface e seção de tracker, numeração corrigida e campo de autoria no gatilho
+2026-09-21  M8.1  feito      fonte por consulta a servidor MCP, cursor por servidor e ferramenta, dedupe por id do item, verificada no smoke contra o feed do servidor de brinquedo

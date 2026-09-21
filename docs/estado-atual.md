@@ -25,6 +25,7 @@ que a interface vai usar.
 | orçamento por execução e por dia | pronto e verificado |
 | fila de aprovação com identificador externo antes da publicação | pronto |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
+| fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
@@ -750,4 +751,28 @@ como agent semente: o `pr-review` não tem tracker para apontar.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as
-ferramentas `echo`, `sum`, `slow` e `fail`.
+ferramentas `echo`, `sum`, `slow`, `fail` e `feed`. O `feed` devolve itens
+carimbados a partir de uma data fixa, e não do relógio, porque a varredura por
+cursor só pode ser verificada se as duas passadas virem os mesmos itens.
+
+## A terceira forma de fonte
+
+`app/src/sources/mcp-poll.ts` é a fonte que pergunta a um servidor MCP
+cadastrado, a terceira das três previstas no ADR 0001. Existe para ambiente onde
+não dá para registrar aplicativo, que é o caso de Slack e Teams corporativos:
+não há webhook para receber nem SDK para chamar, mas há um servidor MCP que
+alguém já autorizou.
+
+O cadastro é o gatilho `mcp-poll`, com servidor, ferramenta e argumentos. A
+janela entra pelos argumentos, e não por um campo próprio, porque cada servidor
+chama a janela pelo nome que quer: `since`, `oldest`, `updated_after`. Onde
+aparecer `{{cursor}}` em qualquer texto do argumento, em qualquer profundidade,
+a varredura troca pelo cursor antes de chamar.
+
+O que volta é desembrulhado do envelope do MCP e vira lista: array no topo, ou
+array em `items`. Tudo mais é um item só. A chave de deduplicação é o `id` do
+item quando ele tem um, e o resumo do conteúdo quando não tem. O cursor anda
+para o maior `at` gravado, e só depois de gravar; quando nenhum item vem
+carimbado, ele anda para o instante lido antes da chamada, que é a marca d'água
+segura. Resposta com `isError` vira exceção, senão a mensagem de erro viraria
+evento e o cursor passaria por cima de uma janela que ninguém leu.

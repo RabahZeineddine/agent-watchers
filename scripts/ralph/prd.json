@@ -604,7 +604,7 @@
       "description": "Hoje existe uma fonte só, o GitHub, e ela chama a API direto. Falta a terceira forma prevista no ADR 0001: perguntar a um servidor MCP cadastrado, com cursor de tempo e deduplicação por chave externa, para ambiente onde não se pode registrar aplicativo. A fonte recebe o nome do servidor, o nome da ferramenta e como montar o argumento a partir do cursor, e devolve evento normalizado como qualquer outra.\n\nUsar o servidor de brinquedo como alvo de verificação.",
       "done_when": "Duas varreduras seguidas contra o fixture não reprocessam o mesmo item, e o cursor avança só depois de gravar.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke && git diff --quiet HEAD -- src/executor src/approval/gate.ts src/config/types.ts || (echo 'ALTEROU O NUCLEO' && exit 1)",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

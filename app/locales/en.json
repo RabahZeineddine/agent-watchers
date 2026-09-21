@@ -434,7 +434,7 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, authorship with {{authorship}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, authorship with {{authorship}}, MCP sweep with {{mcpPoll}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
@@ -471,7 +471,8 @@
     "schema": "migrations applied: {{count}}",
     "watched": "trigger for {{target}} registered parked, turned on with the next beat at {{next}}, and removed",
     "trackers": "trackers: {{service}} on Jira through the service and {{window}} on GitHub through the window, credential from the vault, {{projects}} visible destinations, existing task found again by pull request, no channel that opens a task",
-    "authorship": "the {{mine}} trigger woke only on {{viewer}}'s pull request, and the {{others}} one only on somebody else's"
+    "authorship": "the {{mine}} trigger woke only on {{viewer}}'s pull request, and the {{others}} one only on somebody else's",
+    "mcpPoll": "querying {{fixture}} through the {{tool}} tool produced {{events}} normalized event(s), the second sweep reprocessed none, and the cursor did not move when the call failed"
   },
   "status": {
     "done": "done",

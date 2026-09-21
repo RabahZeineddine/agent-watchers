@@ -1,11 +1,10 @@
-import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { type Authorship, type TriggerConfig } from "../config/types.js";
-import { McpRegistry } from "../mcp/registry.js";
 import { executionService, type ExecutionService } from "../services/execution-service.js";
 import { matchesAuthorship } from "../services/github-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
+import { pollMcpServer } from "../sources/mcp-poll.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
 // So tipo: o servico de reconciliacao puxa o octokit pelo topo do modulo, e
 // quem carrega este agendador nem sempre quer isso junto. O valor entra por
@@ -371,17 +370,24 @@ export class Scheduler {
       }
 
       case "mcp-poll": {
-        const result = await this.callServer(config.server, config.tool, config.args);
-        // A chave do evento e o conteudo do resultado, entao varredura que volta
-        // igual a anterior nao cria evento e nao vira run. E o mesmo contrato da
-        // varredura do GitHub, onde o commit entra na chave.
-        const { id, created } = await this.executions.recordEvent(
-          `mcp:${config.server}`,
-          `${config.tool}:${digest(result)}`,
-          { server: config.server, tool: config.tool, args: config.args, result },
+        // A varredura mora na fonte, e nao aqui, pelo mesmo motivo da do
+        // GitHub: cursor, normalizacao e deduplicacao sao a mesma decisao para
+        // as tres formas de fonte do ADR 0001, e so o agendador sabe quando
+        // bater.
+        const { eventIds, seen } = await pollMcpServer(
+          { server: config.server, tool: config.tool, args: config.args },
+          { db: this.db, mcp: this.mcp },
         );
-        const runs = await this.runsFor(trigger, created ? [id] : [], wait);
-        return { events: created ? 1 : 0, runs };
+        const runs = await this.runsFor(trigger, eventIds, wait);
+        // O que ja era conhecido aparece na diferenca, e nao some: sem isso a
+        // unica leitura possivel de uma batida sem evento novo seria a de que a
+        // consulta voltou vazia, que e outra coisa.
+        const repetidos = seen - eventIds.length;
+        return {
+          events: eventIds.length,
+          runs,
+          detail: repetidos === 0 ? undefined : `${repetidos} item(ns) ja conhecido(s)`,
+        };
       }
 
       default:
@@ -486,22 +492,6 @@ export class Scheduler {
     return row !== undefined;
   }
 
-  /** Sobe o servidor cadastrado so para esta chamada e o devolve encerrado. */
-  private async callServer(
-    server: string,
-    tool: string,
-    args: Record<string, unknown>,
-  ): Promise<unknown> {
-    const configs = await this.mcp.enabledConfigs();
-    const registry = McpRegistry.fromList(configs);
-    if (!registry.has(server)) throw new Error(`servidor MCP "${server}" nao esta habilitado`);
-    try {
-      return await registry.callTool(server, tool, args);
-    } finally {
-      await registry.closeAll();
-    }
-  }
-
   private async lastFire(triggerId: string): Promise<number | null> {
     const [row] = await this.db
       .select({ value: schema.cursors.value })
@@ -527,14 +517,6 @@ export class Scheduler {
 /** Cadencia em milissegundos. Nulo e gatilho que nao anda pelo relogio. */
 function cadenceMs(config: TriggerConfig): number | null {
   return config.kind === "webhook" ? null : config.everyMinutes * 60_000;
-}
-
-/**
- * Chave estavel do resultado de uma ferramenta. O corpo inteiro nao serve de
- * identificador externo porque nao tem limite de tamanho.
- */
-function digest(value: unknown): string {
-  return createHash("sha1").update(JSON.stringify(value) ?? "null").digest("hex").slice(0, 16);
 }
 
 function message(err: unknown): string {

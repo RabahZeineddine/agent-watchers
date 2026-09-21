@@ -434,7 +434,7 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, varredura por MCP com {{mcpPoll}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
@@ -471,7 +471,8 @@
     "schema": "migrações aplicadas: {{count}}",
     "watched": "gatilho de {{target}} cadastrado parado, ligado com a próxima batida em {{next}}, e removido",
     "trackers": "trackers: {{service}} no Jira pelo serviço e {{window}} no GitHub pela tela, credencial do cofre, {{projects}} destinos visíveis, tarefa existente reencontrada pelo pull request, nenhum canal que abra tarefa",
-    "authorship": "gatilho de {{mine}} acordou só com o pull request de {{viewer}}, e o de {{others}} só com o de outra pessoa"
+    "authorship": "gatilho de {{mine}} acordou só com o pull request de {{viewer}}, e o de {{others}} só com o de outra pessoa",
+    "mcpPoll": "consulta ao {{fixture}} pela ferramenta {{tool}} virou {{events}} evento(s) normalizado(s), a segunda varredura não reprocessou nenhum, e o cursor não andou com a chamada falhando"
   },
   "status": {
     "done": "concluído",

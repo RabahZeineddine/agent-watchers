@@ -2644,6 +2644,212 @@ async function checkAuthorship(): Promise<string> {
 }
 
 /**
+ * Confere a varredura por consulta a servidor MCP, contra o servidor de brinquedo.
+ *
+ * A terceira forma de fonte do ADR 0001 e a unica que nao tem como ser exposta
+ * a rede aqui: webhook espera chamada e a do GitHub precisa de token. Esta
+ * cabe inteira dentro da maquina, porque o alvo e um processo stdio que sobe do
+ * proprio pacote, entao a varredura de verdade roda sem nada sair.
+ *
+ * Tres coisas estao sendo provadas, e sao as tres que a fonte existe para
+ * garantir: a consulta vira evento normalizado, a segunda varredura nao
+ * reprocessa o que a primeira ja gravou, e o cursor nao anda quando a chamada
+ * falha. Nenhuma execucao chega a existir: o `ExecutionService` e trocado por
+ * um que so anota o pedido, senao o smoke gastaria assinatura a cada iteracao
+ * do loop.
+ */
+async function checkMcpPoll(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { TriggerService } = await import("../src/services/trigger-service.js");
+  const { ExecutionService } = await import("../src/services/execution-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { Scheduler } = await import("../src/triggers/scheduler.js");
+  const { ensureFixtureServer, FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
+  const { cursorKey, pollMcpServer, sourceName } = await import("../src/sources/mcp-poll.js");
+
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para varrer por MCP");
+
+  // O mesmo lancamento do `checkRenderer`: o binario do Electron em modo Node,
+  // e o bundle fora do asar, porque quem o le e um processo filho.
+  await ensureFixtureServer({
+    command: [process.execPath, foraDoAsar(join(__dirname, "mcp-fixture-server.mjs"))],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  });
+
+  const itens = 3;
+  const tool = "feed";
+  const args = { since: "{{cursor}}", count: itens };
+  const source = sourceName(FIXTURE_SERVER);
+  const chave = cursorKey({ tool, args });
+  const externos = Array.from({ length: itens }, (_, i) => `${tool}:item-${i}`);
+
+  /** O que o feed de brinquedo carimba no ultimo item, e onde o cursor deve parar. */
+  const ultimoCarimbo = new Date(
+    Date.parse("2026-01-01T00:00:00.000Z") + (itens - 1) * 60_000,
+  ).toISOString();
+
+  const limpar = async (): Promise<void> => {
+    await db
+      .delete(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, externos)));
+    await db
+      .delete(schema.cursors)
+      .where(and(eq(schema.cursors.source, source), eq(schema.cursors.key, chave)));
+  };
+
+  // Antes de comecar tambem, e nao so no fim: uma iteracao anterior que tenha
+  // morrido no meio deixaria os eventos gravados, e a primeira varredura
+  // encontraria zero novidade e passaria sem provar nada.
+  await limpar();
+
+  const triggerService = new TriggerService(db);
+  const gatilho = await triggerService.set(
+    agent.id,
+    { kind: "mcp-poll", server: FIXTURE_SERVER, tool, args, everyMinutes: 7 },
+    { enabled: true },
+  );
+
+  const pedidos: string[] = [];
+  const semExecutor = new (class extends ExecutionService {
+    async startForEvent(
+      input: Parameters<InstanceType<typeof ExecutionService>["startForEvent"]>[0],
+    ) {
+      if (input.eventId !== null) pedidos.push(input.eventId);
+      return { runId: `smoke-run-${randomUUID()}`, status: "queued" as const };
+    }
+  })(db);
+
+  // So o gatilho plantado: o banco de quem desenvolve pode ter outro habilitado,
+  // e a batida do smoke nao pode sair varrendo o que e de verdade.
+  const soOPlantado = new (class extends TriggerService {
+    async enabled() {
+      return (await this.list()).filter((t) => t.id === gatilho.id);
+    }
+  })(db);
+
+  const naoVarrer = async () => {
+    throw new Error("o smoke da varredura por MCP nao pode varrer o GitHub");
+  };
+  const naoConferir = async () => ({
+    checked: 0,
+    settled: [],
+    stillOpen: 0,
+    unreadable: 0,
+    failed: [],
+  });
+
+  const agendador = new Scheduler(
+    db,
+    soOPlantado,
+    semExecutor,
+    mcpService,
+    naoVarrer,
+    naoConferir,
+    async () => null,
+  );
+
+  const saidaDo = (batida: Awaited<ReturnType<typeof agendador.tick>>) => {
+    const saida = batida.outcomes.find((o) => o.triggerId === gatilho.id);
+    if (saida === undefined) throw new Error("o gatilho de MCP ficou de fora da batida");
+    if (saida.status !== "fired") {
+      throw new Error(`o gatilho de MCP respondeu ${saida.status}: ${saida.detail ?? ""}`);
+    }
+    return saida;
+  };
+
+  const cursorAgora = async (): Promise<string | undefined> => {
+    const [linha] = await db
+      .select({ value: schema.cursors.value })
+      .from(schema.cursors)
+      .where(and(eq(schema.cursors.source, source), eq(schema.cursors.key, chave)));
+    return linha?.value;
+  };
+
+  try {
+    const primeira = saidaDo(await agendador.tick({ reason: "timer" }));
+    if (primeira.events !== itens) {
+      throw new Error(`a primeira varredura gravou ${primeira.events} evento(s), e nao ${itens}`);
+    }
+    if (pedidos.length !== itens) {
+      throw new Error(`a primeira varredura quis executar ${pedidos.length} evento(s)`);
+    }
+
+    // Evento normalizado como o de qualquer outra fonte: o executor le `repo` e
+    // `changedFiles` sem saber que o trabalho veio de um servidor MCP.
+    const gravados = await db
+      .select({ externalId: schema.events.externalId, payload: schema.events.payload })
+      .from(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, externos)));
+    if (gravados.length !== itens) {
+      throw new Error(`o banco ficou com ${gravados.length} evento(s) da varredura por MCP`);
+    }
+    for (const evento of gravados) {
+      const payload = evento.payload as { repo?: unknown; changedFiles?: unknown; item?: unknown };
+      if (payload.repo !== `${FIXTURE_SERVER}/${tool}`) {
+        throw new Error(`o evento ${evento.externalId} nao diz de onde veio`);
+      }
+      if (!Array.isArray(payload.changedFiles)) {
+        throw new Error(`o evento ${evento.externalId} nao saiu normalizado`);
+      }
+      if ((payload.item as { text?: unknown } | undefined)?.text === undefined) {
+        throw new Error(`o evento ${evento.externalId} nao guardou o item do servidor`);
+      }
+    }
+
+    const depoisDaPrimeira = await cursorAgora();
+    if (depoisDaPrimeira !== ultimoCarimbo) {
+      throw new Error(`o cursor parou em ${depoisDaPrimeira}, e nao em ${ultimoCarimbo}`);
+    }
+
+    // Uma hora a frente porque a cadencia e de sete minutos: no mesmo instante o
+    // gatilho responderia `waiting` e a deduplicacao nao seria exercitada. O
+    // feed devolve o ultimo item de novo, entao quem precisa recusar e a chave
+    // externa, e nao o servidor.
+    const segunda = saidaDo(await agendador.tick({ at: Date.now() + 3_600_000, reason: "timer" }));
+    if (segunda.events !== 0) {
+      throw new Error(`a segunda varredura gravou ${segunda.events} evento(s), e devia zero`);
+    }
+    if (segunda.detail === undefined) {
+      throw new Error("a segunda varredura nao contou o item que ja conhecia");
+    }
+    if (pedidos.length !== itens) {
+      throw new Error(`a segunda varredura quis executar mais ${pedidos.length - itens} evento(s)`);
+    }
+
+    // O outro lado do contrato: chamada que falha nao pode mover o cursor, senao
+    // a janela que ninguem leu ficaria para tras.
+    await pollMcpServer(
+      { server: FIXTURE_SERVER, tool, args },
+      {
+        db,
+        call: async () => {
+          throw new Error("queda proposital do servidor");
+        },
+      },
+    ).then(
+      () => {
+        throw new Error("a varredura engoliu a queda do servidor");
+      },
+      () => undefined,
+    );
+    if ((await cursorAgora()) !== ultimoCarimbo) {
+      throw new Error("o cursor andou mesmo com a chamada falhando");
+    }
+
+    return t("smoke.mcpPoll", { fixture: FIXTURE_SERVER, tool, events: itens });
+  } finally {
+    await triggerService.remove(gatilho.id);
+    await db
+      .delete(schema.cursors)
+      .where(and(eq(schema.cursors.source, "scheduler"), eq(schema.cursors.key, gatilho.id)));
+    await limpar();
+  }
+}
+
+/**
  * Confere a secao dos repositorios observados, sem varrer nada.
  *
  * O caminho inteiro da story cabe dentro da maquina: cadastrar pela tela,
@@ -4143,6 +4349,7 @@ async function main(): Promise<void> {
     const avisos = await checkNotifications();
     const conferencia = await checkReconcile();
     const autoria = await checkAuthorship();
+    const varreduraMcp = await checkMcpPoll();
     const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
@@ -4160,6 +4367,7 @@ async function main(): Promise<void> {
         notifications: avisos,
         reconcile: conferencia,
         authorship: autoria,
+        mcpPoll: varreduraMcp,
         trackerIssue: tarefa,
         deepLink,
         bridge: ponte,
