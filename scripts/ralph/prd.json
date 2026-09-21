@@ -649,7 +649,7 @@
       "description": "Escrever docs/teste-do-desenho.md respondendo, com evidência do próprio repositório, o que o ADR 0001 prometeu: se uma fonte nova e uma ação nova entraram sem tocar no executor, na fila de aprovação e no formato de agent. Listar o que precisou mudar no núcleo, se precisou, e por quê. Se a promessa não se sustentou, dizer isso, e não maquiar.",
       "done_when": "O arquivo existe, cita arquivos e commits, e responde a pergunta de forma verificável.",
       "verify": "test -f ../docs/teste-do-desenho.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

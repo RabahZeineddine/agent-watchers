@@ -844,3 +844,17 @@ gate é montada. É a única mudança de núcleo do M8, e é de propósito: a ga
 vale como porta única se ela for sempre a mesma porta, e um mapa de handlers
 montado em cada chamador deixaria um deles registrar handler diferente sem
 ninguém notar. Fonte nova não encosta no núcleo; ação nova entra por essa linha.
+
+## O desenho cobrado
+
+`docs/teste-do-desenho.md` fecha o M8 cobrando do ADR 0001 a promessa de que
+fonte nova e ação nova entram como periferia. A conta está lá com commit e
+arquivo: em 1928 linhas inseridas em `app/src`, a fila de aprovação, o executor,
+o formato de agent e o esquema do banco ficaram com zero linha alterada, e o
+núcleo mudou quatro linhas, as duas de cada ação em `executor/build.ts`.
+
+A ressalva que o documento registra não é essa. É o desvio do Slack dentro do
+ramo `mcp-poll` do agendador, em `app/src/triggers/scheduler.ts:381`, que hoje é
+caso único e legível. Na segunda fonte que precisar do mesmo desvio, ele deixa
+de ser, e o lugar de resolver isso é uma tabela de fontes registradas, antes de
+escrever o segundo `if`.
