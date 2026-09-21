@@ -157,6 +157,25 @@ Correções humanas recorrentes viram proposta de regra na fila de aprovação. 
 vez aceitas, passam a compor uma skill de convenções, carregada como qualquer
 outra.
 
+### 11. Ação nova encosta no núcleo, e deve encostar
+
+Emenda de 21 de setembro de 2026, escrita depois do primeiro marco que exercitou
+a promessa inteira.
+
+A decisão 8 dava a entender que fonte nova e ação nova entrariam sem que o
+núcleo soubesse. A medição, registrada em `docs/teste-do-desenho.md`, mostra que
+isso vale para fonte e não vale para ação.
+
+Duas fontes novas e duas ações novas entraram com quase duas mil linhas. O
+executor, a fila de aprovação e o formato de agent ficaram com zero linha
+alterada. O registro de ações mudou quatro: um import e uma entrada de mapa por
+ação.
+
+Esse atrito fica. Quatro linhas num mapa explícito são a lista completa do que o
+Locum é capaz de publicar em nome de quem usa, legível de uma vez só. Um
+registro automático por varredura de pasta seria mais elegante e apagaria essa
+lista, que é justamente o que a invariante do produto precisa que exista.
+
 ## Consequências
 
 O código Python atual é substituído. Sobrevive pouco: o armazenamento de estado e
