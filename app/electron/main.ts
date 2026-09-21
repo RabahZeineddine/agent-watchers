@@ -1276,6 +1276,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   }
 
   const github = await checkGithub(window);
+  const watched = await checkWatched(window);
 
   return t("smoke.config", {
     providers: provedores.length,
@@ -1285,7 +1286,243 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
     github,
+    watched,
   });
+}
+
+/**
+ * Confere a secao dos repositorios observados, sem varrer nada.
+ *
+ * O caminho inteiro da story cabe dentro da maquina: cadastrar pela tela,
+ * conferir que o gatilho nasceu parado, liga-lo e ver o agendador calcular a
+ * proxima batida, e remover. Nenhum desses passos fala com o GitHub, porque
+ * quem falaria e a batida, e batida nenhuma acontece aqui: o `tick` nao e
+ * chamado, e o gatilho e removido antes de o smoke sair.
+ *
+ * O dono e o padrao de repositorio sao sorteados de proposito. O smoke roda no
+ * banco de quem desenvolve, e um padrao que casasse com repositorio de verdade
+ * deixaria para tras um gatilho apontado para trabalho real caso a limpeza
+ * falhasse.
+ */
+async function checkWatched(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { triggerService } = await import("../src/services/trigger-service.js");
+  const { scheduler } = await import("../src/triggers/scheduler.js");
+
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para observar repositorio");
+
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
+  const cadencia = 7;
+  const antes = (await triggerService.list()).map((gatilho) => gatilho.id);
+
+  const preencheu = await window.webContents.executeJavaScript(
+    `(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set;
+      const digitar = (seletor, valor) => {
+        const campo = document.querySelector(seletor);
+        if (campo === null) return false;
+        setter.call(campo, valor);
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      };
+      const escolher = () => {
+        const campo = document.querySelector("[data-locum-observar-agent]");
+        if (campo === null) return false;
+        campo.value = ${JSON.stringify(agent.id)};
+        campo.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      };
+      if (!escolher()) return false;
+      if (!digitar("[data-locum-observar-dono]", ${JSON.stringify(dono)})) return false;
+      if (!digitar("[data-locum-observar-repo]", ${JSON.stringify(repo)})) return false;
+      if (!digitar("[data-locum-observar-cadencia]", ${JSON.stringify(String(cadencia))})) {
+        return false;
+      }
+      const botao = document.querySelector("[data-locum-observar-salvar]");
+      if (botao === null || botao.disabled) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de observar");
+
+  // O identificador so existe depois de o servico gravar, entao ele e
+  // descoberto por diferenca em vez de vir da tela: assim o exame nao depende
+  // de o marcador estar certo para achar o que tem que limpar depois.
+  const criado = await esperarDoServico(
+    "gatilho cadastrado pela tela",
+    async () => (await triggerService.list()).find((gatilho) => !antes.includes(gatilho.id)),
+  );
+
+  try {
+    // A recusa da ponte vira mensagem daqui antes de virar espera estourada:
+    // "o marcador nao ficou pronto" nao diz por que a linha nao apareceu.
+    const recusa = (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-observados-erro]")
+        ?.dataset.locumObservadosErro ?? null`,
+    )) as string | null;
+    if (recusa !== null) throw new Error(`a secao de observados recusou: ${recusa}`);
+
+    if (criado.enabled) throw new Error("o gatilho cadastrado pela tela nasceu habilitado");
+    if (criado.config.kind !== "poll") {
+      throw new Error(`a tela cadastrou um gatilho do tipo ${criado.config.kind}`);
+    }
+    if (criado.config.owner !== dono || criado.config.repoMatch !== repo) {
+      throw new Error(
+        `a tela gravou ${criado.config.owner}/${criado.config.repoMatch} e nao ${dono}/${repo}`,
+      );
+    }
+    if (criado.config.everyMinutes !== cadencia) {
+      throw new Error(`a cadencia gravada foi ${criado.config.everyMinutes} e nao ${cadencia}`);
+    }
+
+    const parado = (await scheduler.schedule()).find((s) => s.triggerId === criado.id);
+    if (parado === undefined) throw new Error("o gatilho novo nao apareceu no agendador");
+    // Parado nao tem proxima batida, e dizer uma data aqui seria prometer na
+    // tela uma varredura que o agendador nao vai fazer.
+    if (parado.nextDueAt !== null) {
+      throw new Error(`o gatilho parado disse que bate em ${parado.nextDueAt}`);
+    }
+
+    const naTela = await esperarProbe<{ habilitado: string; alvo: string; proxima: string }>(
+      window,
+      "gatilho na tela",
+      `(() => {
+        const linha = document.querySelector('[data-locum-gatilho="${criado.id}"]');
+        if (linha === null) return null;
+        return {
+          habilitado: linha.dataset.locumGatilhoHabilitado,
+          alvo: linha.dataset.locumGatilhoAlvo,
+          proxima: linha.dataset.locumGatilhoProxima,
+        };
+      })()`,
+    );
+    if (naTela.habilitado !== "nao") throw new Error("a tela mostrou o gatilho novo como ligado");
+    if (naTela.alvo !== `${dono}/${repo}`) {
+      throw new Error(`a tela mostrou o alvo ${naTela.alvo} e o cadastro diz ${dono}/${repo}`);
+    }
+    if (naTela.proxima !== "") {
+      throw new Error(`a tela anunciou a batida ${naTela.proxima} de um gatilho parado`);
+    }
+
+    // O clique que a story cobra: ligado, ele aparece no agendador com a
+    // proxima batida calculada. Ligar nao varre; quem varreria e o `tick`, que
+    // este exame nao chama.
+    const cliquei = Date.now();
+    const ligou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-gatilho-ligar="${criado.id}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (ligou !== true) throw new Error("a tela nao ofereceu botao de ligar o gatilho");
+
+    await esperarProbe<true>(
+      window,
+      "gatilho ligado pela tela",
+      `document.querySelector('[data-locum-gatilho="${criado.id}"]')
+        ?.dataset.locumGatilhoHabilitado === "sim" ? true : null`,
+    );
+
+    // O relogio e passado de fora para que as duas perguntas abaixo respondam
+    // sobre o mesmo instante: gatilho que nunca disparou esta vencido agora, e
+    // com dois `Date.now()` a comparacao viraria uma corrida de milissegundos.
+    const agora = Date.now();
+    const ligado = (await scheduler.schedule(agora)).find((s) => s.triggerId === criado.id);
+    if (ligado?.enabled !== true) throw new Error("o gatilho ligado na tela continuou parado");
+    if (ligado.nextDueAt === null) {
+      throw new Error("o agendador nao calculou a proxima batida do gatilho ligado");
+    }
+    if (ligado.everyMinutes !== cadencia) {
+      throw new Error(`o agendador leu a cadencia ${ligado.everyMinutes} e nao ${cadencia}`);
+    }
+    // Vencido, e nao daqui a uma cadencia: esperar sete minutos para a primeira
+    // varredura de um gatilho que alguem acabou de ligar seria demora que
+    // ninguem pediu.
+    if (ligado.nextDueAt !== agora) {
+      throw new Error(`o gatilho ligado agora quer bater em ${ligado.nextDueAt}`);
+    }
+    if ((await scheduler.nextDueAt(agora)) !== agora) {
+      throw new Error("a batida do gatilho novo ficou de fora da proxima batida do agendador");
+    }
+
+    const naTelaLigado = await esperarProbe<string>(
+      window,
+      "batida do gatilho na tela",
+      `(() => {
+        const linha = document.querySelector('[data-locum-gatilho="${criado.id}"]');
+        const proxima = linha?.dataset.locumGatilhoProxima;
+        return proxima === undefined || proxima === "" ? null : proxima;
+      })()`,
+    );
+    // A tela leu com o relogio dela, entao o que da para exigir e a janela: a
+    // batida anunciada caiu entre o clique de ligar e agora, que e o que
+    // "vencido" quer dizer. Igualdade exata aqui seria exigir que os dois lados
+    // tivessem lido o relogio no mesmo milissegundo.
+    const anunciada = Number(naTelaLigado);
+    if (!Number.isFinite(anunciada) || anunciada < cliquei || anunciada > Date.now()) {
+      throw new Error(`a tela anunciou a batida ${naTelaLigado}, fora da janela do clique`);
+    }
+
+    const removeu = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-gatilho-remover="${criado.id}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (removeu !== true) throw new Error("a tela nao ofereceu botao de remover o gatilho");
+
+    await esperarProbe<true>(
+      window,
+      "gatilho removido pela tela",
+      `document.querySelector('[data-locum-gatilho="${criado.id}"]') === null ? true : null`,
+    );
+    if ((await triggerService.list()).some((gatilho) => gatilho.id === criado.id)) {
+      throw new Error("o gatilho sobreviveu ao remover da tela");
+    }
+
+    return t("smoke.watched", {
+      target: `${dono}/${repo}`,
+      next: new Date(ligado.nextDueAt).toISOString(),
+    });
+  } finally {
+    // O clique de remover pode nao ter chegado, e um gatilho de varredura
+    // habilitado sobrevivendo ao smoke faria a proxima subida do app sair
+    // varrendo uma organizacao que nao existe.
+    await triggerService.remove(criado.id);
+  }
+}
+
+/**
+ * Espera o servico responder alguma coisa, com a mesma cadencia do `esperarProbe`.
+ *
+ * Existe porque o clique na tela e assincrono dos dois lados: o `call` volta
+ * pela ponte e so depois o servico grava. Perguntar uma vez so ao banco daria
+ * falso negativo por milissegundos.
+ */
+async function esperarDoServico<T>(
+  nome: string,
+  ler: () => Promise<T | undefined>,
+  limiteMs = 20_000,
+): Promise<T> {
+  const limite = Date.now() + limiteMs;
+
+  while (Date.now() < limite) {
+    const visto = await ler();
+    if (visto !== undefined) return visto;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`${nome} nao apareceu dentro de ${limiteMs / 1000}s`);
 }
 
 /**

@@ -24,10 +24,11 @@ import type {
  * aparecer depois. Acrescentar canal aqui e um ato, nao uma consequencia.
  *
  * Fora da lista de proposito: `approvals.decide`, que e o clique de uma pessoa
- * na inbox e passa pela gate; e `runs.rerunStep`, `triggers.setEnabled`,
- * `startup.set`, `mcp.test` e `mcp.tools`, que escrevem ou sobem processo e
- * nao cabem num hook que dispara sozinho ao montar a tela. O que dessas a
- * janela ja pode pedir esta em `ACTION_CHANNELS`, logo abaixo.
+ * na inbox e passa pela gate; e `runs.rerunStep`, `triggers.set`,
+ * `triggers.remove`, `triggers.setEnabled`, `startup.set`, `mcp.test` e
+ * `mcp.tools`, que escrevem ou sobem processo e nao cabem num hook que dispara
+ * sozinho ao montar a tela. O que dessas a janela ja pode pedir esta em
+ * `ACTION_CHANNELS`, logo abaixo.
  *
  * `credentials.overview` esta aqui e nao la porque ela nao abre o cofre: ela
  * responde endereco e se ha valor guardado, que e o que a tela de configuracao
@@ -56,6 +57,9 @@ export const READ_CHANNELS = [
   "metrics.report",
   "machine.profile",
   "triggers.list",
+  // Cadastro e agenda, sem bater em gatilho nenhum: ler quando foi a última
+  // varredura não dispara a próxima.
+  "triggers.schedule",
   "startup.get",
   "i18n.state",
   "window.inboxTarget",
@@ -102,6 +106,12 @@ export const ACTION_CHANNELS = [
   "chat.setModel",
   "chat.send",
   "chat.cancel",
+  // Escolher o que observar, e ligar ou desligar a varredura. Cada um é um
+  // clique de quem está usando, e o gatilho gravado nasce parado: ligar é o
+  // segundo clique, e não uma consequência de ter cadastrado.
+  "triggers.set",
+  "triggers.remove",
+  "triggers.setEnabled",
   // Escolher idioma é um clique de quem está usando, e a escrita em `settings`
   // vale para a próxima subida também. Não é leitura de tela.
   "i18n.setPreference",

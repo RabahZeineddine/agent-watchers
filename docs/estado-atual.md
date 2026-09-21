@@ -27,7 +27,7 @@ que a interface vai usar.
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
-| cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
+| cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
@@ -40,14 +40,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 39 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 42 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -60,6 +60,7 @@ que a interface vai usar.
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
+| repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 
 ## Execução verificada
 
@@ -665,7 +666,11 @@ deploy passa a depender só de cadastrar o servidor certo.
 
 O agendador não tem relógio próprio. Ele é batido de fora, hoje pelo comando
 `tick`, e devolve em `nextDueAt` quando quer a próxima batida, para quem chama
-armar um temporizador só. Cada gatilho tem seu cursor de tempo na tabela
+armar um temporizador só. O `schedule()` responde o mesmo por gatilho, com a
+última batida ao lado do cadastro, que é o que a tela de configuração mostra. O
+relógio entra por parâmetro nos dois: gatilho que nunca disparou está vencido
+agora, e duas chamadas com dois `Date.now()` responderiam números diferentes
+para a mesma pergunta. Cada gatilho tem seu cursor de tempo na tabela
 `cursors`, então sono da máquina não perde janela: a primeira batida depois de
 acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
 principal do Electron, em `app/electron/power.ts`, no `resume` do

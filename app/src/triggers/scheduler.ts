@@ -6,7 +6,6 @@ import { McpRegistry } from "../mcp/registry.js";
 import { executionService, type ExecutionService } from "../services/execution-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
-import { pollOpenPullRequests } from "../sources/github.js";
 
 type Db = typeof defaultDb;
 
@@ -57,6 +56,53 @@ export interface TickOptions {
 export type PollFn = (owner: string, repoFilter: RegExp) => Promise<string[]>;
 
 /**
+ * O que um gatilho respondeu quando alguem perguntou pelo relogio, sem bater.
+ *
+ * Existe porque a interface mostra cadastro e agenda na mesma linha, e as duas
+ * coisas moram em lugares diferentes: a configuracao esta na tabela de
+ * gatilhos, e a ultima batida no cursor deste agendador.
+ */
+export interface TriggerSchedule {
+  triggerId: string;
+  agentId: string;
+  kind: TriggerConfig["kind"];
+  enabled: boolean;
+  /**
+   * O cadastro inteiro, e nao so o tipo.
+   *
+   * Quem mostra agenda mostra do lado o que esta sendo observado, e separar as
+   * duas metades em duas leituras obrigaria a tela a juntar por identificador
+   * o que ja sai junto daqui.
+   */
+  config: TriggerConfig;
+  /** Cadencia desejada. Nulo e gatilho que nao anda pelo relogio. */
+  everyMinutes: number | null;
+  /** Ultima batida deste gatilho, em epoch de milissegundos. */
+  lastFireAt: number | null;
+  /**
+   * Quando o agendador vai acordar este gatilho.
+   *
+   * Nulo quando ninguem vai: gatilho desabilitado nao entra na batida, e
+   * webhook espera chamada e nao relogio. Dizer uma data para esses dois seria
+   * prometer na tela uma batida que nunca vem.
+   */
+  nextDueAt: number | null;
+}
+
+/**
+ * A varredura de verdade entra por import dinamico, e nao pelo topo do modulo.
+ *
+ * Este agendador e carregado pela ponte na subida da janela, so para responder
+ * quando foi a ultima batida de cada gatilho. O `octokit` que o source importa
+ * viria junto nessa carona, e ele nao tem o que fazer ate alguem habilitar um
+ * gatilho de varredura.
+ */
+const varrerNoGithub: PollFn = async (owner, repoFilter) => {
+  const { pollOpenPullRequests } = await import("../sources/github.js");
+  return pollOpenPullRequests(owner, repoFilter);
+};
+
+/**
  * Quem acorda os gatilhos habilitados.
  *
  * Anda por cursor de tempo, um por gatilho, e nao por janela fixa. A diferenca
@@ -78,7 +124,7 @@ export class Scheduler {
     private readonly triggers: TriggerService = triggerService,
     private readonly executions: ExecutionService = executionService,
     private readonly mcp: McpService = mcpService,
-    private readonly poll: PollFn = pollOpenPullRequests,
+    private readonly poll: PollFn = varrerNoGithub,
   ) {}
 
   /** Batida vinda do evento de acordar da maquina, que o M3 vai ligar. */
@@ -99,15 +145,54 @@ export class Scheduler {
     return { at, reason, outcomes, nextDueAt: due.length > 0 ? Math.min(...due) : null };
   }
 
-  /** Quando o agendador quer ser acordado, sem disparar nada agora. */
-  async nextDueAt(): Promise<number | null> {
-    const times: number[] = [];
-    for (const trigger of await this.triggers.enabled()) {
+  /**
+   * O que o agendador enxerga de cada gatilho cadastrado, sem bater em nenhum.
+   *
+   * Vem daqui e nao do `TriggerService` porque metade da resposta e o cursor,
+   * que e estado desta classe: o cadastro sabe a cadencia desejada, e so o
+   * agendador sabe quando o gatilho disparou pela ultima vez.
+   *
+   * Entra tambem o que esta desabilitado, que e o estado em que todo gatilho
+   * nasce: quem acabou de cadastrar precisa ver a linha na tela para poder
+   * habilita-la.
+   */
+  async schedule(at: number = Date.now()): Promise<TriggerSchedule[]> {
+    const schedules: TriggerSchedule[] = [];
+
+    for (const trigger of await this.triggers.list()) {
       const cadence = cadenceMs(trigger.config);
-      if (cadence === null) continue;
       const last = await this.lastFire(trigger.id);
-      times.push(last === null ? 0 : last + cadence);
+      schedules.push({
+        triggerId: trigger.id,
+        agentId: trigger.agentId,
+        kind: trigger.config.kind,
+        enabled: trigger.enabled,
+        config: trigger.config,
+        everyMinutes: cadence === null ? null : cadence / 60_000,
+        lastFireAt: last,
+        // Gatilho que nunca disparou esta vencido, e a batida dele e a proxima
+        // que acontecer. Nao e o mesmo que "daqui a uma cadencia": esperar um
+        // ciclo inteiro depois de habilitar faria a primeira varredura demorar
+        // sem que ninguem tivesse pedido isso.
+        nextDueAt:
+          !trigger.enabled || cadence === null ? null : last === null ? at : last + cadence,
+      });
     }
+
+    return schedules;
+  }
+
+  /**
+   * Quando o agendador quer ser acordado, sem disparar nada agora.
+   *
+   * O relogio entra por parametro pelo mesmo motivo do `schedule`: gatilho que
+   * nunca disparou esta vencido agora, e duas chamadas com dois `Date.now()`
+   * respondem numeros diferentes para a mesma pergunta.
+   */
+  async nextDueAt(at: number = Date.now()): Promise<number | null> {
+    const times = (await this.schedule(at))
+      .map((s) => s.nextDueAt)
+      .filter((v): v is number => v !== null);
     return times.length > 0 ? Math.min(...times) : null;
   }
 
@@ -177,8 +262,13 @@ export class Scheduler {
         if (config.source !== "github") {
           throw new Error(`fonte "${config.source}" nao tem varredura cadastrada`);
         }
-        const owner = process.env.GITHUB_OWNER;
-        if (!owner) throw new Error("GITHUB_OWNER ausente, a varredura do GitHub precisa da org");
+        // O cadastro vem antes do ambiente, pela mesma razao do token: quem
+        // escolheu o dono na tela espera que a varredura visite aquele, e nao
+        // um `GITHUB_OWNER` esquecido no shell de onde o app subiu.
+        const owner = config.owner ?? process.env.GITHUB_OWNER;
+        if (!owner) {
+          throw new Error("gatilho sem dono e sem GITHUB_OWNER, a varredura precisa da org");
+        }
 
         const created = await this.poll(owner, new RegExp(config.repoMatch));
         const runs = await this.runsFor(trigger, created, wait);

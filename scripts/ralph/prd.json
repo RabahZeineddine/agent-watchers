@@ -494,7 +494,7 @@
       "description": "Seção para escolher o que observar: dono da organização e padrão de repositório, com o gatilho de varredura e a cadência em minutos. Criar, habilitar, desabilitar e remover, tudo pelo TriggerService. O gatilho nasce desabilitado, conforme a regra que já existe. Mostrar quando foi a última batida e quando será a próxima.",
       "done_when": "Um gatilho criado pela interface aparece no agendador e a próxima batida é calculada.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

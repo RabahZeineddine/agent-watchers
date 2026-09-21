@@ -302,6 +302,32 @@
       "failed": "o GitHub recusou: {{error}}",
       "refused": "a ponte recusou: {{message}}"
     },
+    "watched": {
+      "title": "Repositórios observados",
+      "description": "O que o Locum varre, de quanto em quanto tempo, e com qual agent. O gatilho nasce parado: cadastrar não liga nada, e ligar é o segundo clique.",
+      "empty": "Nenhum repositório observado. Enquanto não houver um gatilho ligado, o Locum só roda quando alguém pede.",
+      "agent": "agent que vai revisar",
+      "owner": "dono da organização ou da conta",
+      "ownerHint": "organização",
+      "repo": "padrão do nome do repositório",
+      "repoHint": "^meu-servico$",
+      "cadence": "cadência em minutos",
+      "add": "observar",
+      "enable": "ligar",
+      "disable": "desligar",
+      "remove": "remover",
+      "on": "ligado",
+      "off": "parado",
+      "target": "{{owner}} · {{repo}}",
+      "fromEnv": "dono pelo ambiente",
+      "every_one": "a cada {{count}} minuto",
+      "every_other": "a cada {{count}} minutos",
+      "beats": "última varredura {{last}} · próxima {{next}}",
+      "never": "nunca",
+      "parked": "nenhuma, o gatilho está parado",
+      "howTo": "O padrão do repositório é uma expressão regular aplicada ao nome, então \"^api-\" pega todos os que começam assim e \"^meu-servico$\" pega um só. A varredura precisa do token do GitHub guardado acima. Achado nenhum vira comentário sozinho: ele para na fila e espera o seu clique.",
+      "refused": "a ponte recusou: {{message}}"
+    },
     "budgets": {
       "title": "Orçamentos",
       "description": "O teto sai da versão do topo de cada agent, e o gasto de hoje sai do que já rodou.",
@@ -340,7 +366,7 @@
     "routes": "destinos: {{count}}",
     "palette": "paleta abrindo e fechando pelo atalho",
     "agents": "lista com agents: {{agents}}, histórico de versões: {{versions}} de {{agent}}, comparação apontando o passo de ação de \"{{from}}\" para \"{{to}}\"",
-    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, GitHub: {{github}}",
+    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, GitHub: {{github}}, observados: {{watched}}",
     "github": "credencial: {{path}}",
     "githubStored": "cofre já tem token de quem desenvolve, cadastro conferido sem sair da máquina",
     "githubRoundTrip": "guardou, leu do cofre sem GITHUB_TOKEN, conferiu e esqueceu pela tela",
@@ -350,7 +376,8 @@
     "mainText": "bandeja, notificação e prompt do assistente seguindo o idioma: \"{{tray}}\", \"{{notification}}\" e \"{{assistant}}\"",
     "screens": "inbox escrevendo \"{{inbox}}\", execuções escrevendo \"{{runs}}\", agents escrevendo \"{{agents}}\" e configuração escrevendo \"{{budget}}\", todas batendo com o dicionário nos dois idiomas",
     "picker": "configuração trocando o idioma por clique, \"{{pt}}\" e \"{{en}}\" sem recarregar, e a bandeja indo junto na mesma batida: \"{{tray}}\"",
-    "schema": "migrações aplicadas: {{count}}"
+    "schema": "migrações aplicadas: {{count}}",
+    "watched": "gatilho de {{target}} cadastrado parado, ligado com a próxima batida em {{next}}, e removido"
   },
   "status": {
     "done": "concluído",

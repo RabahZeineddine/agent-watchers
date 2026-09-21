@@ -15,6 +15,7 @@ type Orcamento = ReadResult<"agents.budgets">[number];
 type Credencial = ReadResult<"credentials.overview">["refs"][number];
 type EstadoDoGithub = ReadResult<"github.status">;
 type ConferenciaDoGithub = ReadResult<"github.check">;
+type Gatilho = ReadResult<"triggers.schedule">[number];
 type Ferramenta = ReadResult<"mcp.tools">[number];
 type Teste = ReadResult<"mcp.test">;
 
@@ -141,6 +142,13 @@ export function Configuracao() {
         titulo={t("settings.github.title")}
       >
         <Github />
+      </Secao>
+
+      <Secao
+        descricao={t("settings.watched.description")}
+        titulo={t("settings.watched.title")}
+      >
+        <Observados />
       </Secao>
 
       <Secao
@@ -735,6 +743,261 @@ function ResultadoDoGithub({ conferencia }: { conferencia: Conferencia }) {
         ? t("settings.github.missing")
         : t("settings.github.failed", { error: resultado.message })}
     </p>
+  );
+}
+
+/* --------------------------------------------------------------- observados */
+
+/** Fonte da varredura. Hoje só existe uma, e o cadastro guarda o nome dela. */
+const FONTE = "github";
+
+/** Cadência de estreia, em minutos. A mesma que o zod usa quando ninguém diz. */
+const CADENCIA_PADRAO = "15";
+
+/**
+ * O que esta máquina observa: dono, padrão de repositório e de quanto em
+ * quanto tempo o Locum vai olhar.
+ *
+ * O gatilho nasce parado, e ligar é outro clique. Não é cerimônia: um cadastro
+ * que já acordasse sozinho colocaria o executor para rodar em cima de um
+ * repositório que alguém ainda está terminando de escolher, gastando modelo
+ * antes de a pessoa ter conferido o que digitou.
+ *
+ * Nada aqui publica. Um gatilho ligado varre, cria execução e o passo de ação
+ * para na fila de aprovação, que continua sendo o único lugar onde sai
+ * comentário, e só com clique.
+ */
+function Observados() {
+  const { i18n, t } = useTranslation();
+  const agents = useRead("agents.list");
+  const inicial = useRead("triggers.schedule");
+  const [recarregado, setRecarregado] = useState<Gatilho[] | null>(null);
+  const [agentId, setAgentId] = useState("");
+  const [dono, setDono] = useState("");
+  const [repo, setRepo] = useState("");
+  const [cadencia, setCadencia] = useState(CADENCIA_PADRAO);
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const agenda = recarregado ?? inicial.data ?? null;
+  const recusa = erro ?? inicial.error?.message ?? null;
+  // Só a varredura: gatilho de relógio e de MCP entram por outro caminho e não
+  // têm dono nem padrão de repositório para esta seção mostrar.
+  const gatilhos = (agenda ?? []).filter((g) => g.kind === "poll");
+
+  const listaDeAgents = agents.data ?? [];
+  // O primeiro da lista é o padrão, e não uma opção vazia: quem tem um agent só
+  // não deveria precisar escolhê-lo para cadastrar o que observar.
+  const escolhido = agentId !== "" ? agentId : (listaDeAgents[0]?.id ?? "");
+
+  // A leitura que falha vira texto na tela e não lista vazia: sem isso, ponte
+  // recusada e nenhum repositório observado ficam iguais para quem olha.
+  const recarregar = (): Promise<void> =>
+    read("triggers.schedule").then(setRecarregado, (falha: unknown) =>
+      setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): void => {
+    setOcupado(true);
+    acao
+      .then(
+        () => setErro(null),
+        (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+      )
+      .then(recarregar)
+      .finally(() => setOcupado(false));
+  };
+
+  const minutos = Number(cadencia);
+  const valido =
+    escolhido !== "" &&
+    dono.trim() !== "" &&
+    repo.trim() !== "" &&
+    Number.isInteger(minutos) &&
+    minutos >= 1;
+
+  const observar = (): void => {
+    agir(
+      call("triggers.set", escolhido, {
+        kind: "poll",
+        source: FONTE,
+        owner: dono.trim(),
+        repoMatch: repo.trim(),
+        everyMinutes: minutos,
+      }).then(() => {
+        setDono("");
+        setRepo("");
+      }),
+    );
+  };
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-observados={gatilhos.map((g) => g.triggerId).join(",")}
+      data-locum-probe="observados"
+    >
+      {gatilhos.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.watched.empty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {gatilhos.map((gatilho) => (
+            <LinhaDoObservado
+              aoLigar={(ligado) => agir(call("triggers.setEnabled", gatilho.triggerId, ligado))}
+              aoRemover={() => agir(call("triggers.remove", gatilho.triggerId))}
+              gatilho={gatilho}
+              idioma={i18n.language}
+              key={gatilho.triggerId}
+              ocupado={ocupado}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label={t("settings.watched.agent")}
+          className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
+          data-locum-observar-agent=""
+          onChange={(evento) => setAgentId(evento.target.value)}
+          value={escolhido}
+        >
+          {listaDeAgents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.id}
+            </option>
+          ))}
+        </select>
+
+        <input
+          aria-label={t("settings.watched.owner")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-observar-dono=""
+          onChange={(evento) => setDono(evento.target.value)}
+          placeholder={t("settings.watched.ownerHint")}
+          spellCheck={false}
+          value={dono}
+        />
+
+        <input
+          aria-label={t("settings.watched.repo")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-44 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-observar-repo=""
+          onChange={(evento) => setRepo(evento.target.value)}
+          placeholder={t("settings.watched.repoHint")}
+          spellCheck={false}
+          value={repo}
+        />
+
+        <input
+          aria-label={t("settings.watched.cadence")}
+          className="border-border bg-background focus-visible:ring-ring w-20 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-observar-cadencia=""
+          min={1}
+          onChange={(evento) => setCadencia(evento.target.value)}
+          step={1}
+          type="number"
+          value={cadencia}
+        />
+
+        <Button
+          data-locum-observar-salvar=""
+          disabled={ocupado || !valido}
+          onClick={observar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.watched.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.watched.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-observados-erro={recusa}>
+          {t("settings.watched.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LinhaDoObservado({
+  aoLigar,
+  aoRemover,
+  gatilho,
+  idioma,
+  ocupado,
+}: {
+  aoLigar: (ligado: boolean) => void;
+  aoRemover: () => void;
+  gatilho: Gatilho;
+  idioma: string;
+  ocupado: boolean;
+}) {
+  const { t } = useTranslation();
+  const config = gatilho.config;
+  // O `kind` já foi filtrado por quem monta a lista, e este estreitamento é o
+  // que dá acesso a dono e padrão sem espalhar a checagem pelo JSX.
+  const alvo =
+    config.kind === "poll"
+      ? t("settings.watched.target", {
+          owner: config.owner ?? t("settings.watched.fromEnv"),
+          repo: config.repoMatch,
+        })
+      : "";
+
+  const quando = (ms: number | null): string =>
+    ms === null ? t("settings.watched.never") : new Date(ms).toLocaleString(idioma);
+
+  return (
+    <li
+      className="border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
+      data-locum-gatilho={gatilho.triggerId}
+      data-locum-gatilho-alvo={config.kind === "poll" ? `${config.owner ?? ""}/${config.repoMatch}` : ""}
+      data-locum-gatilho-habilitado={gatilho.enabled ? "sim" : "nao"}
+      data-locum-gatilho-proxima={gatilho.nextDueAt ?? ""}
+      data-locum-gatilho-ultima={gatilho.lastFireAt ?? ""}
+    >
+      <span className="font-mono text-xs">{alvo}</span>
+      <Badge variant={gatilho.enabled ? "secondary" : "outline"}>
+        {t(gatilho.enabled ? "settings.watched.on" : "settings.watched.off")}
+      </Badge>
+      <span className="text-muted-foreground text-xs">
+        {t("settings.watched.every", { count: gatilho.everyMinutes ?? 0 })}
+      </span>
+      <span className="text-muted-foreground text-xs">{gatilho.agentId}</span>
+
+      <div className="ml-auto flex items-center gap-1">
+        <Button
+          data-locum-gatilho-ligar={gatilho.triggerId}
+          disabled={ocupado}
+          onClick={() => aoLigar(!gatilho.enabled)}
+          size="sm"
+          variant="ghost"
+        >
+          {t(gatilho.enabled ? "settings.watched.disable" : "settings.watched.enable")}
+        </Button>
+        <Button
+          data-locum-gatilho-remover={gatilho.triggerId}
+          disabled={ocupado}
+          onClick={aoRemover}
+          size="sm"
+          variant="ghost"
+        >
+          {t("settings.watched.remove")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground w-full text-xs">
+        {t("settings.watched.beats", {
+          last: quando(gatilho.lastFireAt),
+          next: gatilho.enabled ? quando(gatilho.nextDueAt) : t("settings.watched.parked"),
+        })}
+      </p>
+    </li>
   );
 }
 

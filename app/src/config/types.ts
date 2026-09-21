@@ -193,6 +193,16 @@ export const PollTrigger = z.object({
   kind: z.literal("poll"),
   /** Fonte cadastrada, hoje so `github`. */
   source: z.string().min(1),
+  /**
+   * Dono da organizacao ou da conta que a varredura visita.
+   *
+   * Opcional porque `GITHUB_OWNER` no ambiente era o unico caminho ate a
+   * interface existir, e gatilho gravado antes disso nao tem o campo. Quem
+   * cadastra pela tela escolhe aqui, e e este valor que vale: o ambiente fica
+   * atras, como no token, porque ele vem do shell de onde o app subiu e nao de
+   * quem decidiu o que observar.
+   */
+  owner: z.string().min(1).optional(),
   /** Expressao aplicada ao nome do repositorio, como no comando `poll`. */
   repoMatch: z.string().min(1),
   everyMinutes: z.number().int().min(1).default(15),

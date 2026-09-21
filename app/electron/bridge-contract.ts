@@ -10,6 +10,7 @@ import type { ProviderService } from "../src/services/provider-service.js";
 import type { RunService } from "../src/services/run-service.js";
 import type { StartupService } from "../src/services/startup-service.js";
 import type { TriggerService } from "../src/services/trigger-service.js";
+import type { Scheduler } from "../src/triggers/scheduler.js";
 
 /**
  * Contrato da ponte entre a janela e a camada de servico.
@@ -127,7 +128,27 @@ interface ServiceApi {
   "machine.profile": MachineService["profile"];
 
   "triggers.list": TriggerService["list"];
+  /**
+   * Cadastrar o que observar, e desfazer.
+   *
+   * A tela grava sem dizer nada sobre habilitar, e o padrão do serviço é o
+   * estado parado: ligar é o segundo clique, em `setEnabled`. Quem sustenta
+   * essa ordem é o `TriggerService`, não a ponte, e é por isso que `set` chega
+   * aqui com a assinatura inteira: quem já pode habilitar num segundo canal
+   * não ganha nada sendo impedido de fazê-lo num só.
+   *
+   * Nada disso publica: o gatilho habilitado varre e cria execução, e o passo
+   * de ação continua parando na fila de aprovação.
+   */
+  "triggers.set": TriggerService["set"];
+  "triggers.remove": TriggerService["remove"];
   "triggers.setEnabled": TriggerService["setEnabled"];
+  /**
+   * Cadastro e agenda na mesma linha: quando cada gatilho bateu e quando o
+   * agendador vai acordá-lo. A última batida é cursor do agendador, e não do
+   * cadastro, então quem responde é ele.
+   */
+  "triggers.schedule": Scheduler["schedule"];
 
   "startup.get": StartupService["getPreference"];
   "startup.set": StartupService["setPreference"];
@@ -199,7 +220,10 @@ export const BRIDGE_CHANNELS = [
   "metrics.report",
   "machine.profile",
   "triggers.list",
+  "triggers.set",
+  "triggers.remove",
   "triggers.setEnabled",
+  "triggers.schedule",
   "startup.get",
   "startup.set",
   "i18n.state",

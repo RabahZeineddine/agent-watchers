@@ -302,6 +302,32 @@
       "failed": "GitHub refused: {{error}}",
       "refused": "the bridge refused: {{message}}"
     },
+    "watched": {
+      "title": "Watched repositories",
+      "description": "What Locum scans, how often, and with which agent. A trigger is born parked: registering it turns nothing on, and turning it on is the second click.",
+      "empty": "No repository watched. Until a trigger is on, Locum only runs when someone asks.",
+      "agent": "agent that will review",
+      "owner": "organization or account owner",
+      "ownerHint": "organization",
+      "repo": "repository name pattern",
+      "repoHint": "^my-service$",
+      "cadence": "cadence in minutes",
+      "add": "watch",
+      "enable": "turn on",
+      "disable": "turn off",
+      "remove": "remove",
+      "on": "on",
+      "off": "parked",
+      "target": "{{owner}} · {{repo}}",
+      "fromEnv": "owner from the environment",
+      "every_one": "every {{count}} minute",
+      "every_other": "every {{count}} minutes",
+      "beats": "last scan {{last}} · next {{next}}",
+      "never": "never",
+      "parked": "none, the trigger is parked",
+      "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token stored above. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
+      "refused": "the bridge refused: {{message}}"
+    },
     "budgets": {
       "title": "Budgets",
       "description": "The cap comes from the top version of each agent, and today's spending from what already ran.",
@@ -340,7 +366,7 @@
     "routes": "destinations: {{count}}",
     "palette": "command palette opening and closing by shortcut",
     "agents": "list with agents: {{agents}}, history of versions: {{versions}} for {{agent}}, comparison pointing the action step from \"{{from}}\" to \"{{to}}\"",
-    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, GitHub: {{github}}",
+    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, GitHub: {{github}}, watched: {{watched}}",
     "github": "credential: {{path}}",
     "githubStored": "the vault already holds the developer's token, registration checked without leaving the machine",
     "githubRoundTrip": "stored, read from the vault with no GITHUB_TOKEN, checked and forgotten through the screen",
@@ -350,7 +376,8 @@
     "mainText": "tray, notification and assistant prompt following the language: \"{{tray}}\", \"{{notification}}\" and \"{{assistant}}\"",
     "screens": "inbox reading \"{{inbox}}\", runs reading \"{{runs}}\", agents reading \"{{agents}}\" and settings reading \"{{budget}}\", all matching the dictionary in both languages",
     "picker": "settings switching the language by click, \"{{pt}}\" and \"{{en}}\" with no reload, and the tray following in the same beat: \"{{tray}}\"",
-    "schema": "migrations applied: {{count}}"
+    "schema": "migrations applied: {{count}}",
+    "watched": "trigger for {{target}} registered parked, turned on with the next beat at {{next}}, and removed"
   },
   "status": {
     "done": "done",

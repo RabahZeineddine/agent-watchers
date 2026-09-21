@@ -20,6 +20,7 @@ import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
 import { startupService } from "../src/services/startup-service.js";
 import { triggerService } from "../src/services/trigger-service.js";
+import { scheduler } from "../src/triggers/scheduler.js";
 import { refreshTray } from "./tray.js";
 
 export interface BridgeHandlers {
@@ -137,7 +138,10 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "machine.profile": () => machineService.profile(),
 
     "triggers.list": (agentId) => triggerService.list(agentId),
+    "triggers.set": (agentId, config, options) => triggerService.set(agentId, config, options),
+    "triggers.remove": (id) => triggerService.remove(id),
     "triggers.setEnabled": (id, enabled) => triggerService.setEnabled(id, enabled),
+    "triggers.schedule": (at) => scheduler.schedule(at),
 
     "startup.get": () => startupService.getPreference(),
     "startup.set": (enabled) => startupService.setPreference(enabled),
