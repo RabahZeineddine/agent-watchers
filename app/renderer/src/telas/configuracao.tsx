@@ -13,8 +13,12 @@ type Fallback = ReadResult<"providers.fallbacks">[number];
 type Servidor = ReadResult<"mcp.list">[number];
 type Orcamento = ReadResult<"agents.budgets">[number];
 type Credencial = ReadResult<"credentials.overview">["refs"][number];
+type ChaveDeProvedor = ReadResult<"providers.credentials">[number];
+type ConferenciaDeProvedor = ReadResult<"providers.checkSecret">;
 type EstadoDoGithub = ReadResult<"github.status">;
 type ConferenciaDoGithub = ReadResult<"github.check">;
+type Tracker = ReadResult<"trackers.list">[number];
+type TesteDoTracker = ReadResult<"trackers.test">;
 type Gatilho = ReadResult<"triggers.schedule">[number];
 type Ferramenta = ReadResult<"mcp.tools">[number];
 type Teste = ReadResult<"mcp.test">;
@@ -39,6 +43,28 @@ export function Configuracao() {
   const machineId = maquina.data?.machineId ?? null;
 
   const provedores = useRead("providers.list");
+  const chaves = useRead("providers.credentials");
+  /*
+   * Guardar chave muda duas leituras ao mesmo tempo: a chave em si e a
+   * disponibilidade do provedor. Elas voltam juntas para que a linha nunca
+   * apareça com chave guardada e provedor ainda apagado, que é o meio segundo
+   * em que alguém acharia que não funcionou.
+   */
+  const [provedoresRecarregados, setProvedoresRecarregados] = useState<{
+    lista: Provedor[];
+    chaves: ChaveDeProvedor[];
+  } | null>(null);
+
+  const recarregarProvedores = (): Promise<void> =>
+    Promise.all([read("providers.list"), read("providers.credentials")]).then(
+      ([lista, novasChaves]) => setProvedoresRecarregados({ lista, chaves: novasChaves }),
+      () => undefined,
+    );
+
+  const listaDeProvedores = provedoresRecarregados?.lista ?? provedores.data ?? [];
+  const chavesPorProvedor = new Map(
+    (provedoresRecarregados?.chaves ?? chaves.data ?? []).map((c) => [c.provider, c]),
+  );
   // A tabela de substituicao e por maquina, e o identificador chega por outra
   // leitura. Com ele ainda nulo o canal responde lista vazia sem tocar no
   // banco, e a tela repinta quando ele chegar.
@@ -47,7 +73,7 @@ export function Configuracao() {
   const orcamentos = useRead("agents.budgets");
   const credenciais = useRead("credentials.overview");
 
-  const leituras = [provedores, fallbacks, servidores, orcamentos, credenciais];
+  const leituras = [provedores, chaves, fallbacks, servidores, orcamentos, credenciais];
   const erro = leituras.find((l) => l.status === "error")?.error;
   const pronto =
     machineId !== null && leituras.every((l) => l.status === "ready");
@@ -71,7 +97,7 @@ export function Configuracao() {
       data-locum-maquina={machineId ?? ""}
       data-locum-orcamentos={(orcamentos.data ?? []).map((o) => o.agentId).join(",")}
       data-locum-probe="configuracao"
-      data-locum-provedores={(provedores.data ?? []).map((p) => p.name).join(",")}
+      data-locum-provedores={listaDeProvedores.map((p) => p.name).join(",")}
       data-locum-servidores={(servidores.data ?? []).map((s) => s.config.name).join(",")}
     >
       {erro === undefined ? null : (
@@ -98,13 +124,21 @@ export function Configuracao() {
         descricao={t("settings.providers.description")}
         titulo={t("settings.providers.title")}
       >
-        {(provedores.data ?? []).map((provedor) => (
+        {listaDeProvedores.map((provedor) => (
           <LinhaDoProvedor
-            credencial={porCadastro.get(`provider:${provedor.name}`)}
+            chave={chavesPorProvedor.get(provedor.name)}
             key={provedor.name}
             provedor={provedor}
+            recarregar={recarregarProvedores}
           />
         ))}
+      </Secao>
+
+      <Secao
+        descricao={t("settings.registered.description")}
+        titulo={t("settings.registered.title")}
+      >
+        <ProvedoresCadastrados recarregar={recarregarProvedores} />
       </Secao>
 
       <Secao
@@ -149,6 +183,13 @@ export function Configuracao() {
         titulo={t("settings.watched.title")}
       >
         <Observados />
+      </Secao>
+
+      <Secao
+        descricao={t("settings.trackers.description")}
+        titulo={t("settings.trackers.title")}
+      >
+        <Trackers />
       </Secao>
 
       <Secao
@@ -283,50 +324,486 @@ function EscolhaDoIdioma() {
 /* --------------------------------------------------------------- provedores */
 
 function LinhaDoProvedor({
-  credencial,
+  chave,
   provedor,
+  recarregar,
 }: {
-  credencial: Credencial | undefined;
+  chave: ChaveDeProvedor | undefined;
   provedor: Provedor;
+  recarregar: () => Promise<void>;
 }) {
   const { t } = useTranslation();
 
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
+      className="flex flex-col gap-2 px-3 py-2 text-sm"
+      data-locum-chave-ambiente={chave?.env === true ? "sim" : "nao"}
+      data-locum-chave-conferida={chave?.checkedAt ?? ""}
+      data-locum-chave-guardada={chave === undefined ? "" : chave.stored ? "sim" : "nao"}
+      data-locum-chave-modelos={chave?.modelCount ?? ""}
+      data-locum-chave-ref={chave?.ref ?? ""}
       data-locum-disponivel={provedor.available ? "sim" : "nao"}
       data-locum-provider={provedor.name}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          provedor.available ? "bg-chart-2" : "bg-muted-foreground/40",
-        )}
-      />
-      <span className="w-36 shrink-0 truncate font-mono text-[13px]">{provedor.name}</span>
-      <span
-        className={cn(
-          "shrink-0 text-xs",
-          provedor.available ? "text-chart-2" : "text-muted-foreground",
-        )}
-      >
-        {t(provedor.available ? "settings.providers.available" : "settings.providers.unavailable")}
-      </span>
-      {provedor.subscription ? (
-        <span className="text-muted-foreground border-border shrink-0 rounded border px-1.5 text-[11px]">
-          {t("settings.providers.subscription")}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            provedor.available ? "bg-chart-2" : "bg-muted-foreground/40",
+          )}
+        />
+        <span className="w-36 shrink-0 truncate font-mono text-[13px]">{provedor.name}</span>
+        <span
+          className={cn(
+            "shrink-0 text-xs",
+            provedor.available ? "text-chart-2" : "text-muted-foreground",
+          )}
+        >
+          {t(
+            provedor.available ? "settings.providers.available" : "settings.providers.unavailable",
+          )}
         </span>
-      ) : null}
-      <Credenciais credencial={credencial} />
-      {provedor.requires.length > 0 ? (
-        <span className="text-muted-foreground text-xs">
-          {t(provedor.available ? "settings.providers.uses" : "settings.providers.missing", {
-            requirements: provedor.requires.join(", "),
-          })}
-        </span>
-      ) : null}
+        {provedor.subscription ? (
+          <span className="text-muted-foreground border-border shrink-0 rounded border px-1.5 text-[11px]">
+            {t("settings.providers.subscription")}
+          </span>
+        ) : null}
+        {chave === undefined || chave.ref === null ? null : (
+          <Badge
+            data-locum-credencial={chave.ref}
+            data-locum-guardado={chave.stored ? "sim" : "nao"}
+            variant={chave.stored ? "secondary" : "outline"}
+          >
+            {t(chave.stored ? "settings.credential.stored" : "settings.credential.missing", {
+              ref: chave.ref,
+            })}
+          </Badge>
+        )}
+        {provedor.requires.length > 0 ? (
+          <span className="text-muted-foreground text-xs">
+            {t(provedor.available ? "settings.providers.uses" : "settings.providers.missing", {
+              requirements: provedor.requires.join(", "),
+            })}
+          </span>
+        ) : null}
+      </div>
+
+      {chave === undefined || chave.variable === null ? null : (
+        <ChaveDoProvedor chave={chave} provedor={provedor} recarregar={recarregar} />
+      )}
     </div>
+  );
+}
+
+type Exame =
+  | { fase: "parado" }
+  | { fase: "conferindo" }
+  | { fase: "respondeu"; resultado: ConferenciaDeProvedor }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * A chave de um provedor: guardar, esquecer e perguntar o catálogo.
+ *
+ * Mesma viagem de mão única da credencial do GitHub. O valor digitado sai
+ * daqui para o keychain e nunca volta, porque não existe canal que devolva
+ * segredo: o que fica visível é se há algo guardado, quando foi a última
+ * conferência e quantos modelos ela contou.
+ *
+ * Guardar deixa o provedor disponível na hora, sem reabrir a janela. Quem faz
+ * isso é o serviço, que remonta o registro com a chave nova antes de
+ * responder; aqui só se relê o que mudou.
+ *
+ * Conferir fica atrás de um clique pela mesma razão do teste de servidor MCP:
+ * ele sai para a rede, e abrir a tela de configuração não é pedir exame.
+ */
+function ChaveDoProvedor({
+  chave,
+  provedor,
+  recarregar,
+}: {
+  chave: ChaveDeProvedor;
+  provedor: Provedor;
+  recarregar: () => Promise<void>;
+}) {
+  const { i18n, t } = useTranslation();
+  const [valor, setValor] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [exame, setExame] = useState<Exame>({ fase: "parado" });
+
+  const guardar = (): void => {
+    setSalvando(true);
+    // O campo é limpo antes mesmo da resposta, como no token do GitHub: o que
+    // foi digitado já está a caminho do cofre, e deixá-lo na tela só aumenta a
+    // chance de ele aparecer numa captura ou num ombro alheio.
+    const digitado = valor;
+    setValor("");
+    call("providers.saveSecret", provedor.name, digitado)
+      .then(recarregar, () => undefined)
+      .finally(() => {
+        setSalvando(false);
+        // A conferência anterior era da chave antiga, e o serviço já a apagou.
+        setExame({ fase: "parado" });
+      });
+  };
+
+  const esquecer = (): void => {
+    call("providers.forgetSecret", provedor.name)
+      .then(recarregar, () => undefined)
+      .finally(() => setExame({ fase: "parado" }));
+  };
+
+  const conferir = (): void => {
+    setExame({ fase: "conferindo" });
+    call("providers.checkSecret", provedor.name).then(
+      (resultado) => {
+        setExame({ fase: "respondeu", resultado });
+        void recarregar();
+      },
+      // `checkSecret` devolve a recusa do provedor como dado, então chegar
+      // aqui quer dizer que a ponte recusou, e não que a chave está errada.
+      (erro: unknown) =>
+        setExame({
+          fase: "recusado",
+          erro: erro instanceof Error ? erro.message : String(erro),
+        }),
+    );
+  };
+
+  const conferidaEm =
+    chave.checkedAt === null ? null : new Date(chave.checkedAt * 1000).toLocaleString(i18n.language);
+
+  return (
+    <div className="flex flex-col gap-1.5 pl-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.providerKey.field", { provider: provedor.name })}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-chave-campo={provedor.name}
+          disabled={!chave.vault}
+          onChange={(evento) => setValor(evento.target.value)}
+          placeholder={t(
+            chave.vault ? "settings.providerKey.placeholder" : "settings.providerKey.noVault",
+            { variable: chave.variable },
+          )}
+          spellCheck={false}
+          type="password"
+          value={valor}
+        />
+        <Button
+          data-locum-chave-salvar={provedor.name}
+          disabled={salvando || !chave.vault || valor.trim().length === 0}
+          onClick={guardar}
+          size="sm"
+          variant="secondary"
+        >
+          {t(salvando ? "settings.providerKey.saving" : "settings.providerKey.save")}
+        </Button>
+        <Button
+          data-locum-chave-conferir={provedor.name}
+          disabled={exame.fase === "conferindo"}
+          onClick={conferir}
+          size="sm"
+          variant="ghost"
+        >
+          {t(
+            exame.fase === "conferindo"
+              ? "settings.providerKey.checking"
+              : "settings.providerKey.check",
+          )}
+        </Button>
+        {chave.stored ? (
+          <Button
+            data-locum-chave-esquecer={provedor.name}
+            onClick={esquecer}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.providerKey.forget")}
+          </Button>
+        ) : null}
+      </div>
+
+      {chave.env && !chave.stored ? (
+        <p className="text-muted-foreground text-xs">
+          {t("settings.providerKey.fromEnv", { variable: chave.variable })}
+        </p>
+      ) : null}
+
+      {conferidaEm === null ? null : (
+        <p className="text-muted-foreground text-xs" data-locum-chave-historico={provedor.name}>
+          {t("settings.providerKey.lastCheck", {
+            count: chave.modelCount ?? 0,
+            when: conferidaEm,
+          })}
+        </p>
+      )}
+
+      <ResultadoDaChave exame={exame} provedor={provedor.name} />
+    </div>
+  );
+}
+
+/* ---------------------------------------------- provedores cadastrados */
+
+type Cadastrado = ReadResult<"providers.registered">[number];
+type Remocao = ReadResult<"providers.remove">;
+
+/**
+ * Gateway compatível com OpenAI: cadastrar, ver e remover.
+ *
+ * A lista de provedores acima é fixa no código, e é por isso que esta seção
+ * existe: um segundo gateway da empresa, um Ollama em outra máquina ou um
+ * OpenRouter não têm onde entrar sem ela. O que se cadastra aqui aparece lá em
+ * cima como qualquer outro provedor, com campo de chave próprio, e um passo
+ * pode apontar para ele pelo identificador.
+ *
+ * Remover pede dois cliques quando o provedor está em uso. O primeiro volta
+ * com a lista de onde ele aparece, e é o serviço que a monta: a tela mostra o
+ * que recebeu e oferece o segundo clique, mas a decisão de não apagar em
+ * silêncio é do lado que apaga.
+ */
+function ProvedoresCadastrados({ recarregar }: { recarregar: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const inicial = useRead("providers.registered");
+  const [relido, setRelido] = useState<Cadastrado[] | null>(null);
+  const [id, setId] = useState("");
+  const [nome, setNome] = useState("");
+  const [url, setUrl] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  // Por provedor, e não um só para a seção: duas remoções avisadas ao mesmo
+  // tempo mostrariam a lista de uso de uma na linha da outra.
+  const [avisos, setAvisos] = useState<Record<string, Remocao>>({});
+
+  const lista = relido ?? inicial.data ?? [];
+  const recusa = erro ?? inicial.error?.message ?? null;
+
+  const reler = (): Promise<void> =>
+    Promise.all([read("providers.registered").then(setRelido), recarregar()]).then(
+      () => undefined,
+      (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): Promise<unknown> => {
+    setOcupado(true);
+    return acao
+      .then(
+        (resultado) => {
+          setErro(null);
+          return resultado;
+        },
+        (falha: unknown) => {
+          setErro(falha instanceof Error ? falha.message : String(falha));
+          return undefined;
+        },
+      )
+      .then(async (resultado) => {
+        await reler();
+        return resultado;
+      })
+      .finally(() => setOcupado(false));
+  };
+
+  const cadastrar = (): void => {
+    void agir(
+      call("providers.register", { id: id.trim(), label: nome.trim(), baseUrl: url.trim() }).then(
+        () => {
+          setId("");
+          setNome("");
+          setUrl("");
+        },
+      ),
+    );
+  };
+
+  const remover = (alvo: string, force: boolean): void => {
+    void agir(call("providers.remove", alvo, force)).then((resultado) => {
+      const remocao = resultado as Remocao | undefined;
+      setAvisos((antes) => {
+        const proximos = { ...antes };
+        // Removido ou recusado pela ponte, o aviso anterior sai: ele descrevia
+        // um provedor que não está mais lá, ou uma tentativa que não chegou.
+        if (remocao === undefined || remocao.removed) delete proximos[alvo];
+        else proximos[alvo] = remocao;
+        return proximos;
+      });
+    });
+  };
+
+  const valido = id.trim() !== "" && nome.trim() !== "" && url.trim() !== "";
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-cadastrados={lista.map((p) => p.id).join(",")}
+      data-locum-probe="provedores-cadastrados"
+    >
+      {lista.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.registered.empty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {lista.map((cadastrado) => (
+            <LinhaDoCadastrado
+              aoRemover={(force) => remover(cadastrado.id, force)}
+              aviso={avisos[cadastrado.id]}
+              cadastrado={cadastrado}
+              key={cadastrado.id}
+              ocupado={ocupado}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.registered.id")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-id=""
+          onChange={(evento) => setId(evento.target.value)}
+          placeholder={t("settings.registered.idHint")}
+          spellCheck={false}
+          value={id}
+        />
+        <input
+          aria-label={t("settings.registered.label")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-44 rounded-md border px-3 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-nome=""
+          onChange={(evento) => setNome(evento.target.value)}
+          placeholder={t("settings.registered.labelHint")}
+          spellCheck={false}
+          value={nome}
+        />
+        <input
+          aria-label={t("settings.registered.baseUrl")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-url=""
+          onChange={(evento) => setUrl(evento.target.value)}
+          placeholder={t("settings.registered.baseUrlHint")}
+          spellCheck={false}
+          value={url}
+        />
+        <Button
+          data-locum-cadastrar-salvar=""
+          disabled={ocupado || !valido}
+          onClick={cadastrar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.registered.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.registered.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-cadastrados-erro={recusa}>
+          {t("settings.registered.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LinhaDoCadastrado({
+  aoRemover,
+  aviso,
+  cadastrado,
+  ocupado,
+}: {
+  aoRemover: (force: boolean) => void;
+  aviso: Remocao | undefined;
+  cadastrado: Cadastrado;
+  ocupado: boolean;
+}) {
+  const { t } = useTranslation();
+  const usos = aviso === undefined || aviso.removed ? [] : aviso.usedBy;
+
+  return (
+    <li
+      className="border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
+      data-locum-cadastrado={cadastrado.id}
+      data-locum-cadastrado-nome={cadastrado.label}
+      data-locum-cadastrado-url={cadastrado.baseUrl}
+      data-locum-cadastrado-usos={usos.length}
+    >
+      <span className="font-mono text-[13px]">{cadastrado.id}</span>
+      <span className="text-muted-foreground text-xs">{cadastrado.label}</span>
+      <span className="text-muted-foreground font-mono text-xs">{cadastrado.baseUrl}</span>
+
+      <div className="ml-auto flex items-center gap-1">
+        <Button
+          data-locum-cadastrado-remover={cadastrado.id}
+          disabled={ocupado}
+          onClick={() => aoRemover(false)}
+          size="sm"
+          variant="ghost"
+        >
+          {t("settings.registered.remove")}
+        </Button>
+        {usos.length === 0 ? null : (
+          <Button
+            data-locum-cadastrado-forcar={cadastrado.id}
+            disabled={ocupado}
+            onClick={() => aoRemover(true)}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.registered.removeAnyway")}
+          </Button>
+        )}
+      </div>
+
+      {usos.length === 0 ? null : (
+        <p className="text-destructive w-full text-xs">
+          {t("settings.registered.inUse", {
+            count: usos.length,
+            where: usos
+              .map((uso) =>
+                uso.kind === "step"
+                  ? t("settings.registered.useStep", { agent: uso.agentId, step: uso.stepKey })
+                  : t("settings.registered.useFallback", { from: uso.from, to: uso.to }),
+              )
+              .join(", "),
+          })}
+        </p>
+      )}
+    </li>
+  );
+}
+
+function ResultadoDaChave({ exame, provedor }: { exame: Exame; provedor: string }) {
+  const { t } = useTranslation();
+
+  if (exame.fase === "parado" || exame.fase === "conferindo") return null;
+
+  if (exame.fase === "recusado") {
+    return (
+      <p className="text-destructive text-xs" data-locum-chave-resultado="recusado">
+        {t("settings.providerKey.bridgeRefused", { message: exame.erro })}
+      </p>
+    );
+  }
+
+  const { resultado } = exame;
+  if (resultado.ok) {
+    return (
+      <p className="text-chart-2 text-xs" data-locum-chave-resultado="ok">
+        {t("settings.providerKey.answered", { count: resultado.count, provider: provedor })}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-destructive text-xs" data-locum-chave-resultado={resultado.reason}>
+      {resultado.reason === "missing"
+        ? t("settings.providerKey.missing", { provider: provedor })
+        : t("settings.providerKey.failed", { message: resultado.message })}
+    </p>
   );
 }
 
@@ -746,6 +1223,413 @@ function ResultadoDoGithub({ conferencia }: { conferencia: Conferencia }) {
   );
 }
 
+/* ----------------------------------------------------------------- trackers */
+
+type ExameDoTracker =
+  | { fase: "parado" }
+  | { fase: "testando" }
+  | { fase: "respondeu"; resultado: TesteDoTracker }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * Onde a tarefa vai parar: um Jira ou um repositório de issues do GitHub.
+ *
+ * O cadastro é o mesmo desenho da credencial do GitHub, logo acima: o que se
+ * digita sai daqui numa direção só, para o keychain, e o que fica visível é se
+ * existe algo guardado, quando foi o último teste e quantos destinos ele
+ * enxergou. Não existe canal que devolva o valor.
+ *
+ * Testar pergunta ao tracker quais projetos a credencial alcança. É o teste de
+ * conexão inteiro, e não um endpoint de saúde à parte: "o serviço está no ar"
+ * responde bem para um token sem permissão de projeto nenhum, que é justamente
+ * o caso em que alguém precisa saber que não vai funcionar.
+ *
+ * Abrir tarefa não tem botão aqui, e nem canal na ponte. Quem abre é o passo
+ * de ação, que nasce em modo de aprovação e para na fila até alguém clicar.
+ */
+function Trackers() {
+  const { t } = useTranslation();
+  const inicial = useRead("trackers.list");
+  const [relido, setRelido] = useState<Tracker[] | null>(null);
+  const [tipo, setTipo] = useState<Tracker["kind"]>("jira");
+  const [id, setId] = useState("");
+  const [nome, setNome] = useState("");
+  const [url, setUrl] = useState("");
+  const [conta, setConta] = useState("");
+  const [projeto, setProjeto] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const lista = relido ?? inicial.data ?? [];
+  const recusa = erro ?? inicial.error?.message ?? null;
+
+  const reler = (): Promise<void> =>
+    read("trackers.list").then(setRelido, (falha: unknown) =>
+      setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): Promise<void> => {
+    setOcupado(true);
+    return acao
+      .then(
+        () => setErro(null),
+        (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+      )
+      .then(reler)
+      .finally(() => setOcupado(false));
+  };
+
+  const cadastrar = (): void => {
+    void agir(
+      call("trackers.register", {
+        id: id.trim(),
+        kind: tipo,
+        label: nome.trim(),
+        baseUrl: url.trim(),
+        account: conta.trim(),
+        project: projeto.trim(),
+      }).then(() => {
+        setId("");
+        setNome("");
+        setUrl("");
+        setConta("");
+        setProjeto("");
+      }),
+    );
+  };
+
+  // O e-mail só é exigido no Jira, e o endereço só no Jira também: o GitHub
+  // tem um de fábrica, e pedir que alguém digite api.github.com é cerimônia.
+  const valido =
+    id.trim() !== "" &&
+    nome.trim() !== "" &&
+    (tipo !== "jira" || (url.trim() !== "" && conta.trim() !== ""));
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-probe="trackers"
+      data-locum-trackers={lista.map((tracker) => tracker.id).join(",")}
+    >
+      {lista.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.trackers.empty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {lista.map((tracker) => (
+            <LinhaDoTracker
+              key={tracker.id}
+              ocupado={ocupado}
+              recarregar={reler}
+              tracker={tracker}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label={t("settings.trackers.kind")}
+          className="border-border bg-background focus-visible:ring-ring rounded-md border px-2 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-tipo=""
+          onChange={(evento) => setTipo(evento.target.value as Tracker["kind"])}
+          value={tipo}
+        >
+          <option value="jira">{t("settings.trackers.kindJira")}</option>
+          <option value="github-issues">{t("settings.trackers.kindGithub")}</option>
+        </select>
+        <input
+          aria-label={t("settings.trackers.id")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-36 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-id=""
+          onChange={(evento) => setId(evento.target.value)}
+          placeholder={t("settings.trackers.idHint")}
+          spellCheck={false}
+          value={id}
+        />
+        <input
+          aria-label={t("settings.trackers.label")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-nome=""
+          onChange={(evento) => setNome(evento.target.value)}
+          placeholder={t("settings.trackers.labelHint")}
+          spellCheck={false}
+          value={nome}
+        />
+        <input
+          aria-label={t("settings.trackers.baseUrl")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-48 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-url=""
+          onChange={(evento) => setUrl(evento.target.value)}
+          placeholder={t(
+            tipo === "jira" ? "settings.trackers.baseUrlHint" : "settings.trackers.baseUrlDefault",
+          )}
+          spellCheck={false}
+          value={url}
+        />
+        {tipo === "jira" ? (
+          <input
+            aria-label={t("settings.trackers.account")}
+            autoComplete="off"
+            className="border-border bg-background focus-visible:ring-ring w-52 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+            data-locum-tracker-conta=""
+            onChange={(evento) => setConta(evento.target.value)}
+            placeholder={t("settings.trackers.accountHint")}
+            spellCheck={false}
+            value={conta}
+          />
+        ) : null}
+        <input
+          aria-label={t("settings.trackers.project")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-projeto=""
+          onChange={(evento) => setProjeto(evento.target.value)}
+          placeholder={t(
+            tipo === "jira" ? "settings.trackers.projectHint" : "settings.trackers.repoHint",
+          )}
+          spellCheck={false}
+          value={projeto}
+        />
+        <Button
+          data-locum-tracker-salvar=""
+          disabled={ocupado || !valido}
+          onClick={cadastrar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.trackers.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.trackers.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-trackers-erro={recusa}>
+          {t("settings.trackers.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LinhaDoTracker({
+  ocupado,
+  recarregar,
+  tracker,
+}: {
+  ocupado: boolean;
+  recarregar: () => Promise<void>;
+  tracker: Tracker;
+}) {
+  const { i18n, t } = useTranslation();
+  const [valor, setValor] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [exame, setExame] = useState<ExameDoTracker>({ fase: "parado" });
+
+  const guardar = (): void => {
+    setSalvando(true);
+    // O campo é limpo antes da resposta, como na chave de provedor: o que foi
+    // digitado já está a caminho do cofre, e deixá-lo na tela só aumenta a
+    // chance de aparecer numa captura ou num ombro alheio.
+    const digitado = valor;
+    setValor("");
+    void call("trackers.saveSecret", tracker.id, digitado)
+      .then(recarregar, () => undefined)
+      .finally(() => {
+        setSalvando(false);
+        // O teste anterior era da credencial antiga, e o serviço já o apagou.
+        setExame({ fase: "parado" });
+      });
+  };
+
+  const esquecer = (): void => {
+    void call("trackers.forgetSecret", tracker.id)
+      .then(recarregar, () => undefined)
+      .finally(() => setExame({ fase: "parado" }));
+  };
+
+  const testar = (): void => {
+    setExame({ fase: "testando" });
+    void call("trackers.test", tracker.id).then(
+      (resultado) => {
+        setExame({ fase: "respondeu", resultado });
+        void recarregar();
+      },
+      // `test` devolve a recusa do tracker como dado, então chegar aqui quer
+      // dizer que a ponte recusou, e não que a credencial está errada.
+      (falha: unknown) =>
+        setExame({ fase: "recusado", erro: falha instanceof Error ? falha.message : String(falha) }),
+    );
+  };
+
+  const testadoEm =
+    tracker.checkedAt === null
+      ? null
+      : new Date(tracker.checkedAt * 1000).toLocaleString(i18n.language);
+
+  return (
+    <li
+      className="border-border flex flex-col gap-1.5 rounded-md border px-3 py-2 text-sm"
+      data-locum-tracker={tracker.id}
+      data-locum-tracker-destino={tracker.project ?? ""}
+      data-locum-tracker-guardado={tracker.stored ? "sim" : "nao"}
+      data-locum-tracker-ligado={tracker.enabled ? "sim" : "nao"}
+      data-locum-tracker-kind={tracker.kind}
+      data-locum-tracker-projetos={tracker.projectCount ?? -1}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-mono text-[13px]">{tracker.id}</span>
+        <span className="text-muted-foreground text-xs">{tracker.label}</span>
+        <Badge variant="outline">
+          {t(
+            tracker.kind === "jira"
+              ? "settings.trackers.kindJira"
+              : "settings.trackers.kindGithub",
+          )}
+        </Badge>
+        <span className="text-muted-foreground font-mono text-xs">{tracker.baseUrl}</span>
+        {tracker.project === null ? null : (
+          <span className="text-muted-foreground font-mono text-xs">{tracker.project}</span>
+        )}
+
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            data-locum-tracker-ligar={tracker.id}
+            disabled={ocupado}
+            onClick={() => {
+              void call("trackers.setEnabled", tracker.id, !tracker.enabled).then(
+                recarregar,
+                () => undefined,
+              );
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            {t(tracker.enabled ? "settings.trackers.disable" : "settings.trackers.enable")}
+          </Button>
+          <Button
+            data-locum-tracker-remover={tracker.id}
+            disabled={ocupado}
+            onClick={() => {
+              void call("trackers.remove", tracker.id).then(recarregar, () => undefined);
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.trackers.remove")}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.trackers.field", { tracker: tracker.id })}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-credencial={tracker.id}
+          disabled={!tracker.vault}
+          onChange={(evento) => setValor(evento.target.value)}
+          placeholder={t(
+            tracker.vault ? "settings.trackers.placeholder" : "settings.trackers.noVault",
+          )}
+          spellCheck={false}
+          type="password"
+          value={valor}
+        />
+        <Button
+          data-locum-tracker-guardar={tracker.id}
+          disabled={salvando || !tracker.vault || valor.trim().length === 0}
+          onClick={guardar}
+          size="sm"
+          variant="secondary"
+        >
+          {t(salvando ? "settings.trackers.saving" : "settings.trackers.save")}
+        </Button>
+        <Button
+          data-locum-tracker-testar={tracker.id}
+          disabled={exame.fase === "testando"}
+          onClick={testar}
+          size="sm"
+          variant="ghost"
+        >
+          {t(exame.fase === "testando" ? "settings.trackers.testing" : "settings.trackers.test")}
+        </Button>
+        {tracker.stored ? (
+          <Button
+            data-locum-tracker-esquecer={tracker.id}
+            onClick={esquecer}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.trackers.forget")}
+          </Button>
+        ) : null}
+      </div>
+
+      <p className="text-muted-foreground text-xs">
+        {t(tracker.stored ? "settings.trackers.stored" : "settings.trackers.absent")}
+        {testadoEm === null
+          ? null
+          : ` · ${t("settings.trackers.lastCheck", {
+              count: tracker.projectCount ?? 0,
+              when: testadoEm,
+            })}`}
+      </p>
+
+      <ResultadoDoTracker exame={exame} tracker={tracker.id} />
+    </li>
+  );
+}
+
+function ResultadoDoTracker({ exame, tracker }: { exame: ExameDoTracker; tracker: string }) {
+  const { t } = useTranslation();
+  if (exame.fase === "parado" || exame.fase === "testando") return null;
+
+  if (exame.fase === "recusado") {
+    return (
+      <p
+        className="text-destructive text-xs"
+        data-locum-tracker-resultado="recusado"
+        data-locum-tracker-teste={tracker}
+      >
+        {t("settings.trackers.bridgeRefused", { message: exame.erro })}
+      </p>
+    );
+  }
+
+  const resultado = exame.resultado;
+  if (resultado.ok) {
+    return (
+      <p
+        className="text-muted-foreground text-xs"
+        data-locum-ok="sim"
+        data-locum-projetos={resultado.count}
+        data-locum-tracker-resultado="ok"
+        data-locum-tracker-teste={tracker}
+      >
+        {t("settings.trackers.answered", { count: resultado.count })}
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className="text-destructive text-xs"
+      data-locum-ok="nao"
+      data-locum-projetos={-1}
+      data-locum-tracker-resultado={resultado.reason}
+      data-locum-tracker-teste={tracker}
+    >
+      {resultado.reason === "missing"
+        ? t("settings.trackers.missing")
+        : t("settings.trackers.failed", { error: resultado.message })}
+    </p>
+  );
+}
+
 /* --------------------------------------------------------------- observados */
 
 /** Fonte da varredura. Hoje só existe uma, e o cadastro guarda o nome dela. */
@@ -753,6 +1637,22 @@ const FONTE = "github";
 
 /** Cadência de estreia, em minutos. A mesma que o zod usa quando ninguém diz. */
 const CADENCIA_PADRAO = "15";
+
+/**
+ * Filtro de autoria, na ordem em que aparece na lista.
+ *
+ * Escrito à mão e não derivado do zod, porque quem lê a tela lê rótulo e não
+ * valor: a lista precisa de uma tradução por opção, e um laço sobre o enum
+ * traria "others" para dentro do que a pessoa vê.
+ */
+const AUTORIAS = ["any", "mine", "others"] as const;
+type Autoria = (typeof AUTORIAS)[number];
+
+const ROTULO_DA_AUTORIA: Record<Autoria, string> = {
+  any: "settings.watched.authorshipAny",
+  mine: "settings.watched.authorshipMine",
+  others: "settings.watched.authorshipOthers",
+};
 
 /**
  * O que esta máquina observa: dono, padrão de repositório e de quanto em
@@ -775,6 +1675,7 @@ function Observados() {
   const [agentId, setAgentId] = useState("");
   const [dono, setDono] = useState("");
   const [repo, setRepo] = useState("");
+  const [autoria, setAutoria] = useState<Autoria>("any");
   const [cadencia, setCadencia] = useState(CADENCIA_PADRAO);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -823,6 +1724,7 @@ function Observados() {
         source: FONTE,
         owner: dono.trim(),
         repoMatch: repo.trim(),
+        authorship: autoria,
         everyMinutes: minutos,
       }).then(() => {
         setDono("");
@@ -891,6 +1793,20 @@ function Observados() {
           value={repo}
         />
 
+        <select
+          aria-label={t("settings.watched.authorship")}
+          className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
+          data-locum-observar-autoria=""
+          onChange={(evento) => setAutoria(evento.target.value as Autoria)}
+          value={autoria}
+        >
+          {AUTORIAS.map((valor) => (
+            <option key={valor} value={valor}>
+              {t(ROTULO_DA_AUTORIA[valor])}
+            </option>
+          ))}
+        </select>
+
         <input
           aria-label={t("settings.watched.cadence")}
           className="border-border bg-background focus-visible:ring-ring w-20 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
@@ -949,6 +1865,13 @@ function LinhaDoObservado({
         })
       : "";
 
+  // "De qualquer pessoa" é o padrão e não vira texto: repetir o que vale para
+  // todo gatilho em toda linha só faria a distinção pesar menos onde ela existe.
+  const autoria =
+    config.kind === "poll" && config.authorship !== "any"
+      ? t("settings.watched.by", { authorship: t(ROTULO_DA_AUTORIA[config.authorship]) })
+      : "";
+
   const quando = (ms: number | null): string =>
     ms === null ? t("settings.watched.never") : new Date(ms).toLocaleString(idioma);
 
@@ -957,11 +1880,13 @@ function LinhaDoObservado({
       className="border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
       data-locum-gatilho={gatilho.triggerId}
       data-locum-gatilho-alvo={config.kind === "poll" ? `${config.owner ?? ""}/${config.repoMatch}` : ""}
+      data-locum-gatilho-autoria={config.kind === "poll" ? config.authorship : ""}
       data-locum-gatilho-habilitado={gatilho.enabled ? "sim" : "nao"}
       data-locum-gatilho-proxima={gatilho.nextDueAt ?? ""}
       data-locum-gatilho-ultima={gatilho.lastFireAt ?? ""}
     >
       <span className="font-mono text-xs">{alvo}</span>
+      {autoria === "" ? null : <span className="text-muted-foreground text-xs">{autoria}</span>}
       <Badge variant={gatilho.enabled ? "secondary" : "outline"}>
         {t(gatilho.enabled ? "settings.watched.on" : "settings.watched.off")}
       </Badge>

@@ -1379,7 +1379,9 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   const esperadas = fallbacks.map((f) => `${f.fromModel}>${f.toModel}`);
   if (tela.fallbacks !== fallbacks.length || linhasDeFallback.join("|") !== esperadas.join("|")) {
     throw new Error(
-      `a tabela de substituicao desenhou ${linhasDeFallback.join("|")} e o servico tem ${esperadas.join("|")}`,
+      `a tabela de substituicao desenhou ${linhasDeFallback.length} linha(s) ` +
+        `(${linhasDeFallback.join("|")}, contador ${tela.fallbacks}) e o servico tem ` +
+        `${fallbacks.length} (${esperadas.join("|")})`,
     );
   }
 
@@ -1454,8 +1456,11 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
+  const providerKeys = await checkProviderKeys(window);
+  const registered = await checkRegisteredProviders(window);
   const github = await checkGithub(window);
   const watched = await checkWatched(window);
+  const trackers = await checkTrackers(window);
 
   return t("smoke.config", {
     providers: provedores.length,
@@ -1464,9 +1469,1178 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     fixture: FIXTURE_SERVER,
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
+    providerKeys,
+    registered,
     github,
     watched,
+    trackers,
   });
+}
+
+/**
+ * Confere a chave de provedor pela interface, sem chave de verdade e sem rede.
+ *
+ * O caminho inteiro da story cabe dentro da maquina. O que sairia daqui e a
+ * resposta de um provedor a uma chave, e ela e exercitada contra um provedor
+ * de mentira, montado so para este exame, cujo catalogo e um servidor de tres
+ * linhas escutando em 127.0.0.1. Nenhuma chave de ninguem e usada, e nenhum
+ * pacote passa da placa de loopback.
+ *
+ * O provedor de mentira nao e luxo: os provedores de verdade compartilham o
+ * endereco `provider/<nome>` no cofre de quem desenvolve, e gravar neles para
+ * provar o caminho destruiria uma chave que pode estar em uso. E por isso
+ * tambem que o servico e construido aqui em vez de usar o singleton: o
+ * registro dele so conhece provedor de verdade.
+ *
+ * Na interface o exame e o que da para fazer sem estragar nada: conferir que o
+ * campo aparece para quem tem chave e nao aparece para quem nao tem, que o sim
+ * ou nao bate com o cofre, e clicar em conferir so num provedor sem credencial,
+ * onde a resposta sai de dentro da maquina.
+ */
+async function checkProviderKeys(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { ProviderService, providerCredentialRef, providerService } = await import(
+    "../src/services/provider-service.js"
+  );
+
+  if (!secretService.available) throw new Error("keychain indisponivel para chave de provedor");
+
+  const nome = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const variavel = "LOCUM_SMOKE_PROVIDER_KEY";
+  const chave = `chave-de-mentira-${randomUUID()}`;
+  const ref = providerCredentialRef(nome);
+
+  const autorizacoes: (string | undefined)[] = [];
+  const catalogo = createServer((requisicao, resposta) => {
+    autorizacoes.push(requisicao.headers.authorization);
+    resposta.setHeader("content-type", "application/json");
+    resposta.end(JSON.stringify({ data: [{ id: "um" }, { id: "dois" }, { id: "tres" }] }));
+  });
+  await new Promise<void>((resolve) => {
+    catalogo.listen(0, "127.0.0.1", resolve);
+  });
+  const porta = (catalogo.address() as { port: number }).port;
+
+  // O registro de mentira, remontado a cada gravacao como o de verdade: e a
+  // funcao inteira que entra no servico, e nao so o resultado dela.
+  const fazer = (segredos: Record<string, string>) => ({
+    [nome]: {
+      available: () => Boolean(segredos[variavel]),
+      requires: [variavel],
+      secretVar: variavel,
+      catalog: () => ({
+        url: `http://127.0.0.1:${porta}/models`,
+        headers: { Authorization: `Bearer ${segredos[variavel] ?? ""}` },
+      }),
+    },
+  });
+  const servico = new ProviderService(db, fazer({}), secretService, settingsService, fazer);
+
+  try {
+    const [vazia] = await servico.credentials();
+    if (vazia === undefined) throw new Error("o provedor de mentira nao apareceu no cadastro");
+    if (vazia.ref !== ref) throw new Error(`a chave nasceu apontando para ${vazia.ref}`);
+    if (vazia.stored) throw new Error(`a referencia sorteada ${ref} ja tinha valor`);
+    if (vazia.checkedAt !== null || vazia.modelCount !== null) {
+      throw new Error("uma chave nova nasceu com conferencia");
+    }
+
+    // Sem chave, a conferencia responde de dentro da maquina: o servidor de
+    // catalogo nao e procurado, e e por isso que a lista continua vazia logo
+    // abaixo.
+    const semChave = await servico.check(nome);
+    if (semChave.ok || semChave.reason !== "missing") {
+      throw new Error(`sem chave a conferencia respondeu ${JSON.stringify(semChave)}`);
+    }
+    if (autorizacoes.length > 0) throw new Error("a conferencia saiu perguntando sem ter chave");
+    if (servico.isAvailable(nome)) throw new Error("o provedor nasceu disponivel sem chave");
+
+    await servico.setSecret(nome, chave);
+    if (readFileSync(secretService.pathFor(ref)).includes(chave)) {
+      throw new Error("a chave do provedor foi para o disco em claro");
+    }
+
+    // O coracao da story: guardar torna o provedor disponivel na hora, sem
+    // ninguem reabrir janela nem montar executor.
+    if (!servico.isAvailable(nome)) {
+      throw new Error("o provedor continuou indisponivel depois de guardar a chave");
+    }
+
+    const conferida = await servico.check(nome);
+    if (!conferida.ok) throw new Error(`a conferencia recusou: ${JSON.stringify(conferida)}`);
+    if (conferida.count !== 3) throw new Error(`o catalogo contou ${conferida.count} modelo(s)`);
+    if (autorizacoes.at(-1) !== `Bearer ${chave}`) {
+      throw new Error("o catalogo foi chamado sem a chave que a tela guardou");
+    }
+
+    const depois = (await servico.credentials())[0]!;
+    if (!depois.stored) throw new Error("a chave nao ficou guardada");
+    if (depois.checkedAt === null || depois.modelCount !== 3) {
+      throw new Error("a conferencia nao sobreviveu ao cadastro");
+    }
+    if (depois.env) throw new Error(`${variavel} existe no ambiente e falseia o exame`);
+
+    // Trocar a chave joga fora o catalogo que era dela. Sem isso a tela
+    // mostraria a contagem antiga ao lado de uma chave nova, com cara de dado
+    // conferido.
+    await servico.setSecret(nome, `${chave}-outra`);
+    const trocada = (await servico.credentials())[0]!;
+    if (trocada.checkedAt !== null || trocada.modelCount !== null) {
+      throw new Error("a conferencia da chave anterior sobreviveu a troca");
+    }
+
+    if (!(await servico.clearSecret(nome))) throw new Error("esquecer nao achou o que apagar");
+    if (servico.isAvailable(nome)) throw new Error("o provedor sobreviveu ao esquecer");
+    if ((await servico.credentials())[0]!.stored) {
+      throw new Error("a chave sobreviveu ao esquecer");
+    }
+  } finally {
+    secretService.remove(ref);
+    await settingsService.remove(`provider:${ref}:checkedAt`);
+    await settingsService.remove(`provider:${ref}:models`);
+    await db.delete(schema.providers).where(eq(schema.providers.id, nome));
+    await new Promise<void>((resolve) => catalogo.close(() => resolve()));
+  }
+
+  // Agora a interface, que e o que a story entrega. A tela ja esta montada, e
+  // o que se confere nela nao grava nada.
+  const linhas = (await window.webContents.executeJavaScript(
+    `Array.from(document.querySelectorAll("[data-locum-provider]")).map((e) => ({
+      nome: e.dataset.locumProvider,
+      guardada: e.dataset.locumChaveGuardada,
+      referencia: e.dataset.locumChaveRef,
+      campo: e.querySelector("[data-locum-chave-campo]") !== null,
+      disponivel: e.dataset.locumDisponivel,
+    }))`,
+  )) as { nome: string; guardada: string; referencia: string; campo: boolean; disponivel: string }[];
+
+  const cadastro = await providerService.credentials();
+  for (const esperada of cadastro) {
+    const naTela = linhas.find((l) => l.nome === esperada.provider);
+    if (naTela === undefined) throw new Error(`o provedor ${esperada.provider} sumiu da tela`);
+
+    // Campo de senha so para quem tem chave a guardar. A assinatura vive da
+    // sessao do binario e o servidor local nao pede credencial: oferecer um
+    // campo a eles seria convidar alguem a guardar um segredo que nada le.
+    if (naTela.campo !== (esperada.variable !== null)) {
+      throw new Error(
+        `o provedor ${esperada.provider} ${naTela.campo ? "ofereceu" : "escondeu"} campo de chave indevidamente`,
+      );
+    }
+    if (esperada.variable === null) continue;
+
+    if (naTela.referencia !== esperada.ref) {
+      throw new Error(
+        `a tela aponta ${esperada.provider} para ${naTela.referencia} e o servico diz ${esperada.ref}`,
+      );
+    }
+    const guardada = esperada.stored ? "sim" : "nao";
+    if (naTela.guardada !== guardada) {
+      throw new Error(
+        `a tela diz "${naTela.guardada}" para a chave de ${esperada.provider} e o cofre diz "${guardada}"`,
+      );
+    }
+  }
+
+  // Conferir pela tela, num provedor que nao tem credencial nenhuma: a
+  // resposta e "nao ha chave" e nao sai da maquina. Num provedor com chave
+  // isto viraria uma chamada autenticada a API de alguem, feita por um loop
+  // que roda sem ninguem olhando.
+  const semCredencial = cadastro.find((c) => c.variable !== null && !c.stored && !c.env);
+  if (semCredencial === undefined) {
+    return t("smoke.providerKeys", { path: t("smoke.providerKeysStored") });
+  }
+
+  const clicou = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector('[data-locum-chave-conferir="${semCredencial.provider}"]');
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (clicou !== true) {
+    throw new Error(`a tela nao ofereceu botao de conferir ${semCredencial.provider}`);
+  }
+
+  const resposta = await esperarProbe<string>(
+    window,
+    `conferencia de ${semCredencial.provider}`,
+    `document.querySelector("[data-locum-chave-resultado]")?.dataset.locumChaveResultado ?? null`,
+  );
+  if (resposta !== "missing") {
+    throw new Error(`a tela respondeu "${resposta}" para conferir sem chave`);
+  }
+
+  return t("smoke.providerKeys", {
+    path: t("smoke.providerKeysRoundTrip", { provider: semCredencial.provider }),
+  });
+}
+
+/**
+ * Confere o cadastro de provedor compatível, sem provedor de verdade.
+ *
+ * O caminho inteiro da story cabe dentro da máquina, como no exame da chave:
+ * os dois gateways cadastrados apontam para servidores de três linhas
+ * escutando em 127.0.0.1, e as chaves são sorteadas. Nada sai da placa de
+ * loopback, e nenhum provedor de verdade é tocado.
+ *
+ * Os dois catálogos respondem números diferentes de propósito. É o que separa
+ * "dois cadastros aparecem" de "cada um tem o próprio catálogo": com listas
+ * iguais, um registro que apontasse os dois para o mesmo endereço passaria.
+ *
+ * Um entra pelo serviço e o outro pela tela, e a remoção também vai pelos dois
+ * caminhos, porque são dois códigos diferentes: o formulário da janela e o
+ * método que o resto do app chama. O que é exercitado só de um lado é o aviso
+ * de uso, que precisa de uma substituição apontando para o provedor, e essa
+ * linha é plantada e apagada aqui.
+ */
+async function checkRegisteredProviders(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { and, eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { providerCredentialRef, providerService } = await import(
+    "../src/services/provider-service.js"
+  );
+
+  if (!secretService.available) throw new Error("keychain indisponivel para provedor cadastrado");
+
+  /** Um catálogo de mentira, que conta quantas chaves diferentes o procuraram. */
+  const catalogo = async (modelos: string[]) => {
+    const chamadas: (string | undefined)[] = [];
+    const servidor = createServer((requisicao, resposta) => {
+      chamadas.push(requisicao.headers.authorization);
+      resposta.setHeader("content-type", "application/json");
+      resposta.end(JSON.stringify({ data: modelos.map((id) => ({ id })) }));
+    });
+    await new Promise<void>((resolve) => {
+      servidor.listen(0, "127.0.0.1", resolve);
+    });
+    const porta = (servidor.address() as { port: number }).port;
+    return { chamadas, servidor, baseUrl: `http://127.0.0.1:${porta}/v1` };
+  };
+
+  const pelo = await catalogo(["um", "dois"]);
+  const pela = await catalogo(["um", "dois", "tres", "quatro", "cinco"]);
+
+  const idDoServico = `locum-smoke-svc-${randomUUID().slice(0, 8)}`;
+  const idDaTela = `locum-smoke-ui-${randomUUID().slice(0, 8)}`;
+  const chaveDoServico = `chave-de-mentira-${randomUUID()}`;
+  const chaveDaTela = `chave-de-mentira-${randomUUID()}`;
+  const substituicao = `${idDoServico}/um`;
+  // O nome sai de variável e não de literal no objeto: `label` é propriedade
+  // que o Electron pinta em menu, e a guarda de i18n acusa texto cravado nela.
+  const nomeDoServico = `Gateway ${idDoServico}`;
+
+  try {
+    await providerService.register({
+      id: idDoServico,
+      label: nomeDoServico,
+      baseUrl: pelo.baseUrl,
+    });
+
+    // Nome de provedor de fábrica é recusa, e não substituição: um cadastro
+    // chamado `anthropic` mandaria a chave de quem tem uma para outro lugar.
+    for (const proibido of ["anthropic", idDoServico]) {
+      const recusou = await providerService
+        .register({ id: proibido, label: nomeDoServico, baseUrl: pelo.baseUrl })
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`o cadastro aceitou o identificador "${proibido}"`);
+    }
+
+    // O segundo pela tela, que é o que a story entrega. A seção relê depois de
+    // gravar, então é por ela que os dois passam a aparecer na janela.
+    const preencheu = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const digitar = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          setter.call(campo, valor);
+          campo.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        if (!digitar("[data-locum-cadastrar-id]", ${JSON.stringify(idDaTela)})) return false;
+        if (!digitar("[data-locum-cadastrar-nome]", "Gateway da tela")) return false;
+        if (!digitar("[data-locum-cadastrar-url]", ${JSON.stringify(pela.baseUrl)})) return false;
+        const botao = document.querySelector("[data-locum-cadastrar-salvar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de cadastro");
+
+    const naTela = await esperarProbe<Record<string, string>>(
+      window,
+      "provedores cadastrados na tela",
+      `(() => {
+        const linhas = Array.from(document.querySelectorAll("[data-locum-cadastrado]"));
+        const achados = Object.fromEntries(
+          linhas.map((e) => [e.dataset.locumCadastrado, e.dataset.locumCadastradoUrl]),
+        );
+        return ${JSON.stringify(idDaTela)} in achados ? achados : null;
+      })()`,
+    );
+    if (naTela[idDoServico] !== pelo.baseUrl || naTela[idDaTela] !== pela.baseUrl) {
+      throw new Error(
+        `a tela listou ${JSON.stringify(naTela)} e os cadastros sao ${pelo.baseUrl} e ${pela.baseUrl}`,
+      );
+    }
+
+    // Os dois no registro, ao lado dos de fábrica, e reconhecíveis como
+    // cadastrados: sem isso a tela não teria como saber quais pode remover.
+    const registro = new Map(providerService.listProviders().map((p) => [p.name, p]));
+    const cadastros: [string, string][] = [
+      [idDoServico, pelo.baseUrl],
+      [idDaTela, pela.baseUrl],
+    ];
+    for (const [id, baseUrl] of cadastros) {
+      const entrada = registro.get(id);
+      if (entrada === undefined) throw new Error(`o provedor ${id} nao entrou no registro`);
+      if (entrada.registered === null) throw new Error(`o provedor ${id} apareceu como de fabrica`);
+      if (entrada.registered.baseUrl !== baseUrl) {
+        throw new Error(`o provedor ${id} aponta para ${entrada.registered.baseUrl}`);
+      }
+      if (entrada.available) throw new Error(`o provedor ${id} nasceu disponivel sem chave`);
+    }
+
+    await providerService.setSecret(idDoServico, chaveDoServico);
+    await providerService.setSecret(idDaTela, chaveDaTela);
+    for (const id of [idDoServico, idDaTela]) {
+      if (!providerService.isAvailable(id)) {
+        throw new Error(`o provedor ${id} continuou apagado depois de guardar a chave`);
+      }
+    }
+
+    // Cada um com o próprio catálogo, e cada catálogo procurado com a chave
+    // dele. Contagens diferentes porque dois cadastros apontados para o mesmo
+    // endereço passariam num exame que só contasse linhas.
+    const doServico = await providerService.listModels(idDoServico);
+    const daTela = await providerService.listModels(idDaTela);
+    if (doServico.erro !== undefined) throw new Error(`o catalogo recusou: ${doServico.erro}`);
+    if (daTela.erro !== undefined) throw new Error(`o catalogo recusou: ${daTela.erro}`);
+    if (doServico.modelos.length !== 2 || daTela.modelos.length !== 5) {
+      throw new Error(
+        `os catalogos responderam ${doServico.modelos.length} e ${daTela.modelos.length} modelos`,
+      );
+    }
+    if (pelo.chamadas.at(-1) !== `Bearer ${chaveDoServico}`) {
+      throw new Error("o primeiro catalogo foi procurado com a chave errada");
+    }
+    if (pela.chamadas.at(-1) !== `Bearer ${chaveDaTela}`) {
+      throw new Error("o segundo catalogo foi procurado com a chave errada");
+    }
+
+    // Um passo pode apontar para qualquer um dos dois: a prévia resolve sem
+    // substituição, que é o que o executor faria antes de montar o runtime.
+    const previas = await providerService.resolvePreviews(
+      [`${idDoServico}/um`, `${idDaTela}/cinco`],
+      machineId,
+    );
+    for (const [i, id] of [idDoServico, idDaTela].entries()) {
+      const previa = previas[i];
+      if (previa === undefined || !previa.ok) {
+        throw new Error(`a previa de ${id} recusou: ${JSON.stringify(previa)}`);
+      }
+      if (previa.resolution.provider !== id) {
+        throw new Error(`a previa de ${id} caiu em ${previa.resolution.provider}`);
+      }
+      if (previa.resolution.substitutionReason !== undefined) {
+        throw new Error(`a previa de ${id} precisou substituir sem motivo`);
+      }
+    }
+
+    // O aviso antes de remover. A substituição plantada é o uso, e sem `force`
+    // a remoção devolve onde ele aparece em vez de apagar.
+    await providerService.setFallback(machineId, substituicao, "claude-code/claude-sonnet-5");
+    const avisou = await providerService.remove(idDoServico);
+    if (avisou.removed) throw new Error("o provedor em uso foi removido sem aviso");
+    if (!avisou.usedBy.some((uso) => uso.kind === "fallback" && uso.from === substituicao)) {
+      throw new Error(`o aviso nao citou a substituicao: ${JSON.stringify(avisou.usedBy)}`);
+    }
+    if (!providerService.isAvailable(idDoServico)) {
+      throw new Error("o provedor avisado saiu do registro sem ter sido removido");
+    }
+
+    const forcado = await providerService.remove(idDoServico, true);
+    if (!forcado.removed) throw new Error("o provedor nao saiu nem com a decisao tomada");
+    if (providerService.isAvailable(idDoServico)) {
+      throw new Error("o provedor removido continuou no registro");
+    }
+    if (secretService.has(providerCredentialRef(idDoServico))) {
+      throw new Error("a chave do provedor removido ficou no cofre");
+    }
+
+    // A remoção pela tela, no que não está em uso: um clique só, porque não há
+    // o que avisar.
+    const clicou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-cadastrado-remover="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (clicou !== true) throw new Error(`a tela nao ofereceu botao de remover ${idDaTela}`);
+
+    await esperarProbe<true>(
+      window,
+      `remocao de ${idDaTela}`,
+      `document.querySelector('[data-locum-cadastrado="${idDaTela}"]') === null ? true : null`,
+    );
+    if (providerService.isAvailable(idDaTela)) {
+      throw new Error("o provedor removido pela tela continuou no registro");
+    }
+    if ((await providerService.listRegistered()).some((p) => p.id === idDaTela)) {
+      throw new Error("o provedor removido pela tela continuou no cadastro");
+    }
+  } finally {
+    // A limpeza não confia em o exame ter chegado ao fim: o que ele planta no
+    // banco de quem desenvolve sai daqui mesmo quando uma linha acima estourou.
+    for (const id of [idDoServico, idDaTela]) {
+      const ref = providerCredentialRef(id);
+      secretService.remove(ref);
+      await settingsService.remove(`provider:${ref}:checkedAt`);
+      await settingsService.remove(`provider:${ref}:models`);
+      await db.delete(schema.providers).where(eq(schema.providers.id, id));
+    }
+    await db
+      .delete(schema.modelFallbacks)
+      .where(
+        and(
+          eq(schema.modelFallbacks.machineId, machineId),
+          eq(schema.modelFallbacks.fromModel, substituicao),
+        ),
+      );
+    await providerService.loadSecrets();
+    await new Promise<void>((resolve) => pelo.servidor.close(() => resolve()));
+    await new Promise<void>((resolve) => pela.servidor.close(() => resolve()));
+  }
+
+  return t("smoke.registeredProviders", { service: idDoServico, window: idDaTela });
+}
+
+/**
+ * Confere o tracker de tarefa, sem Jira e sem GitHub de verdade.
+ *
+ * O caminho inteiro da story cabe dentro da máquina: os dois cadastros apontam
+ * para um servidor de poucas linhas escutando em 127.0.0.1, que responde as
+ * rotas do Jira e as do GitHub, e as credenciais são sorteadas. Nada sai da
+ * placa de loopback, e nenhuma conta de ninguém é tocada.
+ *
+ * As duas listas de destino têm tamanhos diferentes de propósito. É o que
+ * separa "os dois cadastros respondem" de "cada adaptador fala a língua do
+ * serviço dele": com listas iguais, um adaptador que batesse na rota errada
+ * passaria.
+ *
+ * Um entra pelo serviço e o outro pela tela, porque são dois códigos
+ * diferentes. Criar tarefa não é exercitado, e não é omissão: pela regra do
+ * marco, abrir tarefa nunca é automático, e o que este exame confere sobre isso
+ * é que a ponte não tem por onde. O caminho de criar só existe atrás da fila de
+ * aprovação, e ele é assunto da próxima story.
+ */
+async function checkTrackers(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { trackerCredentialRef, trackerService } = await import(
+    "../src/services/tracker-service.js"
+  );
+  const { BRIDGE_CHANNELS } = await import("./bridge-contract.js");
+
+  if (!secretService.available) throw new Error("keychain indisponivel para o cofre do tracker");
+
+  // A ponte não pode ter por onde abrir tarefa. A guarda de tipo do contrato já
+  // para o build, e esta é a mesma pergunta feita em tempo de execução, contra
+  // a lista que o preload realmente registra.
+  const abertura = BRIDGE_CHANNELS.filter(
+    (canal) => canal.startsWith("trackers.") && /create|issue/i.test(canal),
+  );
+  if (abertura.length > 0) {
+    throw new Error(`a ponte expoe canal que abre tarefa: ${abertura.join(", ")}`);
+  }
+
+  const idDoServico = `locum-smoke-jira-${randomUUID().slice(0, 6)}`;
+  const idDaTela = `locum-smoke-gh-${randomUUID().slice(0, 6)}`;
+  const contaDoJira = `smoke-${randomUUID().slice(0, 8)}@exemplo.invalido`;
+  const tokenDoJira = `token-de-mentira-${randomUUID()}`;
+  const tokenDoGithub = `token-de-mentira-${randomUUID()}`;
+  const projetoDoJira = "SMOKE";
+  const repoDaTela = "locum-smoke/exemplo";
+  const pullRequest = "https://github.com/locum-smoke/exemplo/pull/42";
+  const tarefaExistente = `${projetoDoJira}-7`;
+  const nomeDoServico = `Jira ${idDoServico}`;
+  const nomeDaTela = `Issues ${idDaTela}`;
+
+  /**
+   * Um tracker de mentira que fala as duas línguas.
+   *
+   * As rotas do Jira e as do GitHub não colidem, então um servidor só atende os
+   * dois cadastros e ainda guarda quem procurou com qual credencial, que é o
+   * que prova que o segredo saiu do cofre e não de outro lugar.
+   */
+  const autorizacoes: Record<string, string | undefined> = {};
+  const servidor = createServer((requisicao, resposta) => {
+    const caminho = requisicao.url ?? "";
+    const responder = (corpo: unknown): void => {
+      resposta.setHeader("content-type", "application/json");
+      resposta.end(JSON.stringify(corpo));
+    };
+
+    if (caminho.startsWith("/rest/api/3/project/search")) {
+      autorizacoes.jira = requisicao.headers.authorization;
+      responder({
+        values: [
+          { key: projetoDoJira, name: "Smoke" },
+          { key: "OUTRO", name: "Outro" },
+          { key: "TERCEIRO", name: "Terceiro" },
+        ],
+      });
+      return;
+    }
+
+    if (caminho.startsWith("/rest/api/3/search/jql")) {
+      autorizacoes.jira = requisicao.headers.authorization;
+      const pedacos: Buffer[] = [];
+      requisicao.on("data", (pedaco: Buffer) => pedacos.push(pedaco));
+      requisicao.on("end", () => {
+        // A tarefa só é devolvida quando a consulta cita o pull request. Um
+        // servidor que respondesse sempre a mesma coisa não separaria "achou o
+        // que ja existe" de "devolve qualquer tarefa".
+        const corpo = Buffer.concat(pedacos).toString("utf8");
+        const citou = corpo.includes(pullRequest);
+        responder({
+          issues: citou ? [{ key: tarefaExistente, fields: { summary: "ja aberta" } }] : [],
+        });
+      });
+      return;
+    }
+
+    if (caminho.startsWith("/user/repos")) {
+      autorizacoes.github = requisicao.headers.authorization;
+      responder([{ full_name: repoDaTela, name: "exemplo" }, { full_name: "locum-smoke/outro" }]);
+      return;
+    }
+
+    resposta.statusCode = 404;
+    // A chave não é `message` de propósito: a guarda de i18n varre propriedade
+    // que o Electron pinta, e o corpo de um 404 de mentira não é texto de tela.
+    responder({ rota: caminho });
+  });
+
+  await new Promise<void>((resolve) => {
+    servidor.listen(0, "127.0.0.1", resolve);
+  });
+  const baseUrl = `http://127.0.0.1:${(servidor.address() as { port: number }).port}`;
+
+  try {
+    await trackerService.register({
+      id: idDoServico,
+      kind: "jira",
+      label: nomeDoServico,
+      baseUrl,
+      account: contaDoJira,
+      project: projetoDoJira,
+    });
+
+    // O Jira autentica por e-mail e token, e o cadastro sem e-mail cria um
+    // tracker que só falharia dentro de uma execução. Tipo inventado e
+    // identificador repetido também são recusa.
+    const recusas: { motivo: string; cadastro: Parameters<typeof trackerService.register>[0] }[] = [
+      {
+        motivo: "jira sem e-mail",
+        cadastro: { id: `${idDoServico}-b`, kind: "jira", label: nomeDoServico, baseUrl },
+      },
+      {
+        motivo: "tipo inventado",
+        cadastro: { id: `${idDoServico}-c`, kind: "trello", label: nomeDoServico, baseUrl },
+      },
+      {
+        motivo: "identificador repetido",
+        cadastro: {
+          id: idDoServico,
+          kind: "jira",
+          label: nomeDoServico,
+          baseUrl,
+          account: contaDoJira,
+        },
+      },
+    ];
+    for (const { motivo, cadastro } of recusas) {
+      const recusou = await trackerService.register(cadastro).then(
+        () => false,
+        () => true,
+      );
+      if (!recusou) throw new Error(`o cadastro de tracker aceitou ${motivo}`);
+    }
+
+    // Sem credencial o teste responde de dentro da máquina, sem sair.
+    const semCredencial = await trackerService.testConnection(idDoServico);
+    if (semCredencial.ok || semCredencial.reason !== "missing") {
+      throw new Error(`o teste sem credencial respondeu ${JSON.stringify(semCredencial)}`);
+    }
+
+    await trackerService.setSecret(idDoServico, tokenDoJira);
+    const doServico = await trackerService.testConnection(idDoServico);
+    if (!doServico.ok) throw new Error(`o Jira de mentira recusou: ${JSON.stringify(doServico)}`);
+    if (doServico.count !== 3) throw new Error(`o Jira listou ${doServico.count} destino(s)`);
+
+    // A credencial chegou pela autenticação básica, montada com o e-mail do
+    // cadastro e o token do cofre. É o que prova que o segredo saiu de lá.
+    const basica = `Basic ${Buffer.from(`${contaDoJira}:${tokenDoJira}`).toString("base64")}`;
+    if (autorizacoes.jira !== basica) {
+      throw new Error("o Jira foi procurado com credencial que nao veio do cofre");
+    }
+
+    const destinos = await trackerService.listProjects(idDoServico);
+    if (!destinos.some((destino) => destino.key === projetoDoJira)) {
+      throw new Error(`os destinos do Jira sao ${destinos.map((d) => d.key).join(",")}`);
+    }
+
+    // A procura por pull request, que é o que impede a segunda execução de
+    // abrir uma segunda tarefa sobre o mesmo pull request.
+    const achada = await trackerService.findIssueForPullRequest(idDoServico, pullRequest);
+    if (achada?.key !== tarefaExistente) {
+      throw new Error(`a procura devolveu ${JSON.stringify(achada)}`);
+    }
+    const semTarefa = await trackerService.findIssueForPullRequest(
+      idDoServico,
+      "https://github.com/locum-smoke/exemplo/pull/999",
+    );
+    if (semTarefa !== null) throw new Error("a procura inventou tarefa para um pull request novo");
+
+    // O segundo pela tela, que é o que a story entrega.
+    const preencheu = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const digitar = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          setter.call(campo, valor);
+          campo.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        const tipo = document.querySelector("[data-locum-tracker-tipo]");
+        if (tipo === null) return false;
+        const seletorDeTipo = Object.getOwnPropertyDescriptor(
+          window.HTMLSelectElement.prototype,
+          "value",
+        ).set;
+        seletorDeTipo.call(tipo, "github-issues");
+        tipo.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!digitar("[data-locum-tracker-id]", ${JSON.stringify(idDaTela)})) return false;
+        if (!digitar("[data-locum-tracker-nome]", ${JSON.stringify(nomeDaTela)})) return false;
+        if (!digitar("[data-locum-tracker-url]", ${JSON.stringify(baseUrl)})) return false;
+        if (!digitar("[data-locum-tracker-projeto]", ${JSON.stringify(repoDaTela)})) return false;
+        const botao = document.querySelector("[data-locum-tracker-salvar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de tracker");
+
+    const naTela = await esperarProbe<Record<string, string>>(
+      window,
+      "trackers na tela",
+      `(() => {
+        const linhas = Array.from(document.querySelectorAll("[data-locum-tracker]"));
+        const achados = Object.fromEntries(
+          linhas.map((e) => [e.dataset.locumTracker, e.dataset.locumTrackerKind]),
+        );
+        return ${JSON.stringify(idDaTela)} in achados ? achados : null;
+      })()`,
+    );
+    if (naTela[idDoServico] !== "jira" || naTela[idDaTela] !== "github-issues") {
+      throw new Error(`a tela listou ${JSON.stringify(naTela)}`);
+    }
+
+    // A credencial indo da tela para o cofre, e voltando como "guardada" e
+    // nunca como valor: não existe canal que a devolva.
+    const guardou = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const campo = document.querySelector('[data-locum-tracker-credencial="${idDaTela}"]');
+        if (campo === null || campo.disabled) return false;
+        setter.call(campo, ${JSON.stringify(tokenDoGithub)});
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+        const botao = document.querySelector('[data-locum-tracker-guardar="${idDaTela}"]');
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (guardou !== true) throw new Error("a tela nao ofereceu campo de credencial do tracker");
+
+    await esperarProbe<true>(
+      window,
+      `credencial de ${idDaTela}`,
+      `(() => {
+        const linha = document.querySelector('[data-locum-tracker="${idDaTela}"]');
+        return linha !== null && linha.dataset.locumTrackerGuardado === "sim" ? true : null;
+      })()`,
+    );
+    if (!secretService.has(trackerCredentialRef(idDaTela))) {
+      throw new Error("a credencial digitada na tela nao chegou ao cofre");
+    }
+
+    // O clique de testar, que é o que a story pede: a tela pergunta os destinos
+    // visíveis, e a resposta é do adaptador do GitHub, em outra rota.
+    const clicou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-tracker-testar="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (clicou !== true) throw new Error(`a tela nao ofereceu botao de testar ${idDaTela}`);
+
+    const resultado = await esperarProbe<{ ok: string; projetos: number }>(
+      window,
+      `teste de ${idDaTela}`,
+      `(() => {
+        const probe = document.querySelector('[data-locum-tracker-teste="${idDaTela}"]');
+        if (probe === null) return null;
+        return { ok: probe.dataset.locumOk, projetos: Number(probe.dataset.locumProjetos) };
+      })()`,
+    );
+    if (resultado.ok !== "sim") {
+      throw new Error(`a tela disse "${resultado.ok}" para o teste do tracker`);
+    }
+    if (resultado.projetos !== 2) {
+      throw new Error(`a tela contou ${resultado.projetos} destino(s) e o GitHub de mentira tem 2`);
+    }
+    if (autorizacoes.github !== `Bearer ${tokenDoGithub}`) {
+      throw new Error("o GitHub foi procurado com credencial que nao veio do cofre");
+    }
+
+    // A remoção pela tela, que apaga cadastro e credencial juntos: deixar o
+    // segredo guardaria um token que nada mais lê.
+    const removeu = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-tracker-remover="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (removeu !== true) throw new Error(`a tela nao ofereceu botao de remover ${idDaTela}`);
+
+    await esperarProbe<true>(
+      window,
+      `remocao de ${idDaTela}`,
+      `document.querySelector('[data-locum-tracker="${idDaTela}"]') === null ? true : null`,
+    );
+    if (secretService.has(trackerCredentialRef(idDaTela))) {
+      throw new Error("a credencial do tracker removido ficou no cofre");
+    }
+
+    if (!(await trackerService.remove(idDoServico))) {
+      throw new Error("o tracker cadastrado pelo servico nao saiu");
+    }
+    if (secretService.has(trackerCredentialRef(idDoServico))) {
+      throw new Error("a credencial do tracker removido pelo servico ficou no cofre");
+    }
+  } finally {
+    // A limpeza não confia em o exame ter chegado ao fim: o que ele planta no
+    // banco e no cofre de quem desenvolve sai daqui mesmo quando uma linha
+    // acima estourou.
+    for (const id of [idDoServico, idDaTela]) {
+      const ref = trackerCredentialRef(id);
+      secretService.remove(ref);
+      await settingsService.remove(`tracker:${ref}:checkedAt`);
+      await settingsService.remove(`tracker:${ref}:projects`);
+      await db.delete(schema.trackers).where(eq(schema.trackers.id, id));
+    }
+    await new Promise<void>((resolve) => servidor.close(() => resolve()));
+  }
+
+  return t("smoke.trackers", {
+    service: idDoServico,
+    window: idDaTela,
+    projects: 5,
+  });
+}
+
+/**
+ * Prova que o passo que abre tarefa propõe, para, e não nasce em outro modo.
+ *
+ * Nada sai da máquina, e desta vez nem para o loopback: montar a proposta é
+ * leitura de banco e concatenação de texto, então o exame não precisa de
+ * servidor de mentira nem de credencial no cofre. Criar a tarefa de verdade
+ * fica de fora de propósito: o que a story pede é que o passo pare na fila, e
+ * aprovar aqui seria justamente a coisa que o passo existe para impedir.
+ *
+ * Os dois passos de modelo entram plantados como `done`, do jeito que o
+ * executor retoma um run interrompido. É o que permite exercitar o passo de
+ * ação sem gastar um minuto de assinatura para ouvir do modelo um texto que o
+ * exame já conhece.
+ */
+async function checkTrackerIssue(): Promise<string> {
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { buildExecutor, buildGate } = await import("../src/executor/build.js");
+  const { demoPr } = await import("../src/seed/demo-event.js");
+  const { trackerIssueSteps } = await import("../src/seed/tracker-issue.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { trackerService } = await import("../src/services/tracker-service.js");
+  const { TrackerIssueProposal } = await import("../src/trackers/proposal.js");
+  const { AgentSpec } = await import("../src/config/types.js");
+
+  const idDoTracker = `locum-smoke-issue-${randomUUID().slice(0, 6)}`;
+  const agentId = `locum-smoke-issue-${randomUUID().slice(0, 6)}`;
+  const eventId = `smoke-event-${randomUUID()}`;
+  const destino = "locum-smoke/exemplo";
+  // Fora do literal do cadastro porque o guarda de i18n olha a propriedade
+  // `label`, e este nome e cadastro de mentira, nao texto de produto.
+  const nomeDoTracker = `Issues ${idDoTracker}`;
+
+  // O que o passo de modelo teria escrito. Os três textos são conferidos dentro
+  // do corpo proposto: é o que separa "o corpo veio do passo anterior" de "o
+  // handler escreveu alguma coisa parecida".
+  const objetivo = "Corrigir a expiração de token, que hoje aceita token vencido em BRT.";
+  const mudou = "O TokenValidator trocou UtcNow por Now e o cache perdeu a segurança de concorrência.";
+  const testar = "Rodar a suíte de autenticação com a máquina em BRT e conferir a expiração no limite.";
+
+  const spec = AgentSpec.parse({
+    id: agentId,
+    name: `Smoke ${agentId}`,
+    defaultTools: [],
+    skills: [],
+    budget: {},
+    steps: [
+      {
+        type: "model",
+        key: "audit",
+        name: "Auditoria",
+        needs: [],
+        model: "claude-code/claude-sonnet-5",
+        requiresServers: [],
+        prompt: "{{event.diff}}",
+      },
+      ...trackerIssueSteps({ tracker: idDoTracker, needs: "audit" }),
+    ],
+  });
+
+  let runId: string | undefined;
+  try {
+    await trackerService.register({
+      id: idDoTracker,
+      kind: "github-issues",
+      label: nomeDoTracker,
+      // Endereço que existe como URL e não atende ninguém: o caminho exercitado
+      // aqui não abre conexão, e um endereço de verdade esconderia isso.
+      baseUrl: "http://127.0.0.1:9",
+      project: destino,
+    });
+
+    const versao = await agentService.upsert(spec, `smoke ${agentId}`, "human");
+    await db.insert(schema.events).values({
+      id: eventId,
+      source: "fixture",
+      externalId: `smoke:${eventId}`,
+      payload: demoPr,
+    });
+
+    const executor = await buildExecutor();
+    runId = await executor.createRun(versao.id, eventId);
+
+    for (const [idx, plantado] of [
+      { stepKey: "audit", name: "Auditoria", output: { findings: [] } },
+      { stepKey: "issue_body", name: "Texto da tarefa", output: { objective: objetivo, changes: mudou, testing: testar } },
+    ].entries()) {
+      await db.insert(schema.steps).values({
+        id: `${runId}-${plantado.stepKey}`,
+        runId,
+        idx,
+        stepKey: plantado.stepKey,
+        name: plantado.name,
+        status: "done",
+        output: plantado.output,
+      });
+    }
+
+    const estado = await executor.execute(runId);
+    if (estado !== "paused") throw new Error(`o run terminou como "${estado}", e nao parado na fila`);
+
+    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (run?.status !== "paused") throw new Error(`o run ficou "${String(run?.status)}" no banco`);
+
+    const passos = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
+    const acao = passos.find((p) => p.stepKey === "open_issue");
+    if (acao?.status !== "awaiting_approval") {
+      throw new Error(`o passo de acao ficou "${String(acao?.status)}"`);
+    }
+
+    const pendencias = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (pendencias.length !== 1) throw new Error(`o passo criou ${pendencias.length} pendencia(s)`);
+    const pendencia = pendencias[0]!;
+    if (pendencia.kind !== "tracker.create_issue" || pendencia.status !== "pending") {
+      throw new Error(`a pendencia saiu como "${pendencia.kind}" em "${pendencia.status}"`);
+    }
+
+    const proposta = TrackerIssueProposal.parse(pendencia.payload);
+    const tituloEsperado = `${demoPr.repoName}#${demoPr.pull}: ${demoPr.title}`;
+    if (proposta.title !== tituloEsperado) {
+      throw new Error(`o titulo proposto foi "${proposta.title}"`);
+    }
+    if (proposta.tracker !== idDoTracker || proposta.project !== destino) {
+      throw new Error(`a proposta aponta para ${proposta.tracker} em ${proposta.project}`);
+    }
+    if (proposta.pullRequestUrl !== demoPr.url) {
+      throw new Error(`a proposta cita ${proposta.pullRequestUrl} como pull request`);
+    }
+    for (const trecho of [objetivo, mudou, testar, demoPr.url]) {
+      if (!proposta.body.includes(trecho)) {
+        throw new Error(`o corpo proposto nao traz "${trecho.slice(0, 40)}"`);
+      }
+    }
+
+    // A trava da story: o handler recusa nascer em rascunho ou em automatico, e
+    // a recusa acontece antes de qualquer gravacao, entao nem pendencia orfa
+    // fica para tras.
+    const gate = buildGate();
+    const carga = { ...demoPr, objective: objetivo, changes: mudou, testing: testar };
+    for (const modo of ["draft", "auto"] as const) {
+      const recusou = await gate
+        .submit(
+          { runId, stepId: acao.id, kind: "tracker.create_issue", payload: carga, target: idDoTracker },
+          modo,
+        )
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`a gate aceitou abrir tarefa em modo "${modo}"`);
+    }
+
+    // E o corpo nao e inventado aqui: sem o que o passo de modelo escreve, a
+    // proposta nao existe, em vez de sair um card com secao vazia.
+    const { testing: _semTestar, ...semUmaSecao } = carga;
+    const recusouVazio = await gate
+      .submit(
+        { runId, stepId: acao.id, kind: "tracker.create_issue", payload: semUmaSecao, target: idDoTracker },
+        "approve",
+      )
+      .then(
+        () => false,
+        () => true,
+      );
+    if (!recusouVazio) throw new Error("a gate propos tarefa sem o texto do passo de modelo");
+
+    const depois = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (depois.length !== 1) throw new Error(`as recusas deixaram ${depois.length} pendencia(s)`);
+  } finally {
+    // O smoke roda no banco de quem desenvolve: o que foi plantado sai daqui
+    // mesmo quando uma linha acima estourou.
+    if (runId !== undefined) {
+      await db.delete(schema.approvals).where(eq(schema.approvals.runId, runId));
+      await db.delete(schema.steps).where(eq(schema.steps.runId, runId));
+      await db.delete(schema.runs).where(eq(schema.runs.id, runId));
+    }
+    await db.delete(schema.events).where(eq(schema.events.id, eventId));
+    await db.delete(schema.agentVersions).where(eq(schema.agentVersions.agentId, agentId));
+    await db.delete(schema.agents).where(eq(schema.agents.id, agentId));
+    await trackerService.remove(idDoTracker);
+  }
+
+  return t("smoke.trackerIssue", { tracker: idDoTracker, project: destino });
+}
+
+/**
+ * Prova que o filtro de autoria decide o que acorda o agent.
+ *
+ * Os dois gatilhos olham a mesma varredura, e cada um leva só o pull request
+ * do lado que cadastrou: o de `mine` roda no que a conta do token abriu, e o
+ * de `others` no que veio de outra pessoa. É a distinção que a story pede, e
+ * ela só aparece com os dois no mesmo tick, porque um gatilho sozinho passaria
+ * por acidente se o filtro estivesse invertido.
+ *
+ * Nada aqui fala com o GitHub nem gasta assinatura: a varredura e a conta do
+ * token entram trocadas, e o serviço de execução é substituído por um que só
+ * anota o que teria rodado. Os eventos são plantados e apagados aqui mesmo,
+ * porque o smoke roda no banco de quem desenvolve.
+ */
+async function checkAuthorship(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { TriggerService } = await import("../src/services/trigger-service.js");
+  const { ExecutionService } = await import("../src/services/execution-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { Scheduler } = await import("../src/triggers/scheduler.js");
+
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para filtrar por autoria");
+
+  // Dono, repositório e logins sorteados pelo mesmo motivo do `checkWatched`:
+  // um padrão que casasse com repositório de verdade deixaria para trás, caso a
+  // limpeza falhasse, um gatilho apontado para trabalho real.
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
+  const eu = `locum-smoke-eu-${randomUUID().slice(0, 8)}`;
+  const outra = `locum-smoke-outra-${randomUUID().slice(0, 8)}`;
+  const cadencia = 7;
+
+  const meu = { eventId: `smoke-event-${randomUUID()}`, author: eu, pull: 1 };
+  const alheio = { eventId: `smoke-event-${randomUUID()}`, author: outra, pull: 2 };
+
+  for (const alvo of [meu, alheio]) {
+    await db.insert(schema.events).values({
+      id: alvo.eventId,
+      source: "github",
+      externalId: `pr:${dono}/${repo}#${alvo.pull}:sha:${randomUUID().slice(0, 7)}`,
+      payload: { owner: dono, repoName: repo, pull: alvo.pull, author: alvo.author },
+    });
+  }
+
+  const triggerService = new TriggerService(db);
+  const config = { kind: "poll" as const, source: "github", owner: dono, repoMatch: repo, everyMinutes: cadencia };
+  const doMeu = await triggerService.set(
+    agent.id,
+    { ...config, authorship: "mine" },
+    { enabled: true },
+  );
+  const doTime = await triggerService.set(
+    agent.id,
+    { ...config, authorship: "others" },
+    { enabled: true },
+  );
+
+  /** O que o agendador teria mandado executar. Nenhum run chega a existir. */
+  const pedidos: { triggerId: string; eventId: string | null }[] = [];
+  const semExecutor = new (class extends ExecutionService {
+    async startForEvent(
+      input: Parameters<InstanceType<typeof ExecutionService>["startForEvent"]>[0],
+    ) {
+      pedidos.push({ triggerId: input.triggerId ?? "", eventId: input.eventId });
+      return { runId: `smoke-run-${randomUUID()}`, status: "queued" as const };
+    }
+  })(db);
+
+  // Só os dois gatilhos plantados: o banco de quem desenvolve pode ter outro
+  // habilitado, e a batida do smoke não pode sair varrendo o que é de verdade.
+  const meus = [doMeu.id, doTime.id];
+  const soOsPlantados = new (class extends TriggerService {
+    async enabled() {
+      return (await this.list()).filter((gatilho) => meus.includes(gatilho.id));
+    }
+  })(db);
+
+  const varrer = async (owner: string): Promise<string[]> => {
+    if (owner !== dono) throw new Error(`a varredura visitou ${owner}, que nao e o dono plantado`);
+    return [meu.eventId, alheio.eventId];
+  };
+  const naoConferir = async () => ({
+    checked: 0,
+    settled: [],
+    stillOpen: 0,
+    unreadable: 0,
+    failed: [],
+  });
+
+  const agendador = new Scheduler(
+    db,
+    soOsPlantados,
+    semExecutor,
+    mcpService,
+    varrer,
+    naoConferir,
+    async () => eu,
+  );
+
+  try {
+    const batida = await agendador.tick({ reason: "timer" });
+    const achar = (triggerId: string) => {
+      const saida = batida.outcomes.find((o) => o.triggerId === triggerId);
+      if (saida === undefined) throw new Error(`o gatilho ${triggerId} ficou de fora da batida`);
+      return saida;
+    };
+
+    for (const [gatilho, esperado, rotulo] of [
+      [doMeu.id, meu.eventId, "mine"],
+      [doTime.id, alheio.eventId, "others"],
+    ] as const) {
+      const saida = achar(gatilho);
+      if (saida.status !== "fired") {
+        throw new Error(`o gatilho de ${rotulo} respondeu ${saida.status}: ${saida.detail ?? ""}`);
+      }
+      // A varredura trouxe os dois, e é isso que o contador de eventos diz: o
+      // que o filtro corta aparece na diferença entre eventos e execuções.
+      if (saida.events !== 2) {
+        throw new Error(`o gatilho de ${rotulo} contou ${saida.events} evento(s), e nao dois`);
+      }
+      const doGatilho = pedidos.filter((p) => p.triggerId === gatilho);
+      if (doGatilho.length !== 1) {
+        throw new Error(
+          `o gatilho de ${rotulo} quis executar ${doGatilho.length} evento(s), e nao um`,
+        );
+      }
+      if (doGatilho[0]?.eventId !== esperado) {
+        throw new Error(`o gatilho de ${rotulo} acordou com o evento errado`);
+      }
+      if (saida.detail === undefined) {
+        throw new Error(`o gatilho de ${rotulo} nao contou o evento que descartou`);
+      }
+    }
+
+    // O outro lado da trava: sem conta conferida não dá para dizer de quem é o
+    // pull request, e deixar passar acordaria cada gatilho com o do outro.
+    const semConta = new Scheduler(
+      db,
+      soOsPlantados,
+      semExecutor,
+      mcpService,
+      varrer,
+      naoConferir,
+      async () => null,
+    );
+    const pedidosAntes = pedidos.length;
+    // Uma hora à frente porque a batida anterior gravou o cursor: no mesmo
+    // instante os dois gatilhos responderiam `waiting` e nada seria provado.
+    const semConferir = await semConta.tick({ at: Date.now() + 3_600_000, reason: "timer" });
+    for (const saida of semConferir.outcomes) {
+      if (saida.status !== "failed") {
+        throw new Error(`sem conta conferida o gatilho respondeu ${saida.status}`);
+      }
+    }
+    if (pedidos.length !== pedidosAntes) {
+      throw new Error("sem conta conferida o agendador ainda quis executar alguma coisa");
+    }
+
+    return t("smoke.authorship", { mine: "mine", others: "others", viewer: eu });
+  } finally {
+    for (const id of meus) await triggerService.remove(id);
+    await db
+      .delete(schema.cursors)
+      .where(and(eq(schema.cursors.source, "scheduler"), inArray(schema.cursors.key, meus)));
+    await db
+      .delete(schema.events)
+      .where(inArray(schema.events.id, [meu.eventId, alheio.eventId]));
+  }
 }
 
 /**
@@ -1494,6 +2668,10 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
   const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
   const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
   const cadencia = 7;
+  // Cadastrar pela tela com o filtro ligado, e não com o padrão: o que decide
+  // se o agent acorda é a autoria gravada, e um formulário que a perdesse no
+  // caminho faria a pessoa cadastrar "meus" e receber os do time inteiro.
+  const autoria = "mine";
   const antes = (await triggerService.list()).map((gatilho) => gatilho.id);
 
   const preencheu = await window.webContents.executeJavaScript(
@@ -1509,14 +2687,15 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         campo.dispatchEvent(new Event("input", { bubbles: true }));
         return true;
       };
-      const escolher = () => {
-        const campo = document.querySelector("[data-locum-observar-agent]");
+      const escolher = (seletor, valor) => {
+        const campo = document.querySelector(seletor);
         if (campo === null) return false;
-        campo.value = ${JSON.stringify(agent.id)};
+        campo.value = valor;
         campo.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       };
-      if (!escolher()) return false;
+      if (!escolher("[data-locum-observar-agent]", ${JSON.stringify(agent.id)})) return false;
+      if (!escolher("[data-locum-observar-autoria]", ${JSON.stringify(autoria)})) return false;
       if (!digitar("[data-locum-observar-dono]", ${JSON.stringify(dono)})) return false;
       if (!digitar("[data-locum-observar-repo]", ${JSON.stringify(repo)})) return false;
       if (!digitar("[data-locum-observar-cadencia]", ${JSON.stringify(String(cadencia))})) {
@@ -1556,6 +2735,9 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         `a tela gravou ${criado.config.owner}/${criado.config.repoMatch} e nao ${dono}/${repo}`,
       );
     }
+    if (criado.config.authorship !== autoria) {
+      throw new Error(`a tela gravou a autoria ${criado.config.authorship} e nao ${autoria}`);
+    }
     if (criado.config.everyMinutes !== cadencia) {
       throw new Error(`a cadencia gravada foi ${criado.config.everyMinutes} e nao ${cadencia}`);
     }
@@ -1568,7 +2750,12 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
       throw new Error(`o gatilho parado disse que bate em ${parado.nextDueAt}`);
     }
 
-    const naTela = await esperarProbe<{ habilitado: string; alvo: string; proxima: string }>(
+    const naTela = await esperarProbe<{
+      habilitado: string;
+      alvo: string;
+      autoria: string;
+      proxima: string;
+    }>(
       window,
       "gatilho na tela",
       `(() => {
@@ -1577,6 +2764,7 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         return {
           habilitado: linha.dataset.locumGatilhoHabilitado,
           alvo: linha.dataset.locumGatilhoAlvo,
+          autoria: linha.dataset.locumGatilhoAutoria,
           proxima: linha.dataset.locumGatilhoProxima,
         };
       })()`,
@@ -1584,6 +2772,9 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
     if (naTela.habilitado !== "nao") throw new Error("a tela mostrou o gatilho novo como ligado");
     if (naTela.alvo !== `${dono}/${repo}`) {
       throw new Error(`a tela mostrou o alvo ${naTela.alvo} e o cadastro diz ${dono}/${repo}`);
+    }
+    if (naTela.autoria !== autoria) {
+      throw new Error(`a tela mostrou a autoria ${naTela.autoria} e o cadastro diz ${autoria}`);
     }
     if (naTela.proxima !== "") {
       throw new Error(`a tela anunciou a batida ${naTela.proxima} de um gatilho parado`);
@@ -2951,6 +4142,8 @@ async function main(): Promise<void> {
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const conferencia = await checkReconcile();
+    const autoria = await checkAuthorship();
+    const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
     const renderer = await checkRenderer();
@@ -2966,6 +4159,8 @@ async function main(): Promise<void> {
         secrets,
         notifications: avisos,
         reconcile: conferencia,
+        authorship: autoria,
+        trackerIssue: tarefa,
         deepLink,
         bridge: ponte,
         renderer,
@@ -2982,6 +4177,14 @@ async function main(): Promise<void> {
   if (!installSecretBackend()) {
     console.log("keychain indisponivel, credenciais vem so do ambiente");
   }
+
+  // Logo depois do cofre, e nao so quando um executor for montado: a tela de
+  // configuracao pergunta a disponibilidade dos provedores assim que abre, e
+  // sem isto quem guardou a chave pelo app apareceria como indisponivel ate a
+  // primeira execucao reconstruir o registro.
+  const { providerService } = await import("../src/services/provider-service.js");
+  const doCofre = await providerService.loadSecrets();
+  if (doCofre.length > 0) console.log(`cofre: chave de ${doCofre.join(", ")}`);
 
   // Depois do cofre, porque o retorno de OAuth guarda token, e antes da janela,
   // para que a URL que subiu o app nao fique esperando na fila.

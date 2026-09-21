@@ -285,7 +285,7 @@ export class Executor {
         : saida;
 
     const state = await this.deps.gate.submit(
-      { runId, stepId, kind: step.action, payload },
+      { runId, stepId, kind: step.action, payload, target: step.target ?? null },
       step.mode,
     );
 

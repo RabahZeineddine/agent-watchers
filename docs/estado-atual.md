@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 20 de setembro de 2026.
+Atualizado em 21 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -13,10 +13,11 @@ que a interface vai usar.
 
 | área | estado |
 |---|---|
-| esquema SQLite com 17 tabelas | pronto |
-| migração de esquema no aplicativo | migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
+| esquema SQLite com 18 tabelas | pronto |
+| migração de esquema no aplicativo | três migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
-| registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço |
+| registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
+| provedor compatível com OpenAI cadastrável | identificador, nome e endereço base no banco, o registro monta os fixos mais os cadastrados, chave própria no keychain e remoção avisando onde o provedor aparece |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
@@ -25,13 +26,15 @@ que a interface vai usar.
 | fila de aprovação com identificador externo antes da publicação | pronto |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
+| tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
+| passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
-| cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
+| cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface; o gatilho de varredura filtra por autoria do pull request, comparando o autor gravado no evento com a conta do token |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token; disparado pela batida do agendador, com cursor próprio por execução |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
-| camada de serviço, dez serviços | pronto |
+| camada de serviço, vinte serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
@@ -40,14 +43,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 42 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 58 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade e campo de chave por provedor, cadastro de gateway compatível com OpenAI, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura e filtro de autoria, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -61,6 +64,7 @@ que a interface vai usar.
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
+| guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
 
 ## Execução verificada
 
@@ -160,6 +164,22 @@ verdade, e o processo principal reconcilia o sistema com ela a cada subida, em
 vez de ler o sistema e acreditar. A preferência tem três estados: sem linha na
 tabela `settings` quer dizer que ninguém decidiu, e aí o app não mexe em nada.
 
+**A chave do provedor precisa valer sem reabrir a janela.** Guardar no cofre
+não basta: o registro de provedores é um mapa de closures montado uma vez, e
+quem já o tinha em mãos continuaria vendo o provedor apagado. Por isso
+`setSecret` e `clearSecret` terminam em `loadSecrets`, que remonta o registro
+inteiro, e por isso o processo principal chama `loadSecrets` logo depois de
+ligar o cofre, e não só quando um executor é montado: a tela de configuração
+pergunta a disponibilidade assim que abre.
+
+Junto com isso, a variável de ambiente que cada chave preenche saiu da tabela
+`PROVIDER_SECRET_VARS` e foi para `secretVar`, dentro da própria entrada do
+registro. Era o único lugar onde ela não pode discordar do `requires` e do
+`available` que estão duas linhas acima, e é também o que torna possível
+examinar o caminho com um provedor inventado: o smoke monta um, com catálogo
+num servidor em 127.0.0.1, porque gravar em `provider/anthropic` para provar o
+caminho destruiria a chave de quem desenvolve.
+
 **Onde o segredo cabe.** O Electron não expõe a API de item do keychain, só o
 `safeStorage`, que guarda a chave de cifra no keychain e devolve texto cifrado
 para quem chamou. Então o par é chave no keychain mais texto cifrado num arquivo
@@ -173,6 +193,15 @@ ponte antes de montar a árvore. Montar em inglês e corrigir depois faria a tel
 piscar em toda subida de quem escolheu português. A consequência é que o smoke
 não pode conferir `#root` logo depois do `loadFile`: ele espera o marcador, como
 já fazia com as leituras da ponte.
+
+**A chave do provedor cadastrado precisa do provedor primeiro.** Nos fixos, a
+variável que a chave preenche está escrita no código, então ela existe antes de
+qualquer leitura do banco. No cadastrado ela é derivada do identificador e só
+existe depois que o provedor entra no registro, e o `loadSecrets` lia a
+variável do registro anterior. Por isso ele monta duas vezes: primeiro um
+registro sem segredo nenhum, só para saber quais variáveis existem, e depois o
+definitivo com as chaves. Sem isso, a chave de um gateway recém-cadastrado
+ficaria guardada e sem valer até alguém reabrir o app.
 
 **Marcador de credencial no cadastro de MCP.** O valor `${credential}` em `env`
 ou `headers` é onde o segredo entra na hora de conectar. A substituição acontece
@@ -696,6 +725,28 @@ para a mesma pergunta. Cada gatilho tem seu cursor de tempo na tabela
 acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
 principal do Electron, em `app/electron/power.ts`, no `resume` do
 `powerMonitor`, e o tempo que a máquina passou dormindo vai para o log.
+
+O tracker de tarefa tem cadastro, credencial e teste de conexão, e não tem
+botão de abrir tarefa. Não é falta: pela decisão do marco, abrir tarefa nunca é
+automático, então o `createIssue` do serviço só é alcançável pelo passo de ação,
+que nasce em modo de aprovação e para na fila. A ponte não expõe canal que crie
+tarefa, e duas guardas sustentam isso: uma de tipo no contrato, que para o
+build, e uma no `--smoke`, que varre a lista de canais registrados.
+
+O passo é `tracker.create_issue`, e ele aponta para o tracker pelo `target` do
+próprio passo, não pela saída do modelo: destino é configuração de quem escreveu
+o agent, e um modelo que escolhesse o projeto abriria tarefa no quadro de outro
+time. O modo é travado no handler, em `modes`, e não no spec. A diferença
+importa: o rebaixamento do `agent_versions` já impede um agent de gravar `auto`,
+e `modes` impede também a pessoa que edita a spec à mão, porque o que sai
+assinado por alguém não pode depender de a linha certa estar escrita lá.
+
+O corpo da tarefa vem do passo de modelo anterior, em `objective`, `changes` e
+`testing`, e o passo de ação só monta título, seções e links em volta. É o que
+faz o texto ser legível antes de sair: prosa gerada dentro da publicação só
+apareceria depois de publicada. Os dois passos saem prontos em
+`app/src/seed/tracker-issue.ts`, como fragmento para concatenar num agent, e não
+como agent semente: o `pr-review` não tem tracker para apontar.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
-import type { TriggerConfig } from "../config/types.js";
+import { type Authorship, type TriggerConfig } from "../config/types.js";
 import { McpRegistry } from "../mcp/registry.js";
 import { executionService, type ExecutionService } from "../services/execution-service.js";
+import { matchesAuthorship } from "../services/github-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
 // So tipo: o servico de reconciliacao puxa o octokit pelo topo do modulo, e
@@ -63,6 +64,9 @@ export type PollFn = (owner: string, repoFilter: RegExp) => Promise<string[]>;
 
 /** A conferencia de pull request fechado, trocavel pelo mesmo motivo. */
 export type SweepFn = (options?: SweepOptions) => Promise<SweepReport>;
+
+/** Quem responde de quem e o token do GitHub, para o filtro de autoria. */
+export type ViewerFn = () => Promise<string | null>;
 
 /**
  * O que a conferencia fez numa batida.
@@ -134,6 +138,18 @@ const conferirFechados: SweepFn = async (options) => {
 };
 
 /**
+ * A conta do token, lida da conferência que já está guardada.
+ *
+ * Não fala com o GitHub: quem falou foi a tela de configuração quando alguém
+ * guardou o token, e o login ficou gravado ali. Uma batida de varredura não
+ * precisa perguntar de novo quem é o dono da conta.
+ */
+const contaConferida: ViewerFn = async () => {
+  const { githubService } = await import("../services/github-service.js");
+  return githubService.viewerLogin();
+};
+
+/**
  * Quem acorda os gatilhos habilitados.
  *
  * Anda por cursor de tempo, um por gatilho, e nao por janela fixa. A diferenca
@@ -157,6 +173,7 @@ export class Scheduler {
     private readonly mcp: McpService = mcpService,
     private readonly poll: PollFn = varrerNoGithub,
     private readonly sweep: SweepFn = conferirFechados,
+    private readonly viewer: ViewerFn = contaConferida,
   ) {}
 
   /** Batida vinda do evento de acordar da maquina, que o M3 vai ligar. */
@@ -344,8 +361,13 @@ export class Scheduler {
         }
 
         const created = await this.poll(owner, new RegExp(config.repoMatch));
-        const runs = await this.runsFor(trigger, created, wait);
-        return { events: created.length, runs };
+        const { eventIds, detail } = await this.byAuthorship(config.authorship, created);
+        const runs = await this.runsFor(trigger, eventIds, wait);
+        // A contagem de eventos continua sendo o que a varredura trouxe, e não
+        // o que sobrou do filtro: quem lê a batida precisa ver que o pull
+        // request chegou e foi descartado aqui, senão a única leitura possível
+        // seria a de que a varredura não achou nada.
+        return { events: created.length, runs, detail };
       }
 
       case "mcp-poll": {
@@ -368,6 +390,65 @@ export class Scheduler {
         // que acordar o agent de um jeito que ninguem desenhou.
         throw new Error(`gatilho do tipo "${(config as TriggerConfig).kind}" nao tem disparo`);
     }
+  }
+
+  /**
+   * Só os eventos cuja autoria este gatilho quer acordar.
+   *
+   * Mora no agendador e não na varredura porque o evento é de todo mundo: dois
+   * gatilhos apontados para a mesma organização, um para os pull requests de
+   * quem usa o Locum e outro para os do time, leem a mesma tabela. Filtrar na
+   * ingestão faria o primeiro a varrer decidir o que o segundo enxerga.
+   *
+   * A conta do token é lida uma vez por batida, e não por evento, porque ela
+   * não muda no meio de uma varredura.
+   */
+  private async byAuthorship(
+    wanted: Authorship,
+    eventIds: string[],
+  ): Promise<{ eventIds: string[]; detail?: string }> {
+    if (wanted === "any" || eventIds.length === 0) return { eventIds };
+
+    const viewer = await this.viewer();
+    if (viewer === null) {
+      // Recusar a batida inteira, e não deixar passar: o gatilho de `mine`
+      // rodaria em cima de pull request do time e o de `others` no seu, que é
+      // o contrário do que a pessoa cadastrou. O erro sobe para o `detail` do
+      // gatilho, onde a tela mostra o que fazer.
+      throw new Error(
+        "gatilho filtra por autoria e a conta do GitHub nunca foi conferida, confira o token na configuração",
+      );
+    }
+
+    const escolhidos: string[] = [];
+    let descartados = 0;
+    for (const eventId of eventIds) {
+      if (matchesAuthorship(wanted, await this.authorOf(eventId), viewer)) {
+        escolhidos.push(eventId);
+      } else {
+        descartados += 1;
+      }
+    }
+
+    return {
+      eventIds: escolhidos,
+      detail:
+        descartados === 0
+          ? undefined
+          : `${descartados} evento(s) fora do filtro de autoria "${wanted}"`,
+    };
+  }
+
+  /** Quem abriu o pull request, do jeito que a varredura gravou no evento. */
+  private async authorOf(eventId: string): Promise<string | undefined> {
+    const [row] = await this.db
+      .select({ payload: schema.events.payload })
+      .from(schema.events)
+      .where(eq(schema.events.id, eventId))
+      .limit(1);
+
+    const author = (row?.payload as { author?: unknown } | undefined)?.author;
+    return typeof author === "string" ? author : undefined;
   }
 
   /**

@@ -1,3 +1,4 @@
+import type { Authorship } from "../config/types.js";
 import { secretService, type SecretService } from "./secret-service.js";
 import { settingsService, type SettingsService } from "./settings-service.js";
 
@@ -211,6 +212,22 @@ export class GithubService {
     }
   }
 
+  /**
+   * O login da conta do token, do jeito que a última conferência descobriu.
+   *
+   * Sai da conferência guardada e não de uma chamada nova ao GitHub: quem
+   * pergunta isto é o filtro de autoria do agendador, que roda a cada batida, e
+   * uma viagem por batida gastaria cota de API para reler um valor que só muda
+   * quando alguém troca o token, e a troca já apaga o que estava aqui.
+   *
+   * Nulo é "nunca foi conferido", e não "conta nenhuma": quem filtra por
+   * autoria precisa tratar os dois como falta de resposta, porque comparar
+   * autor com nulo aprovaria ou reprovaria tudo por acidente.
+   */
+  async viewerLogin(): Promise<string | null> {
+    return (await this.status()).identity?.login ?? null;
+  }
+
   private async esquecerConferencia(): Promise<void> {
     await this.settings.remove(this.chave(LOGIN));
     await this.settings.remove(this.chave(ESCOPOS));
@@ -219,3 +236,26 @@ export class GithubService {
 }
 
 export const githubService = new GithubService();
+
+/**
+ * O pull request é de quem este gatilho quer olhar.
+ *
+ * A comparação ignora maiúscula porque o GitHub trata login assim, e o mesmo
+ * dono chega escrito de dois jeitos dependendo de quem digitou: o autor vem da
+ * API e a conta conferida vem de `users.getAuthenticated`, mas quem edita o
+ * cadastro na mão escreve como quiser.
+ */
+export function matchesAuthorship(
+  wanted: Authorship,
+  author: string | undefined,
+  viewer: string | null,
+): boolean {
+  if (wanted === "any") return true;
+  // Sem autor no evento ou sem conta conferida não dá para dizer de quem é, e
+  // o lado seguro de um filtro é não acordar o agent: rodar em cima de pull
+  // request do time achando que é seu abriria tarefa de trabalho alheio.
+  if (author === undefined || author.length === 0 || viewer === null) return false;
+
+  const meu = author.toLowerCase() === viewer.toLowerCase();
+  return wanted === "mine" ? meu : !meu;
+}

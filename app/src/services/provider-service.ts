@@ -1,18 +1,49 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
+import { AgentSpec } from "../config/types.js";
 import {
   buildProviders,
+  fixedProviderIds,
   resolveModel,
   splitModelId,
-  PROVIDER_SECRET_VARS,
   type FallbackRow,
   type ModelResolution,
   type ProviderEntry,
+  type RegisteredProvider,
 } from "../providers/registry.js";
 import { secretService, type SecretService } from "./secret-service.js";
+import { settingsService, type SettingsService } from "./settings-service.js";
 
 type Db = typeof defaultDb;
+
+/**
+ * Onde a chave de um provedor mora no cofre.
+ *
+ * Endereço por convenção, e não cadastrado: o provedor já é identificado pelo
+ * nome no registro, e pedir a alguém que invente um endereço para gravar uma
+ * chave seria cerimônia sem escolha real por trás. Quem já tinha apontado o
+ * `credential_ref` para outro lugar continua valendo, porque a leitura segue o
+ * cadastro e só cai nesta convenção quando não há linha.
+ */
+export function providerCredentialRef(name: string): string {
+  return `provider/${name}`;
+}
+
+/** O que a última conferência de catálogo descobriu, guardado por referência. */
+const CONFERIDO_EM = "checkedAt";
+const MODELOS = "models";
+
+/**
+ * O `kind` que marca provedor cadastrado, e não fixo no código.
+ *
+ * A tabela `providers` guarda dois tipos de linha: a que existe só para
+ * apontar a credencial de um provedor de fábrica, cujo `kind` é o nome dele, e
+ * a de um gateway compatível com OpenAI que alguém registrou. O `kind` é o que
+ * separa as duas, e por isso a leitura filtra por ele em vez de deduzir pela
+ * presença do endereço base.
+ */
+export const REGISTERED_KIND = "openai-compatible";
 
 /** Um provider como ele aparece para quem administra esta maquina. */
 export interface ProviderInfo {
@@ -22,7 +53,26 @@ export interface ProviderInfo {
   subscription: boolean;
   /** Variaveis de ambiente que faltam quando o provider esta indisponivel. */
   requires: string[];
+  /** O que alguém cadastrou, ou nulo quando o provedor é de fábrica. */
+  registered: { label: string; baseUrl: string } | null;
 }
+
+/** Um provedor cadastrado como ele está no banco. */
+export interface RegisteredProviderInfo extends RegisteredProvider {
+  enabled: boolean;
+  credentialRef: string | null;
+}
+
+/**
+ * Onde um provedor cadastrado aparece, para o aviso antes de remover.
+ *
+ * Remover é apagar o endereço e a chave de algo que pode estar no caminho de
+ * uma execução. O aviso não impede: ele mostra o que vai quebrar e deixa a
+ * decisão com quem está olhando.
+ */
+export type ProviderUse =
+  | { kind: "step"; agentId: string; stepKey: string; model: string }
+  | { kind: "fallback"; machineId: string; from: string; to: string };
 
 /**
  * Previa de resolucao. A falha vem como dado porque a pergunta "este modelo
@@ -32,6 +82,39 @@ export interface ProviderInfo {
 export type ModelPreview =
   | { ok: true; resolution: ModelResolution }
   | { ok: false; requested: string; error: string };
+
+/**
+ * A chave de um provedor como ela pode ser mostrada: onde mora, se existe, e o
+ * que a ultima conferencia descobriu. Nunca o valor.
+ */
+export interface ProviderCredential {
+  provider: string;
+  /** Variavel que a chave preenche. Nulo quando o provedor nao guarda chave. */
+  variable: string | null;
+  /** Endereco no cofre, nulo junto com `variable`. */
+  ref: string | null;
+  /** Existe texto cifrado guardado. Vale mesmo sem keychain neste processo. */
+  stored: boolean;
+  /** Este processo alcanca o keychain, isto e, da para gravar valor. */
+  vault: boolean;
+  /** A variavel existe no ambiente deste processo, que e o caminho de tras. */
+  env: boolean;
+  /** Segundos desde a epoca, ou nulo quando nunca foi conferida. */
+  checkedAt: number | null;
+  /** Quantos modelos o catalogo devolveu na ultima conferencia. */
+  modelCount: number | null;
+}
+
+/**
+ * O desfecho de uma conferencia de catalogo.
+ *
+ * `missing` e a falta de credencial, e nao chega a sair da maquina: perguntar
+ * o catalogo sem chave gastaria uma viagem para ouvir o que ja se sabe daqui.
+ */
+export type ProviderCheck =
+  | { ok: true; count: number; checkedAt: number }
+  | { ok: false; reason: "missing" }
+  | { ok: false; reason: "refused"; message: string };
 
 /**
  * Provedores de modelo e a tabela de substituicao por maquina. Linha de
@@ -44,6 +127,18 @@ export class ProviderService {
     private readonly db: Db = defaultDb,
     private providers: Record<string, ProviderEntry> = buildProviders(),
     private readonly secrets: SecretService = secretService,
+    private readonly settings: SettingsService = settingsService,
+    /**
+     * Como remontar o registro quando o cofre muda.
+     *
+     * Entra pelo construtor porque `buildProviders` é função de módulo: sem
+     * isto, quem construir o serviço com provedores próprios os perderia na
+     * primeira gravação de chave, que é justamente o que o smoke faz.
+     */
+    private readonly build: (
+      secrets: Record<string, string>,
+      registered: RegisteredProvider[],
+    ) => Record<string, ProviderEntry> = buildProviders,
   ) {}
 
   /**
@@ -56,12 +151,21 @@ export class ProviderService {
    */
   async loadSecrets(): Promise<string[]> {
     const rows = await this.db.select().from(schema.providers);
+    const cadastrados = linhasCadastradas(rows);
+
+    // Os cadastrados entram num registro sem segredo antes de qualquer chave
+    // ser lida. A ordem não é enfeite: a variável de um provedor cadastrado só
+    // existe depois que ele está no registro, e perguntá-la ao registro
+    // anterior devolveria indefinido na primeira subida depois do cadastro,
+    // deixando a chave guardada sem valer até alguém reabrir o app.
+    const semSegredo = this.build({}, cadastrados);
+
     const secrets: Record<string, string> = {};
     const carregados: string[] = [];
 
     for (const row of rows) {
       if (!row.enabled || !row.credentialRef) continue;
-      const variavel = PROVIDER_SECRET_VARS[row.kind];
+      const variavel = semSegredo[row.id]?.secretVar;
       if (!variavel) continue;
 
       const secret = this.secrets.get(row.credentialRef);
@@ -70,7 +174,7 @@ export class ProviderService {
       carregados.push(row.id);
     }
 
-    this.providers = buildProviders(secrets);
+    this.providers = this.build(secrets, cadastrados);
     return carregados;
   }
 
@@ -86,7 +190,7 @@ export class ProviderService {
    */
   async setCredentialRef(name: string, ref: string | null): Promise<void> {
     if (!(name in this.providers)) throw new Error(`provider "${name}" nao existe`);
-    if (ref !== null && !(name in PROVIDER_SECRET_VARS)) {
+    if (ref !== null && this.providers[name]?.secretVar === undefined) {
       throw new Error(`provider "${name}" nao usa chave de API, nao ha o que guardar`);
     }
     if (ref !== null) this.secrets.pathFor(ref);
@@ -105,13 +209,286 @@ export class ProviderService {
     );
   }
 
+  /**
+   * A referência que vale para um provedor: a cadastrada, ou a convenção.
+   *
+   * A ordem importa. Quem já apontou o `credential_ref` para outro endereço
+   * pela linha de comando continua sendo lido de lá, e só quem nunca apontou
+   * cai em `provider/<nome>`, que é onde a tela vai gravar.
+   */
+  private async refDe(name: string): Promise<string> {
+    const cadastradas = await this.credentialRefs();
+    return cadastradas[name] ?? providerCredentialRef(name);
+  }
+
+  private chave(ref: string, sufixo: string): string {
+    return `provider:${ref}:${sufixo}`;
+  }
+
+  /**
+   * O que a tela pode saber sobre a chave de cada provedor.
+   *
+   * O valor não cabe neste tipo, pela mesma razão do `CredentialRef` e do
+   * `GithubStatus`: daqui sai o endereço, o sim ou não, e o que a última
+   * conferência respondeu. O segredo só sai pelo caminho de quem vai conectar,
+   * que é o `loadSecrets` alimentando o registro.
+   */
+  async credentials(): Promise<ProviderCredential[]> {
+    const cadastradas = await this.credentialRefs();
+
+    return Promise.all(
+      Object.entries(this.providers).map(async ([provider, entry]) => {
+        const variable = entry.secretVar ?? null;
+        const ref =
+          variable === null ? null : (cadastradas[provider] ?? providerCredentialRef(provider));
+
+        const [conferidoEm, modelos] =
+          ref === null
+            ? [undefined, undefined]
+            : await Promise.all([
+                this.settings.get(this.chave(ref, CONFERIDO_EM)),
+                this.settings.get(this.chave(ref, MODELOS)),
+              ]);
+
+        const doAmbiente = variable === null ? undefined : process.env[variable];
+
+        return {
+          provider,
+          variable,
+          ref,
+          stored: ref !== null && this.secrets.has(ref),
+          vault: this.secrets.available,
+          env: doAmbiente !== undefined && doAmbiente.length > 0,
+          checkedAt: conferidoEm === undefined ? null : Number(conferidoEm),
+          modelCount: modelos === undefined ? null : Number(modelos),
+        };
+      }),
+    );
+  }
+
+  /**
+   * Guarda a chave do provedor e o deixa disponível na hora.
+   *
+   * O `loadSecrets` no fim é o que a story pede por "sem reabrir a janela": o
+   * registro é reconstruído com a chave nova, e a próxima leitura de
+   * `listProviders` já responde disponível. Sem ele a chave estaria guardada e
+   * o provedor continuaria apagado até o próximo executor ser montado.
+   *
+   * A conferência anterior é jogada fora junto, pela mesma razão do token do
+   * GitHub: a contagem de modelos descreve a chave que estava ali, e mantê-la
+   * depois da troca faria a tela afirmar, com cara de dado conferido, um
+   * catálogo que a chave nova pode nem alcançar.
+   */
+  async setSecret(name: string, secret: string): Promise<void> {
+    const entry = this.providers[name];
+    if (!entry) throw new Error(`provider "${name}" nao existe`);
+    if (entry.secretVar === undefined) {
+      throw new Error(`provider "${name}" nao usa chave de API, nao ha o que guardar`);
+    }
+
+    const limpo = secret.trim();
+    if (limpo.length === 0) throw new Error("chave vazia nao se guarda, use clearSecret");
+
+    const ref = await this.refDe(name);
+    this.secrets.set(ref, limpo);
+    await this.setCredentialRef(name, ref);
+    await this.esquecerConferencia(ref);
+    await this.loadSecrets();
+  }
+
+  /** Devolve se havia algo para apagar. */
+  async clearSecret(name: string): Promise<boolean> {
+    if (!(name in this.providers)) throw new Error(`provider "${name}" nao existe`);
+
+    const ref = await this.refDe(name);
+    const havia = this.secrets.remove(ref);
+    await this.setCredentialRef(name, null);
+    await this.esquecerConferencia(ref);
+    await this.loadSecrets();
+    return havia;
+  }
+
+  /**
+   * Pergunta ao provedor quantos modelos ele tem, e guarda a resposta.
+   *
+   * É o exame que diz se a chave presta, e ele não inventa critério próprio:
+   * quem responde é o catálogo do provedor, que é a mesma porta que o resto do
+   * app usa para montar a lista de modelos. Sem credencial nenhuma a resposta
+   * sai de dentro da máquina, sem gastar uma viagem para descobrir o que já se
+   * sabe daqui.
+   *
+   * A mensagem de recusa passa adiante como veio. O `listModels` só a monta a
+   * partir do código de status ou da falha de rede, e a chave viaja em
+   * cabeçalho, nunca na URL: não há por onde ela entrar no texto.
+   */
+  async check(name: string): Promise<ProviderCheck> {
+    const entry = this.providers[name];
+    if (!entry) return { ok: false, reason: "refused", message: `provedor "${name}" nao existe` };
+    if (!entry.available()) return { ok: false, reason: "missing" };
+
+    const { modelos, erro } = await this.listModels(name);
+    if (erro !== undefined) return { ok: false, reason: "refused", message: erro };
+
+    const ref = await this.refDe(name);
+    const checkedAt = Math.floor(Date.now() / 1000);
+    await this.settings.set(this.chave(ref, MODELOS), String(modelos.length));
+    await this.settings.set(this.chave(ref, CONFERIDO_EM), String(checkedAt));
+
+    return { ok: true, count: modelos.length, checkedAt };
+  }
+
+  private async esquecerConferencia(ref: string): Promise<void> {
+    await this.settings.remove(this.chave(ref, MODELOS));
+    await this.settings.remove(this.chave(ref, CONFERIDO_EM));
+  }
+
   listProviders(): ProviderInfo[] {
     return Object.entries(this.providers).map(([name, entry]) => ({
       name,
       available: entry.available(),
       subscription: entry.model === undefined,
       requires: entry.requires,
+      registered: entry.registered ?? null,
     }));
+  }
+
+  /* --------------------------------------------------- provedor cadastrado */
+
+  /** Os provedores compatíveis com OpenAI que alguém registrou aqui. */
+  async listRegistered(): Promise<RegisteredProviderInfo[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.providers)
+      .where(eq(schema.providers.kind, REGISTERED_KIND));
+    return linhasCadastradas(rows).map((cadastrado) => {
+      const row = rows.find((r) => r.id === cadastrado.id)!;
+      return { ...cadastrado, enabled: row.enabled, credentialRef: row.credentialRef };
+    });
+  }
+
+  /**
+   * Cadastra um gateway compatível com OpenAI e o deixa no registro na hora.
+   *
+   * O identificador vira o prefixo do modelo em todo passo que apontar para
+   * ele, então ele não pode ter barra nem discordar de si mesmo por causa de
+   * maiúscula: `Meu-Gateway/x` e `meu-gateway/x` seriam dois provedores para
+   * quem lê e um só para quem escreveu. Por isso ele é normalizado na entrada
+   * e recusado se sobrar qualquer outra coisa.
+   *
+   * Colidir com provedor de fábrica é recusa e não substituição. Um cadastro
+   * chamado `anthropic` mandaria a chave de quem já tem uma para o endereço
+   * que o cadastro escolheu, o que é exatamente o que ninguém quer descobrir
+   * depois.
+   */
+  async register(input: { id: string; label: string; baseUrl: string }): Promise<void> {
+    const id = input.id.trim().toLowerCase();
+    const label = input.label.trim();
+    const baseUrl = input.baseUrl.trim();
+
+    if (!/^[a-z0-9][a-z0-9-]{1,31}$/.test(id)) {
+      throw new Error(
+        `identificador "${input.id}" invalido: use de 2 a 32 caracteres entre minuscula, numero e hifen`,
+      );
+    }
+    if (label.length === 0) throw new Error("provedor sem nome nao se cadastra");
+
+    let endereco: URL;
+    try {
+      endereco = new URL(baseUrl);
+    } catch {
+      throw new Error(`endereco "${baseUrl}" nao e uma URL`);
+    }
+    if (endereco.protocol !== "http:" && endereco.protocol !== "https:") {
+      throw new Error(`endereco "${baseUrl}" precisa ser http ou https`);
+    }
+
+    if (fixedProviderIds().includes(id)) {
+      throw new Error(`"${id}" ja e um provedor de fabrica, escolha outro identificador`);
+    }
+    const ocupado = await this.db
+      .select()
+      .from(schema.providers)
+      .where(eq(schema.providers.id, id));
+    if (ocupado.length > 0) throw new Error(`o identificador "${id}" ja esta cadastrado`);
+
+    await this.db.insert(schema.providers).values({
+      id,
+      kind: REGISTERED_KIND,
+      label,
+      baseUrl,
+      enabled: true,
+    });
+    await this.loadSecrets();
+  }
+
+  /**
+   * Onde um provedor aparece hoje: passo de agent e tabela de substituição.
+   *
+   * Só a versão mais nova de cada agent entra. Versão antiga que apontasse
+   * para o provedor ficaria avisando para sempre, e não é ela que a remoção
+   * quebra: ela já rodou, e o que ela gastou está no histórico.
+   */
+  async usedBy(id: string): Promise<ProviderUse[]> {
+    const prefixo = `${id}/`;
+    const usos: ProviderUse[] = [];
+
+    const versoes = await this.db.select().from(schema.agentVersions);
+    const maisNova = new Map<string, (typeof versoes)[number]>();
+    for (const versao of versoes) {
+      const atual = maisNova.get(versao.agentId);
+      if (atual === undefined || versao.version > atual.version) maisNova.set(versao.agentId, versao);
+    }
+
+    for (const versao of maisNova.values()) {
+      // Spec que não passa no zod não é usada por execução nenhuma, então ela
+      // também não é motivo para segurar uma remoção.
+      const spec = AgentSpec.safeParse(versao.spec);
+      if (!spec.success) continue;
+      for (const passo of spec.data.steps) {
+        if (passo.type !== "model" || !passo.model.startsWith(prefixo)) continue;
+        usos.push({ kind: "step", agentId: versao.agentId, stepKey: passo.key, model: passo.model });
+      }
+    }
+
+    for (const linha of await this.db.select().from(schema.modelFallbacks)) {
+      if (!linha.fromModel.startsWith(prefixo) && !linha.toModel.startsWith(prefixo)) continue;
+      usos.push({
+        kind: "fallback",
+        machineId: linha.machineId,
+        from: linha.fromModel,
+        to: linha.toModel,
+      });
+    }
+
+    return usos;
+  }
+
+  /**
+   * Remove um provedor cadastrado, avisando antes quando ele está em uso.
+   *
+   * Sem `force`, uso encontrado é recusa com a lista: quem clicou em remover
+   * não sabia que um passo apontava para lá, e descobrir isso no meio de uma
+   * execução seria tarde. Com `force`, a decisão já foi tomada e a remoção
+   * acontece.
+   *
+   * A chave sai junto. Deixá-la no cofre guardaria um segredo que nada mais
+   * lê, sob um endereço que ninguém mais sabe de quem era.
+   */
+  async remove(id: string, force = false): Promise<{ removed: boolean; usedBy: ProviderUse[] }> {
+    const cadastrado = (await this.listRegistered()).find((p) => p.id === id);
+    if (cadastrado === undefined) {
+      throw new Error(`provedor "${id}" nao foi cadastrado aqui, nao ha o que remover`);
+    }
+
+    const usos = await this.usedBy(id);
+    if (usos.length > 0 && !force) return { removed: false, usedBy: usos };
+
+    const ref = cadastrado.credentialRef ?? providerCredentialRef(id);
+    this.secrets.remove(ref);
+    await this.esquecerConferencia(ref);
+    await this.db.delete(schema.providers).where(eq(schema.providers.id, id));
+    await this.loadSecrets();
+    return { removed: true, usedBy: usos };
   }
 
   /**
@@ -243,6 +620,22 @@ export class ProviderService {
       }
     });
   }
+}
+
+/**
+ * As linhas de provedor cadastrado, prontas para o registro.
+ *
+ * Linha sem endereço base é descartada em silêncio. Ela não deveria existir,
+ * porque o cadastro exige a URL, mas um registro montado com `baseUrl` vazio
+ * viraria uma chamada para `/models` na raiz do sistema de arquivos no dia em
+ * que alguém editasse o banco à mão.
+ */
+function linhasCadastradas(
+  rows: (typeof schema.providers.$inferSelect)[],
+): RegisteredProvider[] {
+  return rows
+    .filter((row) => row.kind === REGISTERED_KIND && row.baseUrl !== null)
+    .map((row) => ({ id: row.id, label: row.label ?? row.id, baseUrl: row.baseUrl! }));
 }
 
 /** Existe caminho de `from` ate `target` seguindo as substituicoes ja gravadas. */

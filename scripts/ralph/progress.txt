@@ -46,3 +46,9 @@
 2026-09-20  M6.3  feito      conferência de PR fechado na batida do agendador, cursor por execução, smoke com duas batidas
 2026-09-20  M6.4  feito      node_modules fora do pacote e processo principal embutido, traduções do Chromium cortadas por pt_BR, .app de 420 para 234 MB e imagem de 138 para 100 MB
 2026-09-20  M6.5  feito      guia da primeira execução real, seis passos na ordem e a promessa do clique
+2026-09-21  M7.1  feito      chave de provedor pela interface, keychain e catalogo, verify limpo
+2026-09-21  M7.2  feito      provedor compatível cadastrável no banco, registro monta fixos mais cadastrados, dois catálogos no smoke e remoção avisando o uso
+2026-09-21  M7.3  feito      tracker de tarefa com Jira e GitHub Issues, credencial no keychain, teste de conexão e destinos pela tela, ponte sem canal que abra tarefa
+2026-09-21  M7.4  feito      passo tracker.create_issue propondo o item e parando na fila, modo travado em approve pelo handler, corpo vindo do passo de modelo
+2026-09-21  M7.5  feito      filtro de autoria no gatilho de varredura, conta do token vinda da conferência guardada, tela cadastrando e smoke com dois gatilhos no mesmo tick
+2026-09-21  M7.6  feito      guia com passo de provedor pela interface e seção de tracker, numeração corrigida e campo de autoria no gatilho

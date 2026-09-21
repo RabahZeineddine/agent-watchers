@@ -226,6 +226,14 @@ export const providers = sqliteTable("providers", {
   id: text("id").primaryKey(),
   /** anthropic | openai | google | openai-compatible | claude-code */
   kind: text("kind").notNull(),
+  /**
+   * Como o provedor cadastrado se chama para quem administra.
+   *
+   * Nulo nas linhas que existem só para apontar credencial de provedor fixo:
+   * o nome delas está no código, e repeti-lo aqui criaria duas versões da
+   * mesma coisa.
+   */
+  label: text("label"),
   baseUrl: text("base_url"),
   /** Chave no keychain, nunca o segredo. */
   credentialRef: text("credential_ref"),
@@ -259,6 +267,33 @@ export const mcpServers = sqliteTable("mcp_servers", {
   /** read | write. Cloud entra como read, configurado tambem na origem. */
   scope: text("scope").notNull().default("read"),
   idleTimeoutMs: integer("idle_timeout_ms").notNull().default(300_000),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+});
+
+/**
+ * Onde a tarefa vai parar: um Jira ou um repositorio de issues do GitHub.
+ *
+ * Tabela propria, e nao uma linha em `mcp_servers` ou em `providers`: o que se
+ * cadastra aqui nao sobe processo nem responde modelo, e a unica coisa que os
+ * tres tem em comum e apontar para uma credencial do cofre.
+ *
+ * O `enabled` nasce ligado porque cadastrar tracker nao dispara nada sozinho:
+ * quem abre tarefa e o passo de acao, que nasce em modo de aprovacao e para na
+ * fila. O interruptor serve para tirar um destino de circulacao sem apagar o
+ * cadastro e a chave junto.
+ */
+export const trackers = sqliteTable("trackers", {
+  id: text("id").primaryKey(),
+  /** jira | github-issues */
+  kind: text("kind").notNull(),
+  label: text("label").notNull(),
+  baseUrl: text("base_url").notNull(),
+  /** Destino padrao: chave do projeto no Jira, `dono/repo` no GitHub. */
+  project: text("project"),
+  /** Quem a credencial autentica. O Jira exige o e-mail junto do token. */
+  account: text("account"),
+  /** Chave no keychain, nunca o segredo. */
+  credentialRef: text("credential_ref"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 });
 

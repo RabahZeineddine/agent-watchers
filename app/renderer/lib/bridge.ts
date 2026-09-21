@@ -50,9 +50,19 @@ export const READ_CHANNELS = [
   "providers.fallbacks",
   "providers.preview",
   "credentials.overview",
+  // Mesma razão de `credentials.overview`: endereço, sim ou não, e o que a
+  // última conferência contou. Valor de chave não volta por canal nenhum.
+  "providers.credentials",
+  // O cadastro de gateway compatível: identificador, nome e endereço, que é
+  // o que alguém escreveu. A chave dele não está aqui, e nem em canal nenhum.
+  "providers.registered",
   // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
   // que a última conferência descobriu. O token não volta por canal nenhum.
   "github.status",
+  // Mesma razão de `github.status`: endereço, sim ou não, e o que a última
+  // conferência contou. A credencial do tracker não volta por canal nenhum, e
+  // criar tarefa não tem canal em lista nenhuma.
+  "trackers.list",
   "chat.status",
   "metrics.report",
   "machine.profile",
@@ -97,8 +107,31 @@ export const ACTION_CHANNELS = [
   // Conferir sai para a rede e responde quem é a conta, então fica atrás de um
   // clique pelo mesmo motivo de `mcp.test`: abrir a tela não é pedir exame.
   "github.check",
+  // A chave de provedor indo para o keychain, e o exame que pergunta o
+  // catálogo àquele provedor. Escrita e rede, os dois atrás de um clique, pelo
+  // mesmo motivo dos canais do GitHub logo acima.
+  "providers.saveSecret",
+  "providers.forgetSecret",
+  "providers.checkSecret",
   "mcp.test",
   "mcp.tools",
+  // O tracker de tarefa: cadastrar, apontar destino, guardar a credencial e
+  // testar. Escrita e rede, as duas atrás de um clique, pelo mesmo motivo dos
+  // canais do GitHub. Abrir tarefa não está aqui e não está em lugar nenhum:
+  // o único caminho é o passo de ação, que para na fila de aprovação.
+  "trackers.register",
+  "trackers.remove",
+  "trackers.setEnabled",
+  "trackers.setProject",
+  "trackers.saveSecret",
+  "trackers.forgetSecret",
+  "trackers.test",
+  "trackers.projects",
+  // Cadastrar e remover gateway compatível. Escrita, e cada uma é um clique:
+  // remover ainda pede o segundo, porque sem `force` o serviço devolve onde o
+  // provedor aparece em vez de apagar.
+  "providers.register",
+  "providers.remove",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um
   // clique e não do carregamento da tela.
   "providers.models",

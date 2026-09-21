@@ -57,10 +57,19 @@ export const ModelStep = StepBase.extend({
 
 export const ActionStep = StepBase.extend({
   type: z.literal("action"),
-  /** github.review_comment | slack.post | jira.create */
+  /** github.review_comment | slack.post | tracker.create_issue */
   action: z.string(),
   mode: ActionMode.default("approve"),
   input: z.string().optional(),
+  /**
+   * Para onde a ação aponta, quando o handler sozinho não sabe.
+   *
+   * Em `tracker.create_issue` é o identificador do tracker cadastrado. Fica no
+   * passo, e não na saída do modelo, porque destino é configuração de quem
+   * escreveu o agent: um modelo que escolhesse o projeto poderia abrir a
+   * tarefa no quadro de outro time a cada execução.
+   */
+  target: z.string().optional(),
 });
 
 export const Step = z.discriminatedUnion("type", [ModelStep, ActionStep]);
@@ -189,6 +198,19 @@ export const WebhookTrigger = z.object({
   path: z.string().min(1),
 });
 
+/**
+ * De quem são os pull requests que este gatilho acorda.
+ *
+ * A distinção existe porque o que se faz com cada um é diferente: no que é
+ * seu, abrir a tarefa do que falta; no do time, revisar. Ela mora no gatilho e
+ * não no agent, porque o mesmo agent serve aos dois com dois cadastros.
+ *
+ * `any` é o padrão para que gatilho gravado antes deste campo continue
+ * acordando com tudo, que é o que ele fazia.
+ */
+export const Authorship = z.enum(["any", "mine", "others"]);
+export type Authorship = z.infer<typeof Authorship>;
+
 export const PollTrigger = z.object({
   kind: z.literal("poll"),
   /** Fonte cadastrada, hoje so `github`. */
@@ -205,6 +227,11 @@ export const PollTrigger = z.object({
   owner: z.string().min(1).optional(),
   /** Expressao aplicada ao nome do repositorio, como no comando `poll`. */
   repoMatch: z.string().min(1),
+  /**
+   * Filtro de autoria. O autor vem do evento que a varredura já gravou, e o
+   * outro lado da comparação é a conta do token conferida na configuração.
+   */
+  authorship: Authorship.default("any"),
   everyMinutes: z.number().int().min(1).default(15),
 });
 
