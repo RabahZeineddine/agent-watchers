@@ -371,6 +371,34 @@
       "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token stored above, and filtering by authorship needs it checked: its account is what tells which pull requests are yours. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
       "refused": "the bridge refused: {{message}}"
     },
+    "slack": {
+      "title": "Watched Slack",
+      "description": "Which channels Locum reads, and through which MCP server. There is no Slack token here: the one talking to Slack is the MCP server you already authorized.",
+      "empty": "No channel watched. Until there is one, the Slack sweep has nothing to read.",
+      "server": "MCP server that answers for Slack",
+      "serverNone": "no server chosen",
+      "tool": "tool that lists channel messages",
+      "toolHint": "conversations_history",
+      "channelArg": "name of the channel argument",
+      "channelArgHint": "channel_id",
+      "sinceArg": "name of the window argument",
+      "sinceArgHint": "oldest",
+      "postTool": "tool that replies in a thread",
+      "postToolHint": "chat_postMessage",
+      "postChannelArg": "name of the channel argument when replying",
+      "postChannelArgHint": "channel",
+      "textArg": "name of the text argument",
+      "textArgHint": "text",
+      "threadArg": "name of the thread argument",
+      "threadArgHint": "thread_ts",
+      "save": "save source",
+      "channel": "channel to watch",
+      "channelHint": "C01AB2CD3EF",
+      "add": "watch channel",
+      "remove": "remove",
+      "howTo": "A channel goes in by the identifier Slack uses, and each one carries its own cursor: a channel registered today does not reprocess what the others already read. Argument names vary from one Slack server to another, and come filled in with the most common ones. Reading answers nothing: a threaded reply is an action step, and it stops in the queue waiting for your click.",
+      "refused": "the bridge refused: {{message}}"
+    },
     "trackers": {
       "title": "Task trackers",
       "description": "Where a task lands when a finding becomes work: a Jira or a GitHub Issues repository. The credential stays in the keychain, and the screen shows whether one exists and what the last test reached, never the value.",
@@ -434,7 +462,7 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, authorship with {{authorship}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, authorship with {{authorship}}, MCP sweep with {{mcpPoll}}, Slack with {{slack}}, digest with {{digest}}, Slack reply with {{slackPost}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
@@ -454,7 +482,7 @@
     "routes": "destinations: {{count}}",
     "palette": "command palette opening and closing by shortcut",
     "agents": "list with agents: {{agents}}, history of versions: {{versions}} for {{agent}}, comparison pointing the action step from \"{{from}}\" to \"{{to}}\"",
-    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, {{providerKeys}}, {{registered}}, GitHub: {{github}}, watched: {{watched}}, {{trackers}}",
+    "config": "providers: {{providers}}, fallbacks: {{fallbacks}}, servers: {{servers}} with {{fixture}} answering tools: {{tools}} in the interface, budgets: {{budgets}}, {{providerKeys}}, {{registered}}, GitHub: {{github}}, watched: {{watched}}, {{trackers}}, {{slackWindow}}",
     "providerKeys": "provider keys: {{path}}",
     "providerKeysStored": "every provider with a key already has a credential, registration checked without leaving the machine",
     "providerKeysRoundTrip": "saved, became available at once, counted the catalog and forgot it; {{provider}} checked without a key from the screen",
@@ -471,7 +499,12 @@
     "schema": "migrations applied: {{count}}",
     "watched": "trigger for {{target}} registered parked, turned on with the next beat at {{next}}, and removed",
     "trackers": "trackers: {{service}} on Jira through the service and {{window}} on GitHub through the window, credential from the vault, {{projects}} visible destinations, existing task found again by pull request, no channel that opens a task",
-    "authorship": "the {{mine}} trigger woke only on {{viewer}}'s pull request, and the {{others}} one only on somebody else's"
+    "authorship": "the {{mine}} trigger woke only on {{viewer}}'s pull request, and the {{others}} one only on somebody else's",
+    "mcpPoll": "querying {{fixture}} through the {{tool}} tool produced {{events}} normalized event(s), the second sweep reprocessed none, and the cursor did not move when the call failed",
+    "slack": "a watched channel produced {{events}} normalized message(s) with author, channel, text and thread, one cursor per channel, and the second sweep reprocessed none",
+    "digest": "conversation from {{channels}} channel(s) grouped by subject into {{messages}} message(s), {{dropped}} noise message(s) dropped before the model, the next delivery repeating none, and the digest parked in the inbox as reading, with the gate refusing draft, auto and an empty digest",
+    "slackPost": "written reply became a pending item in channel {{channel}}, thread {{thread}}, with the model's text word for word, channel and thread taken from the event, made-up timestamp refused, and the gate refusing draft and auto",
+    "slackWindow": "Slack: {{server}} saved through the window and channel {{channel}} watched, with no bridge channel that publishes"
   },
   "status": {
     "done": "done",

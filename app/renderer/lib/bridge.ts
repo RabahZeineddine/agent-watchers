@@ -63,6 +63,10 @@ export const READ_CHANNELS = [
   // conferência contou. A credencial do tracker não volta por canal nenhum, e
   // criar tarefa não tem canal em lista nenhuma.
   "trackers.list",
+  // O que esta máquina observa no Slack: qual servidor MCP responde por ele e
+  // quais canais entram na varredura. Não há credencial de Slack em canal
+  // nenhum, porque quem tem a do Slack é o servidor MCP.
+  "slack.get",
   "chat.status",
   "metrics.report",
   "machine.profile",
@@ -127,6 +131,12 @@ export const ACTION_CHANNELS = [
   "trackers.forgetSecret",
   "trackers.test",
   "trackers.projects",
+  // O cadastro do Slack: escrita, e cada uma é um clique. Publicar no Slack não
+  // está aqui e não está em lugar nenhum: responder em thread é passo de ação, e
+  // ele para na fila de aprovação.
+  "slack.setSource",
+  "slack.addChannel",
+  "slack.removeChannel",
   // Cadastrar e remover gateway compatível. Escrita, e cada uma é um clique:
   // remover ainda pede o segundo, porque sem `force` o serviço devolve onde o
   // provedor aparece em vez de apagar.

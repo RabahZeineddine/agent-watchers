@@ -14,9 +14,12 @@ import { secretService } from "./services/secret-service.js";
 import { startupService } from "./services/startup-service.js";
 import { updateService } from "./services/update-service.js";
 import { triggerService } from "./services/trigger-service.js";
+import { collectSlackDigest, buildDigestEvent } from "./digest/ingest.js";
+import { slackService } from "./services/slack-service.js";
 import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
 import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
+import { slackDigestSpec } from "./seed/slack-digest.js";
 
 /** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
 async function seed(): Promise<string> {
@@ -38,6 +41,39 @@ async function start(target: string): Promise<void> {
 
   await printRun(started.runId);
   console.log(`\nstatus: ${started.status}`);
+}
+
+/**
+ * Junta o que chegou no Slack desde a ultima entrega e roda o agent de digest.
+ *
+ * A regra de agrupar, filtrar e mover o cursor mora na ingestao, e a de
+ * classificar mora no agent: aqui so se amarram as duas, porque a tela e o
+ * agendador vao amarrar as mesmas duas.
+ */
+async function digest(): Promise<void> {
+  const watch = await slackService.get();
+  if (watch.server === null) {
+    throw new Error("nenhum servidor de Slack cadastrado nesta maquina");
+  }
+
+  const bundle = await collectSlackDigest(watch.server);
+  const eventId = await buildDigestEvent(bundle);
+  if (eventId === null) {
+    console.log(`nada novo no Slack desde ${bundle.since}`);
+    return;
+  }
+  console.log(
+    `${bundle.messages} mensagem(ns) em ${bundle.channels.length} canal(is),` +
+      ` ${bundle.dropped} descartada(s), janela ate ${bundle.until}`,
+  );
+
+  const version = await agentService.upsert(slackDigestSpec, "seed", "human");
+  const executor = await buildExecutor();
+  const runId = await executor.createRun(version.id, eventId);
+  const status = await executor.execute(runId);
+
+  await printRun(runId);
+  console.log(`\nstatus: ${status}`);
 }
 
 async function printRun(runId: string): Promise<void> {
@@ -389,6 +425,9 @@ async function main(): Promise<void> {
       console.log(`${ids.length} evento(s) novo(s)`);
       break;
     }
+    case "digest":
+      await digest();
+      break;
     case "inbox":
       await inbox();
       break;
@@ -516,6 +555,7 @@ async function main(): Promise<void> {
           "  fixture:run              planta uma execucao pronta no banco, sem chamar modelo",
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
+          "  digest                   junta o Slack desde a ultima entrega e roda o agent de digest",
           "  inbox                    lista aprovacoes pendentes",
           "  runs [status]            lista as ultimas execucoes",
           "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",

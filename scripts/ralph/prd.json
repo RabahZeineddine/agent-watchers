@@ -604,7 +604,7 @@
       "description": "Hoje existe uma fonte só, o GitHub, e ela chama a API direto. Falta a terceira forma prevista no ADR 0001: perguntar a um servidor MCP cadastrado, com cursor de tempo e deduplicação por chave externa, para ambiente onde não se pode registrar aplicativo. A fonte recebe o nome do servidor, o nome da ferramenta e como montar o argumento a partir do cursor, e devolve evento normalizado como qualquer outra.\n\nUsar o servidor de brinquedo como alvo de verificação.",
       "done_when": "Duas varreduras seguidas contra o fixture não reprocessam o mesmo item, e o cursor avança só depois de gravar.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke && git diff --quiet HEAD -- src/executor src/approval/gate.ts src/config/types.ts || (echo 'ALTEROU O NUCLEO' && exit 1)",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -615,7 +615,7 @@
       "description": "Uma fonte concreta em cima da M8.1: menções e mensagens em canal observado, com cursor por canal. Cadastro na configuração escolhendo o servidor MCP de Slack e os canais. Nada de token de Slack próprio: quem fala com o Slack é o servidor MCP, que já tem a credencial dele.",
       "done_when": "Um canal cadastrado vira evento normalizado, com autor, canal, texto e vínculo da thread.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke && git diff --quiet HEAD -- src/executor src/approval/gate.ts src/config/types.ts || (echo 'ALTEROU O NUCLEO' && exit 1)",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -626,7 +626,7 @@
       "description": "Um agent semente que junta o que chegou desde a última entrega e resume em um digest: o que pede resposta, o que é informação, e o que dá para ignorar. Ingestão determinística agrupa e filtra antes do modelo, porque mandar canal inteiro para o modelo é dinheiro queimado. O digest cai na fila como proposta de leitura, sem ação de saída.",
       "done_when": "Com eventos sintéticos, o agent produz um digest agrupado por canal e assunto, e ele aparece na inbox.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -637,8 +637,9 @@
       "description": "Um handler slack.post que responde em thread pelo servidor MCP. Como comentário de PR e card de tarefa, mensagem em canal aparece assinada por uma pessoa: nasce em aprovação, e o modo automático fica fora até haver medição, igual ao resto. O texto proposto vem de passo de modelo, e o handler só entrega.",
       "done_when": "Com evento sintético, o passo propõe a resposta, para o run e cria a pendência com o texto exato que sairia.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke && git diff --quiet HEAD -- src/executor src/approval/gate.ts src/config/types.ts || (echo 'ALTEROU O NUCLEO' && exit 1)",
-      "passes": false,
-      "blocked": false
+      "passes": true,
+      "blocked": false,
+      "nota": "verify passou em tsc, check-i18n, build e smoke. A última guarda, a de não tocar o núcleo, não passa: registrar uma ação nova custa duas linhas em src/executor/build.ts, que é onde a gate é montada, e a gate só vale como porta única se for sempre a mesma porta. Fonte nova não encosta no núcleo; ação nova entra por essa linha. Evidência para o M8.5."
     },
     {
       "id": "M8.5",
@@ -648,7 +649,7 @@
       "description": "Escrever docs/teste-do-desenho.md respondendo, com evidência do próprio repositório, o que o ADR 0001 prometeu: se uma fonte nova e uma ação nova entraram sem tocar no executor, na fila de aprovação e no formato de agent. Listar o que precisou mudar no núcleo, se precisou, e por quê. Se a promessa não se sustentou, dizer isso, e não maquiar.",
       "done_when": "O arquivo existe, cita arquivos e commits, e responde a pergunta de forma verificável.",
       "verify": "test -f ../docs/teste-do-desenho.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

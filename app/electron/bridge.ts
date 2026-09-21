@@ -18,6 +18,7 @@ import { mcpService } from "../src/services/mcp-service.js";
 import { metricsService } from "../src/services/metrics-service.js";
 import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
+import { slackService } from "../src/services/slack-service.js";
 import { startupService } from "../src/services/startup-service.js";
 import { trackerService } from "../src/services/tracker-service.js";
 import { triggerService } from "../src/services/trigger-service.js";
@@ -151,6 +152,11 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "trackers.forgetSecret": (id) => trackerService.clearSecret(id),
     "trackers.test": (id) => trackerService.testConnection(id),
     "trackers.projects": (id) => trackerService.listProjects(id),
+
+    "slack.get": () => slackService.get(),
+    "slack.setSource": (cadastro) => slackService.setSource(cadastro),
+    "slack.addChannel": (canal) => slackService.addChannel(canal),
+    "slack.removeChannel": (canal) => slackService.removeChannel(canal),
 
     "metrics.report": (options) => metricsService.report(options),
     "machine.profile": () => machineService.profile(),

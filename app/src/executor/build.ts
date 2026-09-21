@@ -1,4 +1,5 @@
 import { ApprovalGate } from "../approval/gate.js";
+import { digestDeliverHandler } from "../digest/action.js";
 import { Executor } from "./executor.js";
 import { McpRegistry } from "../mcp/registry.js";
 import { ClaudeCodeRuntime } from "../runtimes/claude-code.js";
@@ -7,6 +8,7 @@ import type { Runtime } from "../runtimes/types.js";
 import { machineId } from "../services/machine-service.js";
 import { mcpService } from "../services/mcp-service.js";
 import { providerService } from "../services/provider-service.js";
+import { slackPostHandler } from "../slack/action.js";
 import { githubReviewHandler } from "../sources/github.js";
 import { trackerIssueHandler } from "../trackers/issue-action.js";
 
@@ -42,6 +44,8 @@ export function buildGate(): ApprovalGate {
     new Map([
       ["github.review_comment", githubReviewHandler()],
       ["tracker.create_issue", trackerIssueHandler()],
+      ["digest.deliver", digestDeliverHandler()],
+      ["slack.post", slackPostHandler()],
     ]),
   );
 }

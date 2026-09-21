@@ -25,6 +25,10 @@ que a interface vai usar.
 | orçamento por execução e por dia | pronto e verificado |
 | fila de aprovação com identificador externo antes da publicação | pronto |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
+| fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
+| fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
+| agent de digest do Slack | pronto e verificado com conversa sintética; a ingestão agrupa por canal e por thread e filtra ruído antes do modelo, e o digest para na inbox como proposta de leitura, sem ação de saída |
+| ação de resposta no Slack | pronta e verificada com evento sintético; o texto vem do passo de modelo, o canal do evento e a thread é conferida contra o que já foi lido, e a pendência guarda o texto exato que sairia; publicar só depois do clique |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
@@ -43,14 +47,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 58 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 62 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada, e guarda de compilação contra canal que abra tarefa ou publique no Slack |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade e campo de chave por provedor, cadastro de gateway compatível com OpenAI, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura e filtro de autoria, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade e campo de chave por provedor, cadastro de gateway compatível com OpenAI, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura e filtro de autoria, canais do Slack observados por servidor MCP, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -64,6 +68,7 @@ que a interface vai usar.
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
+| canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
 
 ## Execução verificada
@@ -95,6 +100,7 @@ npm run dev demo                      # não precisa de credencial
 npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
+npm run dev digest                    # junta o Slack desde a última entrega e roda o agent de digest
 npm run dev inbox
 npm run dev runs
 npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
@@ -750,4 +756,105 @@ como agent semente: o `pr-review` não tem tracker para apontar.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as
-ferramentas `echo`, `sum`, `slow` e `fail`.
+ferramentas `echo`, `sum`, `slow`, `fail` e `feed`. O `feed` devolve itens
+carimbados a partir de uma data fixa, e não do relógio, porque a varredura por
+cursor só pode ser verificada se as duas passadas virem os mesmos itens.
+
+## A terceira forma de fonte
+
+`app/src/sources/mcp-poll.ts` é a fonte que pergunta a um servidor MCP
+cadastrado, a terceira das três previstas no ADR 0001. Existe para ambiente onde
+não dá para registrar aplicativo, que é o caso de Slack e Teams corporativos:
+não há webhook para receber nem SDK para chamar, mas há um servidor MCP que
+alguém já autorizou.
+
+O cadastro é o gatilho `mcp-poll`, com servidor, ferramenta e argumentos. A
+janela entra pelos argumentos, e não por um campo próprio, porque cada servidor
+chama a janela pelo nome que quer: `since`, `oldest`, `updated_after`. Onde
+aparecer `{{cursor}}` em qualquer texto do argumento, em qualquer profundidade,
+a varredura troca pelo cursor antes de chamar.
+
+O que volta é desembrulhado do envelope do MCP e vira lista: array no topo, ou
+array em `items`. Tudo mais é um item só. A chave de deduplicação é o `id` do
+item quando ele tem um, e o resumo do conteúdo quando não tem. O cursor anda
+para o maior `at` gravado, e só depois de gravar; quando nenhum item vem
+carimbado, ele anda para o instante lido antes da chamada, que é a marca d'água
+segura. Resposta com `isError` vira exceção, senão a mensagem de erro viraria
+evento e o cursor passaria por cima de uma janela que ninguém leu.
+
+## O digest
+
+`app/src/digest/ingest.ts` junta o que a fonte do Slack gravou desde a última
+entrega, agrupa por canal e por thread, e corta o que não vale mandar para o
+modelo: mensagem sem texto e marcador de canal, que o Slack manda como mensagem
+e ninguém lê. Tudo determinístico, e de propósito: agrupar é comparação de
+carimbo, e pagar um modelo para isso seria mandar o canal inteiro para ele antes
+de saber se há o que resumir. Há teto de leitura, de threads por canal, de
+mensagens por thread e de tamanho de cada mensagem.
+
+O cursor da entrega é por servidor de Slack e anda quando o evento do digest é
+gravado, nunca quando alguém clica. A ordem é a mesma das outras fontes, e pela
+mesma razão: se o processo morrer no meio, o evento existe e o run é retomado na
+próxima subida. Andar só depois do clique faria uma pendência esquecida na fila
+segurar toda a conversa seguinte fora do próximo digest.
+
+O agent semente é `slack-digest`, com dois passos. Um de modelo, que classifica
+cada assunto em `needs_reply`, `info` ou `ignore` e escreve o resumo, sem
+nenhuma ferramenta: o que ele lê já chegou agrupado no evento. E um de ação,
+`digest.deliver`, que monta a proposta e para na fila.
+
+Esse é o primeiro passo de ação que passa pela fila sem ter lado de fora. Um
+digest não publica nada: o clique quer dizer "li", e o `publish` do handler não
+chama ninguém. Mesmo assim o caminho é a gate, porque é ela que grava a
+proposta, mostra a pendência na inbox e registra quando ela foi resolvida, e um
+digest que aparecesse por fora disso seria uma segunda inbox com regra própria.
+O handler recusa `auto` e `draft`, por código: digest entregue sozinho sai da
+fila sem ninguém ter lido, que é o contrário do que ele existe para fazer.
+
+## A resposta no Slack
+
+`app/src/slack/action.ts` é o handler de `slack.post`. Ele responde em thread
+pelo mesmo servidor MCP que lê o canal, e não tem token próprio. Nasce e
+permanece em `approve`: mensagem em canal aparece assinada por uma pessoa, e
+quem lê não tem como saber que quem escreveu foi um agent. O modo automático
+fica fora enquanto não houver medição que o sustente, e a recusa é de código, em
+`modes`, não configuração de spec. Não há `draft`, porque rascunho de mensagem
+de thread não existe no Slack e emular um publicando e apagando deixaria a
+notificação na tela de todo mundo.
+
+O texto vem do passo de modelo, e o handler só entrega. Quem diz o destino é o
+evento e o cadastro: o canal sai do `repo` que a fonte grava (`slack/<canal>`),
+o servidor sai do `target` do passo ou do Slack cadastrado na máquina, e a
+thread, que passa pelo modelo, é conferida em `app/src/slack/thread.ts` contra
+as mensagens que o Locum leu daquele canal. Carimbo inventado não acha thread
+nenhuma e o passo falha antes de virar pendência.
+
+A proposta é montada em `propose`, antes de a pendência ser gravada, então o que
+a fila mostra é exatamente o texto que sairia, junto da mensagem que abriu a
+thread e do endereço dela. O agent semente é `slack-reply`, com um passo de
+modelo e um de ação.
+
+Os nomes da ferramenta e dos argumentos da resposta ficam no cadastro do Slack,
+separados dos da leitura: a ferramenta que lista histórico costuma chamar o
+canal de `channel_id` e a que publica chama de `channel`. Cadastrar não publica
+nada; só diz por onde a resposta sairia depois do clique.
+
+Registrar a ação custou duas linhas em `app/src/executor/build.ts`, que é onde a
+gate é montada. É a única mudança de núcleo do M8, e é de propósito: a gate só
+vale como porta única se ela for sempre a mesma porta, e um mapa de handlers
+montado em cada chamador deixaria um deles registrar handler diferente sem
+ninguém notar. Fonte nova não encosta no núcleo; ação nova entra por essa linha.
+
+## O desenho cobrado
+
+`docs/teste-do-desenho.md` fecha o M8 cobrando do ADR 0001 a promessa de que
+fonte nova e ação nova entram como periferia. A conta está lá com commit e
+arquivo: em 1928 linhas inseridas em `app/src`, a fila de aprovação, o executor,
+o formato de agent e o esquema do banco ficaram com zero linha alterada, e o
+núcleo mudou quatro linhas, as duas de cada ação em `executor/build.ts`.
+
+A ressalva que o documento registra não é essa. É o desvio do Slack dentro do
+ramo `mcp-poll` do agendador, em `app/src/triggers/scheduler.ts:381`, que hoje é
+caso único e legível. Na segunda fonte que precisar do mesmo desvio, ele deixa
+de ser, e o lugar de resolver isso é uma tabela de fontes registradas, antes de
+escrever o segundo `if`.

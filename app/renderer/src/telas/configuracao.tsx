@@ -20,6 +20,7 @@ type ConferenciaDoGithub = ReadResult<"github.check">;
 type Tracker = ReadResult<"trackers.list">[number];
 type TesteDoTracker = ReadResult<"trackers.test">;
 type Gatilho = ReadResult<"triggers.schedule">[number];
+type CadastroDoSlack = ReadResult<"slack.get">;
 type Ferramenta = ReadResult<"mcp.tools">[number];
 type Teste = ReadResult<"mcp.test">;
 
@@ -183,6 +184,10 @@ export function Configuracao() {
         titulo={t("settings.watched.title")}
       >
         <Observados />
+      </Secao>
+
+      <Secao descricao={t("settings.slack.description")} titulo={t("settings.slack.title")}>
+        <Slack />
       </Secao>
 
       <Secao
@@ -1923,6 +1928,279 @@ function LinhaDoObservado({
         })}
       </p>
     </li>
+  );
+}
+
+/* -------------------------------------------------------------------- slack */
+
+/**
+ * O que esta máquina observa no Slack.
+ *
+ * Não há campo de token, e não é esquecimento: quem fala com o Slack é o
+ * servidor MCP que alguém já autorizou, e aqui só se escolhe qual dos
+ * cadastrados é ele. Uma credencial própria seria um segundo lugar de onde a
+ * mesma conversa poderia vazar.
+ *
+ * Os nomes de argumento aparecem porque variam de um servidor de Slack para
+ * outro: um chama o canal de `channel_id` e o outro de `channel`. Vêm
+ * preenchidos com os mais comuns para que ninguém precise descobri-los antes de
+ * observar o primeiro canal.
+ *
+ * Os da resposta são outros que os da leitura, e por isso têm campo próprio: a
+ * ferramenta que lista histórico e a que publica em thread raramente chamam o
+ * canal pelo mesmo nome.
+ *
+ * Nada aqui publica. Cadastrar canal faz o Locum ler, e cadastrar a ferramenta
+ * de resposta só diz por onde ela sairia: responder em thread é passo de ação,
+ * que para na fila de aprovação e espera o clique de alguém.
+ */
+function Slack() {
+  const { t } = useTranslation();
+  const servidores = useRead("mcp.list");
+  const inicial = useRead("slack.get");
+  const [recarregado, setRecarregado] = useState<CadastroDoSlack | null>(null);
+  const [canal, setCanal] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const cadastro = recarregado ?? inicial.data ?? null;
+  const recusa = erro ?? inicial.error?.message ?? null;
+
+  // Enquanto a leitura não voltou não há o que editar, e um formulário vazio
+  // que aceitasse clique gravaria cadastro por cima do que ainda estava vindo.
+  const [servidor, setServidor] = useState<string | null>(null);
+  const [ferramenta, setFerramenta] = useState<string | null>(null);
+  const [argCanal, setArgCanal] = useState<string | null>(null);
+  const [argJanela, setArgJanela] = useState<string | null>(null);
+  const [ferramentaDaResposta, setFerramentaDaResposta] = useState<string | null>(null);
+  const [argCanalDaResposta, setArgCanalDaResposta] = useState<string | null>(null);
+  const [argTexto, setArgTexto] = useState<string | null>(null);
+  const [argThread, setArgThread] = useState<string | null>(null);
+
+  const valorDoServidor = servidor ?? cadastro?.server ?? "";
+  const valorDaFerramenta = ferramenta ?? cadastro?.tool ?? "";
+  const valorDoArgCanal = argCanal ?? cadastro?.channelArg ?? "";
+  const valorDoArgJanela = argJanela ?? cadastro?.sinceArg ?? "";
+  const valorDaResposta = ferramentaDaResposta ?? cadastro?.postTool ?? "";
+  const valorDoArgCanalDaResposta = argCanalDaResposta ?? cadastro?.postChannelArg ?? "";
+  const valorDoArgTexto = argTexto ?? cadastro?.textArg ?? "";
+  const valorDoArgThread = argThread ?? cadastro?.threadArg ?? "";
+
+  const recarregar = (): Promise<void> =>
+    read("slack.get").then(setRecarregado, (falha: unknown) =>
+      setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): void => {
+    setOcupado(true);
+    acao
+      .then(
+        () => setErro(null),
+        (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+      )
+      .then(recarregar)
+      .finally(() => setOcupado(false));
+  };
+
+  const podeSalvar =
+    valorDoServidor !== "" &&
+    valorDaFerramenta.trim() !== "" &&
+    valorDoArgCanal.trim() !== "" &&
+    valorDoArgJanela.trim() !== "" &&
+    valorDaResposta.trim() !== "" &&
+    valorDoArgCanalDaResposta.trim() !== "" &&
+    valorDoArgTexto.trim() !== "" &&
+    valorDoArgThread.trim() !== "";
+
+  const salvar = (): void => {
+    agir(
+      call("slack.setSource", {
+        server: valorDoServidor,
+        tool: valorDaFerramenta.trim(),
+        channelArg: valorDoArgCanal.trim(),
+        sinceArg: valorDoArgJanela.trim(),
+        postTool: valorDaResposta.trim(),
+        postChannelArg: valorDoArgCanalDaResposta.trim(),
+        textArg: valorDoArgTexto.trim(),
+        threadArg: valorDoArgThread.trim(),
+      }),
+    );
+  };
+
+  const observar = (): void => {
+    agir(call("slack.addChannel", canal.trim()).then(() => setCanal("")));
+  };
+
+  const canais = cadastro?.channels ?? [];
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-probe="slack"
+      data-locum-slack-canais={canais.join(",")}
+      data-locum-slack-ferramenta-atual={cadastro?.tool ?? ""}
+      data-locum-slack-resposta-atual={cadastro?.postTool ?? ""}
+      data-locum-slack-servidor={cadastro?.server ?? ""}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label={t("settings.slack.server")}
+          className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
+          data-locum-slack-escolha=""
+          onChange={(evento) => setServidor(evento.target.value)}
+          value={valorDoServidor}
+        >
+          <option value="">{t("settings.slack.serverNone")}</option>
+          {(servidores.data ?? []).map((s) => (
+            <option key={s.config.name} value={s.config.name}>
+              {s.config.name}
+            </option>
+          ))}
+        </select>
+
+        <input
+          aria-label={t("settings.slack.tool")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-52 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-ferramenta=""
+          onChange={(evento) => setFerramenta(evento.target.value)}
+          placeholder={t("settings.slack.toolHint")}
+          spellCheck={false}
+          value={valorDaFerramenta}
+        />
+
+        <input
+          aria-label={t("settings.slack.channelArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-canal=""
+          onChange={(evento) => setArgCanal(evento.target.value)}
+          placeholder={t("settings.slack.channelArgHint")}
+          spellCheck={false}
+          value={valorDoArgCanal}
+        />
+
+        <input
+          aria-label={t("settings.slack.sinceArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-janela=""
+          onChange={(evento) => setArgJanela(evento.target.value)}
+          placeholder={t("settings.slack.sinceArgHint")}
+          spellCheck={false}
+          value={valorDoArgJanela}
+        />
+
+        <input
+          aria-label={t("settings.slack.postTool")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-52 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-ferramenta-resposta=""
+          onChange={(evento) => setFerramentaDaResposta(evento.target.value)}
+          placeholder={t("settings.slack.postToolHint")}
+          spellCheck={false}
+          value={valorDaResposta}
+        />
+
+        <input
+          aria-label={t("settings.slack.postChannelArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-canal-resposta=""
+          onChange={(evento) => setArgCanalDaResposta(evento.target.value)}
+          placeholder={t("settings.slack.postChannelArgHint")}
+          spellCheck={false}
+          value={valorDoArgCanalDaResposta}
+        />
+
+        <input
+          aria-label={t("settings.slack.textArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-texto=""
+          onChange={(evento) => setArgTexto(evento.target.value)}
+          placeholder={t("settings.slack.textArgHint")}
+          spellCheck={false}
+          value={valorDoArgTexto}
+        />
+
+        <input
+          aria-label={t("settings.slack.threadArg")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-32 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-arg-thread=""
+          onChange={(evento) => setArgThread(evento.target.value)}
+          placeholder={t("settings.slack.threadArgHint")}
+          spellCheck={false}
+          value={valorDoArgThread}
+        />
+
+        <Button
+          data-locum-slack-salvar=""
+          disabled={ocupado || !podeSalvar}
+          onClick={salvar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.slack.save")}
+        </Button>
+      </div>
+
+      {canais.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.slack.empty")}</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {canais.map((observado) => (
+            <li
+              className="border-border flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm"
+              data-locum-slack-canal={observado}
+              key={observado}
+            >
+              <span className="font-mono text-xs">{observado}</span>
+              <Button
+                data-locum-slack-remover={observado}
+                disabled={ocupado}
+                onClick={() => agir(call("slack.removeChannel", observado))}
+                size="sm"
+                variant="ghost"
+              >
+                {t("settings.slack.remove")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.slack.channel")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-44 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-slack-novo-canal=""
+          onChange={(evento) => setCanal(evento.target.value)}
+          placeholder={t("settings.slack.channelHint")}
+          spellCheck={false}
+          value={canal}
+        />
+        <Button
+          data-locum-slack-adicionar=""
+          disabled={ocupado || canal.trim() === "" || cadastro?.server === null}
+          onClick={observar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.slack.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.slack.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-slack-erro={recusa}>
+          {t("settings.slack.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
   );
 }
 
