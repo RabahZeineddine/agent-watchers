@@ -1639,6 +1639,22 @@ const FONTE = "github";
 const CADENCIA_PADRAO = "15";
 
 /**
+ * Filtro de autoria, na ordem em que aparece na lista.
+ *
+ * Escrito à mão e não derivado do zod, porque quem lê a tela lê rótulo e não
+ * valor: a lista precisa de uma tradução por opção, e um laço sobre o enum
+ * traria "others" para dentro do que a pessoa vê.
+ */
+const AUTORIAS = ["any", "mine", "others"] as const;
+type Autoria = (typeof AUTORIAS)[number];
+
+const ROTULO_DA_AUTORIA: Record<Autoria, string> = {
+  any: "settings.watched.authorshipAny",
+  mine: "settings.watched.authorshipMine",
+  others: "settings.watched.authorshipOthers",
+};
+
+/**
  * O que esta máquina observa: dono, padrão de repositório e de quanto em
  * quanto tempo o Locum vai olhar.
  *
@@ -1659,6 +1675,7 @@ function Observados() {
   const [agentId, setAgentId] = useState("");
   const [dono, setDono] = useState("");
   const [repo, setRepo] = useState("");
+  const [autoria, setAutoria] = useState<Autoria>("any");
   const [cadencia, setCadencia] = useState(CADENCIA_PADRAO);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -1707,6 +1724,7 @@ function Observados() {
         source: FONTE,
         owner: dono.trim(),
         repoMatch: repo.trim(),
+        authorship: autoria,
         everyMinutes: minutos,
       }).then(() => {
         setDono("");
@@ -1775,6 +1793,20 @@ function Observados() {
           value={repo}
         />
 
+        <select
+          aria-label={t("settings.watched.authorship")}
+          className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
+          data-locum-observar-autoria=""
+          onChange={(evento) => setAutoria(evento.target.value as Autoria)}
+          value={autoria}
+        >
+          {AUTORIAS.map((valor) => (
+            <option key={valor} value={valor}>
+              {t(ROTULO_DA_AUTORIA[valor])}
+            </option>
+          ))}
+        </select>
+
         <input
           aria-label={t("settings.watched.cadence")}
           className="border-border bg-background focus-visible:ring-ring w-20 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
@@ -1833,6 +1865,13 @@ function LinhaDoObservado({
         })
       : "";
 
+  // "De qualquer pessoa" é o padrão e não vira texto: repetir o que vale para
+  // todo gatilho em toda linha só faria a distinção pesar menos onde ela existe.
+  const autoria =
+    config.kind === "poll" && config.authorship !== "any"
+      ? t("settings.watched.by", { authorship: t(ROTULO_DA_AUTORIA[config.authorship]) })
+      : "";
+
   const quando = (ms: number | null): string =>
     ms === null ? t("settings.watched.never") : new Date(ms).toLocaleString(idioma);
 
@@ -1841,11 +1880,13 @@ function LinhaDoObservado({
       className="border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
       data-locum-gatilho={gatilho.triggerId}
       data-locum-gatilho-alvo={config.kind === "poll" ? `${config.owner ?? ""}/${config.repoMatch}` : ""}
+      data-locum-gatilho-autoria={config.kind === "poll" ? config.authorship : ""}
       data-locum-gatilho-habilitado={gatilho.enabled ? "sim" : "nao"}
       data-locum-gatilho-proxima={gatilho.nextDueAt ?? ""}
       data-locum-gatilho-ultima={gatilho.lastFireAt ?? ""}
     >
       <span className="font-mono text-xs">{alvo}</span>
+      {autoria === "" ? null : <span className="text-muted-foreground text-xs">{autoria}</span>}
       <Badge variant={gatilho.enabled ? "secondary" : "outline"}>
         {t(gatilho.enabled ? "settings.watched.on" : "settings.watched.off")}
       </Badge>

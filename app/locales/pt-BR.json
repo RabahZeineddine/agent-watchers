@@ -349,6 +349,10 @@
       "ownerHint": "organização",
       "repo": "padrão do nome do repositório",
       "repoHint": "^meu-servico$",
+      "authorship": "de quem são os pull requests",
+      "authorshipAny": "de qualquer pessoa",
+      "authorshipMine": "meus",
+      "authorshipOthers": "do time",
       "cadence": "cadência em minutos",
       "add": "observar",
       "enable": "ligar",
@@ -358,12 +362,13 @@
       "off": "parado",
       "target": "{{owner}} · {{repo}}",
       "fromEnv": "dono pelo ambiente",
+      "by": "· {{authorship}}",
       "every_one": "a cada {{count}} minuto",
       "every_other": "a cada {{count}} minutos",
       "beats": "última varredura {{last}} · próxima {{next}}",
       "never": "nunca",
       "parked": "nenhuma, o gatilho está parado",
-      "howTo": "O padrão do repositório é uma expressão regular aplicada ao nome, então \"^api-\" pega todos os que começam assim e \"^meu-servico$\" pega um só. A varredura precisa do token do GitHub guardado acima. Achado nenhum vira comentário sozinho: ele para na fila e espera o seu clique.",
+      "howTo": "O padrão do repositório é uma expressão regular aplicada ao nome, então \"^api-\" pega todos os que começam assim e \"^meu-servico$\" pega um só. A varredura precisa do token do GitHub guardado acima, e filtrar por autoria precisa dele conferido: é a conta dele que diz quais pull requests são seus. Achado nenhum vira comentário sozinho: ele para na fila e espera o seu clique.",
       "refused": "a ponte recusou: {{message}}"
     },
     "trackers": {
@@ -429,7 +434,7 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
@@ -465,7 +470,8 @@
     "picker": "configuração trocando o idioma por clique, \"{{pt}}\" e \"{{en}}\" sem recarregar, e a bandeja indo junto na mesma batida: \"{{tray}}\"",
     "schema": "migrações aplicadas: {{count}}",
     "watched": "gatilho de {{target}} cadastrado parado, ligado com a próxima batida em {{next}}, e removido",
-    "trackers": "trackers: {{service}} no Jira pelo serviço e {{window}} no GitHub pela tela, credencial do cofre, {{projects}} destinos visíveis, tarefa existente reencontrada pelo pull request, nenhum canal que abra tarefa"
+    "trackers": "trackers: {{service}} no Jira pelo serviço e {{window}} no GitHub pela tela, credencial do cofre, {{projects}} destinos visíveis, tarefa existente reencontrada pelo pull request, nenhum canal que abra tarefa",
+    "authorship": "gatilho de {{mine}} acordou só com o pull request de {{viewer}}, e o de {{others}} só com o de outra pessoa"
   },
   "status": {
     "done": "concluído",

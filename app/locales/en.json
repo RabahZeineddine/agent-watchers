@@ -349,6 +349,10 @@
       "ownerHint": "organization",
       "repo": "repository name pattern",
       "repoHint": "^my-service$",
+      "authorship": "whose pull requests",
+      "authorshipAny": "anyone's",
+      "authorshipMine": "mine",
+      "authorshipOthers": "the team's",
       "cadence": "cadence in minutes",
       "add": "watch",
       "enable": "turn on",
@@ -358,12 +362,13 @@
       "off": "parked",
       "target": "{{owner}} · {{repo}}",
       "fromEnv": "owner from the environment",
+      "by": "· {{authorship}}",
       "every_one": "every {{count}} minute",
       "every_other": "every {{count}} minutes",
       "beats": "last scan {{last}} · next {{next}}",
       "never": "never",
       "parked": "none, the trigger is parked",
-      "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token stored above. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
+      "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token stored above, and filtering by authorship needs it checked: its account is what tells which pull requests are yours. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
       "refused": "the bridge refused: {{message}}"
     },
     "trackers": {
@@ -429,7 +434,7 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, authorship with {{authorship}}, task with {{trackerIssue}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
@@ -465,7 +470,8 @@
     "picker": "settings switching the language by click, \"{{pt}}\" and \"{{en}}\" with no reload, and the tray following in the same beat: \"{{tray}}\"",
     "schema": "migrations applied: {{count}}",
     "watched": "trigger for {{target}} registered parked, turned on with the next beat at {{next}}, and removed",
-    "trackers": "trackers: {{service}} on Jira through the service and {{window}} on GitHub through the window, credential from the vault, {{projects}} visible destinations, existing task found again by pull request, no channel that opens a task"
+    "trackers": "trackers: {{service}} on Jira through the service and {{window}} on GitHub through the window, credential from the vault, {{projects}} visible destinations, existing task found again by pull request, no channel that opens a task",
+    "authorship": "the {{mine}} trigger woke only on {{viewer}}'s pull request, and the {{others}} one only on somebody else's"
   },
   "status": {
     "done": "done",

@@ -2471,6 +2471,179 @@ async function checkTrackerIssue(): Promise<string> {
 }
 
 /**
+ * Prova que o filtro de autoria decide o que acorda o agent.
+ *
+ * Os dois gatilhos olham a mesma varredura, e cada um leva só o pull request
+ * do lado que cadastrou: o de `mine` roda no que a conta do token abriu, e o
+ * de `others` no que veio de outra pessoa. É a distinção que a story pede, e
+ * ela só aparece com os dois no mesmo tick, porque um gatilho sozinho passaria
+ * por acidente se o filtro estivesse invertido.
+ *
+ * Nada aqui fala com o GitHub nem gasta assinatura: a varredura e a conta do
+ * token entram trocadas, e o serviço de execução é substituído por um que só
+ * anota o que teria rodado. Os eventos são plantados e apagados aqui mesmo,
+ * porque o smoke roda no banco de quem desenvolve.
+ */
+async function checkAuthorship(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { TriggerService } = await import("../src/services/trigger-service.js");
+  const { ExecutionService } = await import("../src/services/execution-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { Scheduler } = await import("../src/triggers/scheduler.js");
+
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para filtrar por autoria");
+
+  // Dono, repositório e logins sorteados pelo mesmo motivo do `checkWatched`:
+  // um padrão que casasse com repositório de verdade deixaria para trás, caso a
+  // limpeza falhasse, um gatilho apontado para trabalho real.
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
+  const eu = `locum-smoke-eu-${randomUUID().slice(0, 8)}`;
+  const outra = `locum-smoke-outra-${randomUUID().slice(0, 8)}`;
+  const cadencia = 7;
+
+  const meu = { eventId: `smoke-event-${randomUUID()}`, author: eu, pull: 1 };
+  const alheio = { eventId: `smoke-event-${randomUUID()}`, author: outra, pull: 2 };
+
+  for (const alvo of [meu, alheio]) {
+    await db.insert(schema.events).values({
+      id: alvo.eventId,
+      source: "github",
+      externalId: `pr:${dono}/${repo}#${alvo.pull}:sha:${randomUUID().slice(0, 7)}`,
+      payload: { owner: dono, repoName: repo, pull: alvo.pull, author: alvo.author },
+    });
+  }
+
+  const triggerService = new TriggerService(db);
+  const config = { kind: "poll" as const, source: "github", owner: dono, repoMatch: repo, everyMinutes: cadencia };
+  const doMeu = await triggerService.set(
+    agent.id,
+    { ...config, authorship: "mine" },
+    { enabled: true },
+  );
+  const doTime = await triggerService.set(
+    agent.id,
+    { ...config, authorship: "others" },
+    { enabled: true },
+  );
+
+  /** O que o agendador teria mandado executar. Nenhum run chega a existir. */
+  const pedidos: { triggerId: string; eventId: string | null }[] = [];
+  const semExecutor = new (class extends ExecutionService {
+    async startForEvent(
+      input: Parameters<InstanceType<typeof ExecutionService>["startForEvent"]>[0],
+    ) {
+      pedidos.push({ triggerId: input.triggerId ?? "", eventId: input.eventId });
+      return { runId: `smoke-run-${randomUUID()}`, status: "queued" as const };
+    }
+  })(db);
+
+  // Só os dois gatilhos plantados: o banco de quem desenvolve pode ter outro
+  // habilitado, e a batida do smoke não pode sair varrendo o que é de verdade.
+  const meus = [doMeu.id, doTime.id];
+  const soOsPlantados = new (class extends TriggerService {
+    async enabled() {
+      return (await this.list()).filter((gatilho) => meus.includes(gatilho.id));
+    }
+  })(db);
+
+  const varrer = async (owner: string): Promise<string[]> => {
+    if (owner !== dono) throw new Error(`a varredura visitou ${owner}, que nao e o dono plantado`);
+    return [meu.eventId, alheio.eventId];
+  };
+  const naoConferir = async () => ({
+    checked: 0,
+    settled: [],
+    stillOpen: 0,
+    unreadable: 0,
+    failed: [],
+  });
+
+  const agendador = new Scheduler(
+    db,
+    soOsPlantados,
+    semExecutor,
+    mcpService,
+    varrer,
+    naoConferir,
+    async () => eu,
+  );
+
+  try {
+    const batida = await agendador.tick({ reason: "timer" });
+    const achar = (triggerId: string) => {
+      const saida = batida.outcomes.find((o) => o.triggerId === triggerId);
+      if (saida === undefined) throw new Error(`o gatilho ${triggerId} ficou de fora da batida`);
+      return saida;
+    };
+
+    for (const [gatilho, esperado, rotulo] of [
+      [doMeu.id, meu.eventId, "mine"],
+      [doTime.id, alheio.eventId, "others"],
+    ] as const) {
+      const saida = achar(gatilho);
+      if (saida.status !== "fired") {
+        throw new Error(`o gatilho de ${rotulo} respondeu ${saida.status}: ${saida.detail ?? ""}`);
+      }
+      // A varredura trouxe os dois, e é isso que o contador de eventos diz: o
+      // que o filtro corta aparece na diferença entre eventos e execuções.
+      if (saida.events !== 2) {
+        throw new Error(`o gatilho de ${rotulo} contou ${saida.events} evento(s), e nao dois`);
+      }
+      const doGatilho = pedidos.filter((p) => p.triggerId === gatilho);
+      if (doGatilho.length !== 1) {
+        throw new Error(
+          `o gatilho de ${rotulo} quis executar ${doGatilho.length} evento(s), e nao um`,
+        );
+      }
+      if (doGatilho[0]?.eventId !== esperado) {
+        throw new Error(`o gatilho de ${rotulo} acordou com o evento errado`);
+      }
+      if (saida.detail === undefined) {
+        throw new Error(`o gatilho de ${rotulo} nao contou o evento que descartou`);
+      }
+    }
+
+    // O outro lado da trava: sem conta conferida não dá para dizer de quem é o
+    // pull request, e deixar passar acordaria cada gatilho com o do outro.
+    const semConta = new Scheduler(
+      db,
+      soOsPlantados,
+      semExecutor,
+      mcpService,
+      varrer,
+      naoConferir,
+      async () => null,
+    );
+    const pedidosAntes = pedidos.length;
+    // Uma hora à frente porque a batida anterior gravou o cursor: no mesmo
+    // instante os dois gatilhos responderiam `waiting` e nada seria provado.
+    const semConferir = await semConta.tick({ at: Date.now() + 3_600_000, reason: "timer" });
+    for (const saida of semConferir.outcomes) {
+      if (saida.status !== "failed") {
+        throw new Error(`sem conta conferida o gatilho respondeu ${saida.status}`);
+      }
+    }
+    if (pedidos.length !== pedidosAntes) {
+      throw new Error("sem conta conferida o agendador ainda quis executar alguma coisa");
+    }
+
+    return t("smoke.authorship", { mine: "mine", others: "others", viewer: eu });
+  } finally {
+    for (const id of meus) await triggerService.remove(id);
+    await db
+      .delete(schema.cursors)
+      .where(and(eq(schema.cursors.source, "scheduler"), inArray(schema.cursors.key, meus)));
+    await db
+      .delete(schema.events)
+      .where(inArray(schema.events.id, [meu.eventId, alheio.eventId]));
+  }
+}
+
+/**
  * Confere a secao dos repositorios observados, sem varrer nada.
  *
  * O caminho inteiro da story cabe dentro da maquina: cadastrar pela tela,
@@ -2495,6 +2668,10 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
   const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
   const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
   const cadencia = 7;
+  // Cadastrar pela tela com o filtro ligado, e não com o padrão: o que decide
+  // se o agent acorda é a autoria gravada, e um formulário que a perdesse no
+  // caminho faria a pessoa cadastrar "meus" e receber os do time inteiro.
+  const autoria = "mine";
   const antes = (await triggerService.list()).map((gatilho) => gatilho.id);
 
   const preencheu = await window.webContents.executeJavaScript(
@@ -2510,14 +2687,15 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         campo.dispatchEvent(new Event("input", { bubbles: true }));
         return true;
       };
-      const escolher = () => {
-        const campo = document.querySelector("[data-locum-observar-agent]");
+      const escolher = (seletor, valor) => {
+        const campo = document.querySelector(seletor);
         if (campo === null) return false;
-        campo.value = ${JSON.stringify(agent.id)};
+        campo.value = valor;
         campo.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       };
-      if (!escolher()) return false;
+      if (!escolher("[data-locum-observar-agent]", ${JSON.stringify(agent.id)})) return false;
+      if (!escolher("[data-locum-observar-autoria]", ${JSON.stringify(autoria)})) return false;
       if (!digitar("[data-locum-observar-dono]", ${JSON.stringify(dono)})) return false;
       if (!digitar("[data-locum-observar-repo]", ${JSON.stringify(repo)})) return false;
       if (!digitar("[data-locum-observar-cadencia]", ${JSON.stringify(String(cadencia))})) {
@@ -2557,6 +2735,9 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         `a tela gravou ${criado.config.owner}/${criado.config.repoMatch} e nao ${dono}/${repo}`,
       );
     }
+    if (criado.config.authorship !== autoria) {
+      throw new Error(`a tela gravou a autoria ${criado.config.authorship} e nao ${autoria}`);
+    }
     if (criado.config.everyMinutes !== cadencia) {
       throw new Error(`a cadencia gravada foi ${criado.config.everyMinutes} e nao ${cadencia}`);
     }
@@ -2569,7 +2750,12 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
       throw new Error(`o gatilho parado disse que bate em ${parado.nextDueAt}`);
     }
 
-    const naTela = await esperarProbe<{ habilitado: string; alvo: string; proxima: string }>(
+    const naTela = await esperarProbe<{
+      habilitado: string;
+      alvo: string;
+      autoria: string;
+      proxima: string;
+    }>(
       window,
       "gatilho na tela",
       `(() => {
@@ -2578,6 +2764,7 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         return {
           habilitado: linha.dataset.locumGatilhoHabilitado,
           alvo: linha.dataset.locumGatilhoAlvo,
+          autoria: linha.dataset.locumGatilhoAutoria,
           proxima: linha.dataset.locumGatilhoProxima,
         };
       })()`,
@@ -2585,6 +2772,9 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
     if (naTela.habilitado !== "nao") throw new Error("a tela mostrou o gatilho novo como ligado");
     if (naTela.alvo !== `${dono}/${repo}`) {
       throw new Error(`a tela mostrou o alvo ${naTela.alvo} e o cadastro diz ${dono}/${repo}`);
+    }
+    if (naTela.autoria !== autoria) {
+      throw new Error(`a tela mostrou a autoria ${naTela.autoria} e o cadastro diz ${autoria}`);
     }
     if (naTela.proxima !== "") {
       throw new Error(`a tela anunciou a batida ${naTela.proxima} de um gatilho parado`);
@@ -3952,6 +4142,7 @@ async function main(): Promise<void> {
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const conferencia = await checkReconcile();
+    const autoria = await checkAuthorship();
     const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
@@ -3968,6 +4159,7 @@ async function main(): Promise<void> {
         secrets,
         notifications: avisos,
         reconcile: conferencia,
+        authorship: autoria,
         trackerIssue: tarefa,
         deepLink,
         bridge: ponte,

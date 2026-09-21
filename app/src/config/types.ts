@@ -198,6 +198,19 @@ export const WebhookTrigger = z.object({
   path: z.string().min(1),
 });
 
+/**
+ * De quem são os pull requests que este gatilho acorda.
+ *
+ * A distinção existe porque o que se faz com cada um é diferente: no que é
+ * seu, abrir a tarefa do que falta; no do time, revisar. Ela mora no gatilho e
+ * não no agent, porque o mesmo agent serve aos dois com dois cadastros.
+ *
+ * `any` é o padrão para que gatilho gravado antes deste campo continue
+ * acordando com tudo, que é o que ele fazia.
+ */
+export const Authorship = z.enum(["any", "mine", "others"]);
+export type Authorship = z.infer<typeof Authorship>;
+
 export const PollTrigger = z.object({
   kind: z.literal("poll"),
   /** Fonte cadastrada, hoje so `github`. */
@@ -214,6 +227,11 @@ export const PollTrigger = z.object({
   owner: z.string().min(1).optional(),
   /** Expressao aplicada ao nome do repositorio, como no comando `poll`. */
   repoMatch: z.string().min(1),
+  /**
+   * Filtro de autoria. O autor vem do evento que a varredura já gravou, e o
+   * outro lado da comparação é a conta do token conferida na configuração.
+   */
+  authorship: Authorship.default("any"),
   everyMinutes: z.number().int().min(1).default(15),
 });
 

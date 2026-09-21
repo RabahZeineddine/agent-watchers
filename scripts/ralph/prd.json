@@ -582,7 +582,7 @@
       "description": "A versão Python distinguia pull request seu de pull request do time, porque o que se faz com cada um é diferente: no seu, abrir a tarefa; no do time, revisar. O gatilho ganha essa distinção, e o agent pode reagir a uma das duas ou às duas. O dono vem do autor já guardado no evento, comparado com o usuário autenticado no GitHub.",
       "done_when": "Um gatilho restrito aos próprios pull requests ignora evento de autor diferente, e o contrário também.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
