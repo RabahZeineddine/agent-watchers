@@ -529,6 +529,72 @@
       "verify": "test -f ../docs/primeira-execucao.md",
       "passes": true,
       "blocked": false
+    },
+    {
+      "id": "M7.1",
+      "milestone": "M7",
+      "priority": 91,
+      "title": "Credencial de provedor pela interface",
+      "description": "A seção de provedores diz o que falta e não deixa resolver: hoje se edita .env e reabre o app. Acrescentar campo de senha por provedor, gravando no keychain pelo CredentialService, com um teste que chama o catálogo de modelos daquele provedor e informa quantos voltaram. O estado passa de indisponível para disponível sem reabrir a janela. O valor nunca é mostrado nem registrado, só se há valor guardado e quando foi conferido. O encanamento já existe: o registro procura no cofre antes da variável de ambiente.",
+      "done_when": "Uma credencial gravada pela interface torna o provedor disponível e o catálogo dele responde, sem variável de ambiente.",
+      "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M7.2",
+      "milestone": "M7",
+      "priority": 92,
+      "title": "Provedor compatível com OpenAI cadastrável",
+      "description": "A lista de provedores é fixa no código, então um segundo gateway, um Ollama em outra máquina ou um OpenRouter não têm onde entrar. Permitir cadastrar provedores do tipo openai-compatible no banco: identificador, nome, endereço base e credencial. O registro passa a montar a lista a partir dos fixos mais os cadastrados. Identificador precisa ser único e não pode colidir com os fixos. Remover provedor cadastrado que esteja em uso por algum passo avisa antes.",
+      "done_when": "Dois provedores compatíveis cadastrados aparecem no registro, cada um com o próprio catálogo, e um passo pode apontar para qualquer um dos dois.",
+      "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M7.3",
+      "milestone": "M7",
+      "priority": 93,
+      "title": "Adaptador de tracker de tarefa",
+      "description": "Trazer de volta o que existia na versão Python. Um TrackerService com provedores para Jira e GitHub Issues, credencial no keychain, e as operações de buscar projeto, criar item e procurar item existente pelo pull request, para não duplicar. Cadastro e teste de conexão na configuração, no mesmo formato do GitHub.",
+      "done_when": "Um tracker cadastrado responde ao teste de conexão e lista os projetos visíveis, com credencial vinda do cofre.",
+      "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M7.4",
+      "milestone": "M7",
+      "priority": 94,
+      "title": "Passo de ação que cria a tarefa",
+      "description": "Um passo de ação tracker.create_issue que monta o item a partir do pull request e da auditoria: título no padrão do time, objetivo, o que mudou, o que testar e os links. O corpo é gerado por um passo de modelo antes dele, não pelo handler.\n\nEste passo nasce e permanece em modo de aprovação, sem rascunho e sem automático, e o handler recusa qualquer outro modo. Card aberto em nome de uma pessoa é exatamente o que a regra do dono do repositório proíbe sair sem o sim dela, e aqui a trava é de código e não de configuração.",
+      "done_when": "Com evento sintético, o passo produz o item proposto, para o run e cria a pendência, e o handler recusa modo diferente de aprovação.",
+      "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M7.5",
+      "milestone": "M7",
+      "priority": 95,
+      "title": "Filtro de quem é o dono do pull request",
+      "description": "A versão Python distinguia pull request seu de pull request do time, porque o que se faz com cada um é diferente: no seu, abrir a tarefa; no do time, revisar. O gatilho ganha essa distinção, e o agent pode reagir a uma das duas ou às duas. O dono vem do autor já guardado no evento, comparado com o usuário autenticado no GitHub.",
+      "done_when": "Um gatilho restrito aos próprios pull requests ignora evento de autor diferente, e o contrário também.",
+      "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
+      "passes": false,
+      "blocked": false
+    },
+    {
+      "id": "M7.6",
+      "milestone": "M7",
+      "priority": 96,
+      "title": "Documentar provedores e tarefas",
+      "description": "Atualizar docs/primeira-execucao.md com o cadastro de provedor pela interface, e escrever a seção sobre tracker: onde pegar a credencial, o que o Locum cria, e por que criar tarefa nunca é automático.",
+      "done_when": "Os dois assuntos estão documentados e o guia continua na ordem em que alguém faria.",
+      "verify": "test -f ../docs/primeira-execucao.md && grep -q tracker ../docs/primeira-execucao.md",
+      "passes": false,
+      "blocked": false
     }
   ]
 }

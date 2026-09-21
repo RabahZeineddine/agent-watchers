@@ -93,6 +93,12 @@ chamar a API do GitHub com credencial real, não observar repositório nenhum. A
 stories constroem o caminho; quem conecta é o dono do repositório, com o token
 dele. Verificação continua sendo com evento sintético.
 
+**Abrir tarefa nunca é automático.** O dono do repositório tem uma regra
+pessoal: nada que apareça assinado por ele para terceiros sai sem o sim dele, e
+card em sistema de tarefa está nomeado nela. O passo que cria tarefa nasce e
+permanece em modo de aprovação, e o handler recusa qualquer outro modo. A trava
+é de código, não de configuração.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
