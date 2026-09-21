@@ -560,7 +560,7 @@
       "description": "Trazer de volta o que existia na versão Python. Um TrackerService com provedores para Jira e GitHub Issues, credencial no keychain, e as operações de buscar projeto, criar item e procurar item existente pelo pull request, para não duplicar. Cadastro e teste de conexão na configuração, no mesmo formato do GitHub.",
       "done_when": "Um tracker cadastrado responde ao teste de conexão e lista os projetos visíveis, com credencial vinda do cofre.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

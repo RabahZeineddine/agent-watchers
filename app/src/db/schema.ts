@@ -270,6 +270,33 @@ export const mcpServers = sqliteTable("mcp_servers", {
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 });
 
+/**
+ * Onde a tarefa vai parar: um Jira ou um repositorio de issues do GitHub.
+ *
+ * Tabela propria, e nao uma linha em `mcp_servers` ou em `providers`: o que se
+ * cadastra aqui nao sobe processo nem responde modelo, e a unica coisa que os
+ * tres tem em comum e apontar para uma credencial do cofre.
+ *
+ * O `enabled` nasce ligado porque cadastrar tracker nao dispara nada sozinho:
+ * quem abre tarefa e o passo de acao, que nasce em modo de aprovacao e para na
+ * fila. O interruptor serve para tirar um destino de circulacao sem apagar o
+ * cadastro e a chave junto.
+ */
+export const trackers = sqliteTable("trackers", {
+  id: text("id").primaryKey(),
+  /** jira | github-issues */
+  kind: text("kind").notNull(),
+  label: text("label").notNull(),
+  baseUrl: text("base_url").notNull(),
+  /** Destino padrao: chave do projeto no Jira, `dono/repo` no GitHub. */
+  project: text("project"),
+  /** Quem a credencial autentica. O Jira exige o e-mail junto do token. */
+  account: text("account"),
+  /** Chave no keychain, nunca o segredo. */
+  credentialRef: text("credential_ref"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+});
+
 export const budgets = sqliteTable("budgets", {
   id: text("id").primaryKey(),
   agentId: text("agent_id").references(() => agents.id),

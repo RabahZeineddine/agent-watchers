@@ -19,6 +19,7 @@ import { metricsService } from "../src/services/metrics-service.js";
 import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
 import { startupService } from "../src/services/startup-service.js";
+import { trackerService } from "../src/services/tracker-service.js";
 import { triggerService } from "../src/services/trigger-service.js";
 import { scheduler } from "../src/triggers/scheduler.js";
 import { refreshTray } from "./tray.js";
@@ -140,6 +141,16 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "github.save": (token) => githubService.setToken(token),
     "github.forget": () => githubService.clearToken(),
     "github.check": () => githubService.check(),
+
+    "trackers.list": () => trackerService.list(),
+    "trackers.register": (cadastro) => trackerService.register(cadastro),
+    "trackers.remove": (id) => trackerService.remove(id),
+    "trackers.setEnabled": (id, enabled) => trackerService.setEnabled(id, enabled),
+    "trackers.setProject": (id, projeto) => trackerService.setProject(id, projeto),
+    "trackers.saveSecret": (id, credencial) => trackerService.setSecret(id, credencial),
+    "trackers.forgetSecret": (id) => trackerService.clearSecret(id),
+    "trackers.test": (id) => trackerService.testConnection(id),
+    "trackers.projects": (id) => trackerService.listProjects(id),
 
     "metrics.report": (options) => metricsService.report(options),
     "machine.profile": () => machineService.profile(),

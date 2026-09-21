@@ -1460,6 +1460,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   const registered = await checkRegisteredProviders(window);
   const github = await checkGithub(window);
   const watched = await checkWatched(window);
+  const trackers = await checkTrackers(window);
 
   return t("smoke.config", {
     providers: provedores.length,
@@ -1472,6 +1473,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     registered,
     github,
     watched,
+    trackers,
   });
 }
 
@@ -1930,6 +1932,357 @@ async function checkRegisteredProviders(window: BrowserWindow): Promise<string> 
   }
 
   return t("smoke.registeredProviders", { service: idDoServico, window: idDaTela });
+}
+
+/**
+ * Confere o tracker de tarefa, sem Jira e sem GitHub de verdade.
+ *
+ * O caminho inteiro da story cabe dentro da máquina: os dois cadastros apontam
+ * para um servidor de poucas linhas escutando em 127.0.0.1, que responde as
+ * rotas do Jira e as do GitHub, e as credenciais são sorteadas. Nada sai da
+ * placa de loopback, e nenhuma conta de ninguém é tocada.
+ *
+ * As duas listas de destino têm tamanhos diferentes de propósito. É o que
+ * separa "os dois cadastros respondem" de "cada adaptador fala a língua do
+ * serviço dele": com listas iguais, um adaptador que batesse na rota errada
+ * passaria.
+ *
+ * Um entra pelo serviço e o outro pela tela, porque são dois códigos
+ * diferentes. Criar tarefa não é exercitado, e não é omissão: pela regra do
+ * marco, abrir tarefa nunca é automático, e o que este exame confere sobre isso
+ * é que a ponte não tem por onde. O caminho de criar só existe atrás da fila de
+ * aprovação, e ele é assunto da próxima story.
+ */
+async function checkTrackers(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { trackerCredentialRef, trackerService } = await import(
+    "../src/services/tracker-service.js"
+  );
+  const { BRIDGE_CHANNELS } = await import("./bridge-contract.js");
+
+  if (!secretService.available) throw new Error("keychain indisponivel para o cofre do tracker");
+
+  // A ponte não pode ter por onde abrir tarefa. A guarda de tipo do contrato já
+  // para o build, e esta é a mesma pergunta feita em tempo de execução, contra
+  // a lista que o preload realmente registra.
+  const abertura = BRIDGE_CHANNELS.filter(
+    (canal) => canal.startsWith("trackers.") && /create|issue/i.test(canal),
+  );
+  if (abertura.length > 0) {
+    throw new Error(`a ponte expoe canal que abre tarefa: ${abertura.join(", ")}`);
+  }
+
+  const idDoServico = `locum-smoke-jira-${randomUUID().slice(0, 6)}`;
+  const idDaTela = `locum-smoke-gh-${randomUUID().slice(0, 6)}`;
+  const contaDoJira = `smoke-${randomUUID().slice(0, 8)}@exemplo.invalido`;
+  const tokenDoJira = `token-de-mentira-${randomUUID()}`;
+  const tokenDoGithub = `token-de-mentira-${randomUUID()}`;
+  const projetoDoJira = "SMOKE";
+  const repoDaTela = "locum-smoke/exemplo";
+  const pullRequest = "https://github.com/locum-smoke/exemplo/pull/42";
+  const tarefaExistente = `${projetoDoJira}-7`;
+  const nomeDoServico = `Jira ${idDoServico}`;
+  const nomeDaTela = `Issues ${idDaTela}`;
+
+  /**
+   * Um tracker de mentira que fala as duas línguas.
+   *
+   * As rotas do Jira e as do GitHub não colidem, então um servidor só atende os
+   * dois cadastros e ainda guarda quem procurou com qual credencial, que é o
+   * que prova que o segredo saiu do cofre e não de outro lugar.
+   */
+  const autorizacoes: Record<string, string | undefined> = {};
+  const servidor = createServer((requisicao, resposta) => {
+    const caminho = requisicao.url ?? "";
+    const responder = (corpo: unknown): void => {
+      resposta.setHeader("content-type", "application/json");
+      resposta.end(JSON.stringify(corpo));
+    };
+
+    if (caminho.startsWith("/rest/api/3/project/search")) {
+      autorizacoes.jira = requisicao.headers.authorization;
+      responder({
+        values: [
+          { key: projetoDoJira, name: "Smoke" },
+          { key: "OUTRO", name: "Outro" },
+          { key: "TERCEIRO", name: "Terceiro" },
+        ],
+      });
+      return;
+    }
+
+    if (caminho.startsWith("/rest/api/3/search/jql")) {
+      autorizacoes.jira = requisicao.headers.authorization;
+      const pedacos: Buffer[] = [];
+      requisicao.on("data", (pedaco: Buffer) => pedacos.push(pedaco));
+      requisicao.on("end", () => {
+        // A tarefa só é devolvida quando a consulta cita o pull request. Um
+        // servidor que respondesse sempre a mesma coisa não separaria "achou o
+        // que ja existe" de "devolve qualquer tarefa".
+        const corpo = Buffer.concat(pedacos).toString("utf8");
+        const citou = corpo.includes(pullRequest);
+        responder({
+          issues: citou ? [{ key: tarefaExistente, fields: { summary: "ja aberta" } }] : [],
+        });
+      });
+      return;
+    }
+
+    if (caminho.startsWith("/user/repos")) {
+      autorizacoes.github = requisicao.headers.authorization;
+      responder([{ full_name: repoDaTela, name: "exemplo" }, { full_name: "locum-smoke/outro" }]);
+      return;
+    }
+
+    resposta.statusCode = 404;
+    // A chave não é `message` de propósito: a guarda de i18n varre propriedade
+    // que o Electron pinta, e o corpo de um 404 de mentira não é texto de tela.
+    responder({ rota: caminho });
+  });
+
+  await new Promise<void>((resolve) => {
+    servidor.listen(0, "127.0.0.1", resolve);
+  });
+  const baseUrl = `http://127.0.0.1:${(servidor.address() as { port: number }).port}`;
+
+  try {
+    await trackerService.register({
+      id: idDoServico,
+      kind: "jira",
+      label: nomeDoServico,
+      baseUrl,
+      account: contaDoJira,
+      project: projetoDoJira,
+    });
+
+    // O Jira autentica por e-mail e token, e o cadastro sem e-mail cria um
+    // tracker que só falharia dentro de uma execução. Tipo inventado e
+    // identificador repetido também são recusa.
+    const recusas: { motivo: string; cadastro: Parameters<typeof trackerService.register>[0] }[] = [
+      {
+        motivo: "jira sem e-mail",
+        cadastro: { id: `${idDoServico}-b`, kind: "jira", label: nomeDoServico, baseUrl },
+      },
+      {
+        motivo: "tipo inventado",
+        cadastro: { id: `${idDoServico}-c`, kind: "trello", label: nomeDoServico, baseUrl },
+      },
+      {
+        motivo: "identificador repetido",
+        cadastro: {
+          id: idDoServico,
+          kind: "jira",
+          label: nomeDoServico,
+          baseUrl,
+          account: contaDoJira,
+        },
+      },
+    ];
+    for (const { motivo, cadastro } of recusas) {
+      const recusou = await trackerService.register(cadastro).then(
+        () => false,
+        () => true,
+      );
+      if (!recusou) throw new Error(`o cadastro de tracker aceitou ${motivo}`);
+    }
+
+    // Sem credencial o teste responde de dentro da máquina, sem sair.
+    const semCredencial = await trackerService.testConnection(idDoServico);
+    if (semCredencial.ok || semCredencial.reason !== "missing") {
+      throw new Error(`o teste sem credencial respondeu ${JSON.stringify(semCredencial)}`);
+    }
+
+    await trackerService.setSecret(idDoServico, tokenDoJira);
+    const doServico = await trackerService.testConnection(idDoServico);
+    if (!doServico.ok) throw new Error(`o Jira de mentira recusou: ${JSON.stringify(doServico)}`);
+    if (doServico.count !== 3) throw new Error(`o Jira listou ${doServico.count} destino(s)`);
+
+    // A credencial chegou pela autenticação básica, montada com o e-mail do
+    // cadastro e o token do cofre. É o que prova que o segredo saiu de lá.
+    const basica = `Basic ${Buffer.from(`${contaDoJira}:${tokenDoJira}`).toString("base64")}`;
+    if (autorizacoes.jira !== basica) {
+      throw new Error("o Jira foi procurado com credencial que nao veio do cofre");
+    }
+
+    const destinos = await trackerService.listProjects(idDoServico);
+    if (!destinos.some((destino) => destino.key === projetoDoJira)) {
+      throw new Error(`os destinos do Jira sao ${destinos.map((d) => d.key).join(",")}`);
+    }
+
+    // A procura por pull request, que é o que impede a segunda execução de
+    // abrir uma segunda tarefa sobre o mesmo pull request.
+    const achada = await trackerService.findIssueForPullRequest(idDoServico, pullRequest);
+    if (achada?.key !== tarefaExistente) {
+      throw new Error(`a procura devolveu ${JSON.stringify(achada)}`);
+    }
+    const semTarefa = await trackerService.findIssueForPullRequest(
+      idDoServico,
+      "https://github.com/locum-smoke/exemplo/pull/999",
+    );
+    if (semTarefa !== null) throw new Error("a procura inventou tarefa para um pull request novo");
+
+    // O segundo pela tela, que é o que a story entrega.
+    const preencheu = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const digitar = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          setter.call(campo, valor);
+          campo.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        const tipo = document.querySelector("[data-locum-tracker-tipo]");
+        if (tipo === null) return false;
+        const seletorDeTipo = Object.getOwnPropertyDescriptor(
+          window.HTMLSelectElement.prototype,
+          "value",
+        ).set;
+        seletorDeTipo.call(tipo, "github-issues");
+        tipo.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!digitar("[data-locum-tracker-id]", ${JSON.stringify(idDaTela)})) return false;
+        if (!digitar("[data-locum-tracker-nome]", ${JSON.stringify(nomeDaTela)})) return false;
+        if (!digitar("[data-locum-tracker-url]", ${JSON.stringify(baseUrl)})) return false;
+        if (!digitar("[data-locum-tracker-projeto]", ${JSON.stringify(repoDaTela)})) return false;
+        const botao = document.querySelector("[data-locum-tracker-salvar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de tracker");
+
+    const naTela = await esperarProbe<Record<string, string>>(
+      window,
+      "trackers na tela",
+      `(() => {
+        const linhas = Array.from(document.querySelectorAll("[data-locum-tracker]"));
+        const achados = Object.fromEntries(
+          linhas.map((e) => [e.dataset.locumTracker, e.dataset.locumTrackerKind]),
+        );
+        return ${JSON.stringify(idDaTela)} in achados ? achados : null;
+      })()`,
+    );
+    if (naTela[idDoServico] !== "jira" || naTela[idDaTela] !== "github-issues") {
+      throw new Error(`a tela listou ${JSON.stringify(naTela)}`);
+    }
+
+    // A credencial indo da tela para o cofre, e voltando como "guardada" e
+    // nunca como valor: não existe canal que a devolva.
+    const guardou = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const campo = document.querySelector('[data-locum-tracker-credencial="${idDaTela}"]');
+        if (campo === null || campo.disabled) return false;
+        setter.call(campo, ${JSON.stringify(tokenDoGithub)});
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+        const botao = document.querySelector('[data-locum-tracker-guardar="${idDaTela}"]');
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (guardou !== true) throw new Error("a tela nao ofereceu campo de credencial do tracker");
+
+    await esperarProbe<true>(
+      window,
+      `credencial de ${idDaTela}`,
+      `(() => {
+        const linha = document.querySelector('[data-locum-tracker="${idDaTela}"]');
+        return linha !== null && linha.dataset.locumTrackerGuardado === "sim" ? true : null;
+      })()`,
+    );
+    if (!secretService.has(trackerCredentialRef(idDaTela))) {
+      throw new Error("a credencial digitada na tela nao chegou ao cofre");
+    }
+
+    // O clique de testar, que é o que a story pede: a tela pergunta os destinos
+    // visíveis, e a resposta é do adaptador do GitHub, em outra rota.
+    const clicou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-tracker-testar="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (clicou !== true) throw new Error(`a tela nao ofereceu botao de testar ${idDaTela}`);
+
+    const resultado = await esperarProbe<{ ok: string; projetos: number }>(
+      window,
+      `teste de ${idDaTela}`,
+      `(() => {
+        const probe = document.querySelector('[data-locum-tracker-teste="${idDaTela}"]');
+        if (probe === null) return null;
+        return { ok: probe.dataset.locumOk, projetos: Number(probe.dataset.locumProjetos) };
+      })()`,
+    );
+    if (resultado.ok !== "sim") {
+      throw new Error(`a tela disse "${resultado.ok}" para o teste do tracker`);
+    }
+    if (resultado.projetos !== 2) {
+      throw new Error(`a tela contou ${resultado.projetos} destino(s) e o GitHub de mentira tem 2`);
+    }
+    if (autorizacoes.github !== `Bearer ${tokenDoGithub}`) {
+      throw new Error("o GitHub foi procurado com credencial que nao veio do cofre");
+    }
+
+    // A remoção pela tela, que apaga cadastro e credencial juntos: deixar o
+    // segredo guardaria um token que nada mais lê.
+    const removeu = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-tracker-remover="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (removeu !== true) throw new Error(`a tela nao ofereceu botao de remover ${idDaTela}`);
+
+    await esperarProbe<true>(
+      window,
+      `remocao de ${idDaTela}`,
+      `document.querySelector('[data-locum-tracker="${idDaTela}"]') === null ? true : null`,
+    );
+    if (secretService.has(trackerCredentialRef(idDaTela))) {
+      throw new Error("a credencial do tracker removido ficou no cofre");
+    }
+
+    if (!(await trackerService.remove(idDoServico))) {
+      throw new Error("o tracker cadastrado pelo servico nao saiu");
+    }
+    if (secretService.has(trackerCredentialRef(idDoServico))) {
+      throw new Error("a credencial do tracker removido pelo servico ficou no cofre");
+    }
+  } finally {
+    // A limpeza não confia em o exame ter chegado ao fim: o que ele planta no
+    // banco e no cofre de quem desenvolve sai daqui mesmo quando uma linha
+    // acima estourou.
+    for (const id of [idDoServico, idDaTela]) {
+      const ref = trackerCredentialRef(id);
+      secretService.remove(ref);
+      await settingsService.remove(`tracker:${ref}:checkedAt`);
+      await settingsService.remove(`tracker:${ref}:projects`);
+      await db.delete(schema.trackers).where(eq(schema.trackers.id, id));
+    }
+    await new Promise<void>((resolve) => servidor.close(() => resolve()));
+  }
+
+  return t("smoke.trackers", {
+    service: idDoServico,
+    window: idDaTela,
+    projects: 5,
+  });
 }
 
 /**

@@ -9,6 +9,7 @@ import type { MetricsService } from "../src/services/metrics-service.js";
 import type { ProviderService } from "../src/services/provider-service.js";
 import type { RunService } from "../src/services/run-service.js";
 import type { StartupService } from "../src/services/startup-service.js";
+import type { TrackerService } from "../src/services/tracker-service.js";
 import type { TriggerService } from "../src/services/trigger-service.js";
 import type { Scheduler } from "../src/triggers/scheduler.js";
 
@@ -153,6 +154,31 @@ interface ServiceApi {
   "github.forget": GithubService["clearToken"];
   "github.check": GithubService["check"];
 
+  /**
+   * O tracker de tarefa: cadastrar, apontar destino e testar.
+   *
+   * O segredo atravessa numa direção só, como no GitHub e nos provedores:
+   * `saveSecret` leva o que alguém digitou até o keychain, e nenhum canal o
+   * traz de volta. `list` responde endereço, se há valor guardado e o que a
+   * última conferência contou.
+   *
+   * `test` e `projects` falam com o tracker daqui, e nenhum dos dois publica:
+   * os dois perguntam quais destinos a credencial enxerga. Criar tarefa não
+   * tem canal, e a guarda logo abaixo impede que ganhe um por descuido: pela
+   * regra do marco, abrir tarefa nunca é automático, então o único caminho até
+   * o `createIssue` do serviço é o passo de ação, que para na fila de
+   * aprovação até alguém clicar.
+   */
+  "trackers.list": TrackerService["list"];
+  "trackers.register": TrackerService["register"];
+  "trackers.remove": TrackerService["remove"];
+  "trackers.setEnabled": TrackerService["setEnabled"];
+  "trackers.setProject": TrackerService["setProject"];
+  "trackers.saveSecret": TrackerService["setSecret"];
+  "trackers.forgetSecret": TrackerService["clearSecret"];
+  "trackers.test": TrackerService["testConnection"];
+  "trackers.projects": TrackerService["listProjects"];
+
   "metrics.report": MetricsService["report"];
   "machine.profile": MachineService["profile"];
 
@@ -253,6 +279,15 @@ export const BRIDGE_CHANNELS = [
   "github.save",
   "github.forget",
   "github.check",
+  "trackers.list",
+  "trackers.register",
+  "trackers.remove",
+  "trackers.setEnabled",
+  "trackers.setProject",
+  "trackers.saveSecret",
+  "trackers.forgetSecret",
+  "trackers.test",
+  "trackers.projects",
   "metrics.report",
   "machine.profile",
   "triggers.list",
@@ -272,6 +307,24 @@ export const BRIDGE_CHANNELS = [
 ] as const satisfies readonly (keyof LocumApi)[];
 
 export type BridgeChannel = (typeof BRIDGE_CHANNELS)[number];
+
+/**
+ * Guarda de compilacao contra a ponte ganhar um canal que abre tarefa.
+ *
+ * Revisao humana esquece, e o `createIssue` do `TrackerService` esta a um
+ * `"trackers.create"` de distancia de virar canal. Pela regra do marco, abrir
+ * tarefa nunca e automatico: o unico caminho e o passo de acao, que nasce em
+ * modo de aprovacao e para na fila. Se um canal desses entrar na lista acima, o
+ * `Extract` deixa de ser `never` e o `npm run build` para antes de a janela
+ * enxerga-lo.
+ */
+type SemAberturaDeTarefa = [
+  Extract<BridgeChannel, `trackers.create${string}` | `trackers.issue${string}`>,
+] extends [never]
+  ? true
+  : never;
+const _semAberturaDeTarefa: SemAberturaDeTarefa = true;
+void _semAberturaDeTarefa;
 
 type GroupOf<K extends string> = K extends `${infer G}.${string}` ? G : never;
 type MemberOf<G extends string, K extends string> = K extends `${G}.${infer M}` ? M : never;

@@ -13,8 +13,8 @@ que a interface vai usar.
 
 | área | estado |
 |---|---|
-| esquema SQLite com 17 tabelas | pronto |
-| migração de esquema no aplicativo | duas migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
+| esquema SQLite com 18 tabelas | pronto |
+| migração de esquema no aplicativo | três migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
 | provedor compatível com OpenAI cadastrável | identificador, nome e endereço base no banco, o registro monta os fixos mais os cadastrados, chave própria no keychain e remoção avisando onde o provedor aparece |
@@ -26,13 +26,14 @@ que a interface vai usar.
 | fila de aprovação com identificador externo antes da publicação | pronto |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
+| tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token; disparado pela batida do agendador, com cursor próprio por execução |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
-| camada de serviço, dez serviços | pronto |
+| camada de serviço, vinte serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
@@ -41,7 +42,7 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 49 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 58 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
@@ -722,6 +723,13 @@ para a mesma pergunta. Cada gatilho tem seu cursor de tempo na tabela
 acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
 principal do Electron, em `app/electron/power.ts`, no `resume` do
 `powerMonitor`, e o tempo que a máquina passou dormindo vai para o log.
+
+O tracker de tarefa tem cadastro, credencial e teste de conexão, e não tem
+botão de abrir tarefa. Não é falta: pela decisão do marco, abrir tarefa nunca é
+automático, então o `createIssue` do serviço só é alcançável pelo passo de ação,
+que nasce em modo de aprovação e para na fila. A ponte não expõe canal que crie
+tarefa, e duas guardas sustentam isso: uma de tipo no contrato, que para o
+build, e uma no `--smoke`, que varre a lista de canais registrados.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as

@@ -48,3 +48,4 @@
 2026-09-20  M6.5  feito      guia da primeira execução real, seis passos na ordem e a promessa do clique
 2026-09-21  M7.1  feito      chave de provedor pela interface, keychain e catalogo, verify limpo
 2026-09-21  M7.2  feito      provedor compatível cadastrável no banco, registro monta fixos mais cadastrados, dois catálogos no smoke e remoção avisando o uso
+2026-09-21  M7.3  feito      tracker de tarefa com Jira e GitHub Issues, credencial no keychain, teste de conexão e destinos pela tela, ponte sem canal que abra tarefa

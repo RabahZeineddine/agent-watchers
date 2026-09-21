@@ -17,6 +17,8 @@ type ChaveDeProvedor = ReadResult<"providers.credentials">[number];
 type ConferenciaDeProvedor = ReadResult<"providers.checkSecret">;
 type EstadoDoGithub = ReadResult<"github.status">;
 type ConferenciaDoGithub = ReadResult<"github.check">;
+type Tracker = ReadResult<"trackers.list">[number];
+type TesteDoTracker = ReadResult<"trackers.test">;
 type Gatilho = ReadResult<"triggers.schedule">[number];
 type Ferramenta = ReadResult<"mcp.tools">[number];
 type Teste = ReadResult<"mcp.test">;
@@ -181,6 +183,13 @@ export function Configuracao() {
         titulo={t("settings.watched.title")}
       >
         <Observados />
+      </Secao>
+
+      <Secao
+        descricao={t("settings.trackers.description")}
+        titulo={t("settings.trackers.title")}
+      >
+        <Trackers />
       </Secao>
 
       <Secao
@@ -1210,6 +1219,413 @@ function ResultadoDoGithub({ conferencia }: { conferencia: Conferencia }) {
       {resultado.reason === "missing"
         ? t("settings.github.missing")
         : t("settings.github.failed", { error: resultado.message })}
+    </p>
+  );
+}
+
+/* ----------------------------------------------------------------- trackers */
+
+type ExameDoTracker =
+  | { fase: "parado" }
+  | { fase: "testando" }
+  | { fase: "respondeu"; resultado: TesteDoTracker }
+  | { fase: "recusado"; erro: string };
+
+/**
+ * Onde a tarefa vai parar: um Jira ou um repositório de issues do GitHub.
+ *
+ * O cadastro é o mesmo desenho da credencial do GitHub, logo acima: o que se
+ * digita sai daqui numa direção só, para o keychain, e o que fica visível é se
+ * existe algo guardado, quando foi o último teste e quantos destinos ele
+ * enxergou. Não existe canal que devolva o valor.
+ *
+ * Testar pergunta ao tracker quais projetos a credencial alcança. É o teste de
+ * conexão inteiro, e não um endpoint de saúde à parte: "o serviço está no ar"
+ * responde bem para um token sem permissão de projeto nenhum, que é justamente
+ * o caso em que alguém precisa saber que não vai funcionar.
+ *
+ * Abrir tarefa não tem botão aqui, e nem canal na ponte. Quem abre é o passo
+ * de ação, que nasce em modo de aprovação e para na fila até alguém clicar.
+ */
+function Trackers() {
+  const { t } = useTranslation();
+  const inicial = useRead("trackers.list");
+  const [relido, setRelido] = useState<Tracker[] | null>(null);
+  const [tipo, setTipo] = useState<Tracker["kind"]>("jira");
+  const [id, setId] = useState("");
+  const [nome, setNome] = useState("");
+  const [url, setUrl] = useState("");
+  const [conta, setConta] = useState("");
+  const [projeto, setProjeto] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const lista = relido ?? inicial.data ?? [];
+  const recusa = erro ?? inicial.error?.message ?? null;
+
+  const reler = (): Promise<void> =>
+    read("trackers.list").then(setRelido, (falha: unknown) =>
+      setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): Promise<void> => {
+    setOcupado(true);
+    return acao
+      .then(
+        () => setErro(null),
+        (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+      )
+      .then(reler)
+      .finally(() => setOcupado(false));
+  };
+
+  const cadastrar = (): void => {
+    void agir(
+      call("trackers.register", {
+        id: id.trim(),
+        kind: tipo,
+        label: nome.trim(),
+        baseUrl: url.trim(),
+        account: conta.trim(),
+        project: projeto.trim(),
+      }).then(() => {
+        setId("");
+        setNome("");
+        setUrl("");
+        setConta("");
+        setProjeto("");
+      }),
+    );
+  };
+
+  // O e-mail só é exigido no Jira, e o endereço só no Jira também: o GitHub
+  // tem um de fábrica, e pedir que alguém digite api.github.com é cerimônia.
+  const valido =
+    id.trim() !== "" &&
+    nome.trim() !== "" &&
+    (tipo !== "jira" || (url.trim() !== "" && conta.trim() !== ""));
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-probe="trackers"
+      data-locum-trackers={lista.map((tracker) => tracker.id).join(",")}
+    >
+      {lista.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.trackers.empty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {lista.map((tracker) => (
+            <LinhaDoTracker
+              key={tracker.id}
+              ocupado={ocupado}
+              recarregar={reler}
+              tracker={tracker}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label={t("settings.trackers.kind")}
+          className="border-border bg-background focus-visible:ring-ring rounded-md border px-2 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-tipo=""
+          onChange={(evento) => setTipo(evento.target.value as Tracker["kind"])}
+          value={tipo}
+        >
+          <option value="jira">{t("settings.trackers.kindJira")}</option>
+          <option value="github-issues">{t("settings.trackers.kindGithub")}</option>
+        </select>
+        <input
+          aria-label={t("settings.trackers.id")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-36 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-id=""
+          onChange={(evento) => setId(evento.target.value)}
+          placeholder={t("settings.trackers.idHint")}
+          spellCheck={false}
+          value={id}
+        />
+        <input
+          aria-label={t("settings.trackers.label")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-nome=""
+          onChange={(evento) => setNome(evento.target.value)}
+          placeholder={t("settings.trackers.labelHint")}
+          spellCheck={false}
+          value={nome}
+        />
+        <input
+          aria-label={t("settings.trackers.baseUrl")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-48 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-url=""
+          onChange={(evento) => setUrl(evento.target.value)}
+          placeholder={t(
+            tipo === "jira" ? "settings.trackers.baseUrlHint" : "settings.trackers.baseUrlDefault",
+          )}
+          spellCheck={false}
+          value={url}
+        />
+        {tipo === "jira" ? (
+          <input
+            aria-label={t("settings.trackers.account")}
+            autoComplete="off"
+            className="border-border bg-background focus-visible:ring-ring w-52 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+            data-locum-tracker-conta=""
+            onChange={(evento) => setConta(evento.target.value)}
+            placeholder={t("settings.trackers.accountHint")}
+            spellCheck={false}
+            value={conta}
+          />
+        ) : null}
+        <input
+          aria-label={t("settings.trackers.project")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-projeto=""
+          onChange={(evento) => setProjeto(evento.target.value)}
+          placeholder={t(
+            tipo === "jira" ? "settings.trackers.projectHint" : "settings.trackers.repoHint",
+          )}
+          spellCheck={false}
+          value={projeto}
+        />
+        <Button
+          data-locum-tracker-salvar=""
+          disabled={ocupado || !valido}
+          onClick={cadastrar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.trackers.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.trackers.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-trackers-erro={recusa}>
+          {t("settings.trackers.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LinhaDoTracker({
+  ocupado,
+  recarregar,
+  tracker,
+}: {
+  ocupado: boolean;
+  recarregar: () => Promise<void>;
+  tracker: Tracker;
+}) {
+  const { i18n, t } = useTranslation();
+  const [valor, setValor] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [exame, setExame] = useState<ExameDoTracker>({ fase: "parado" });
+
+  const guardar = (): void => {
+    setSalvando(true);
+    // O campo é limpo antes da resposta, como na chave de provedor: o que foi
+    // digitado já está a caminho do cofre, e deixá-lo na tela só aumenta a
+    // chance de aparecer numa captura ou num ombro alheio.
+    const digitado = valor;
+    setValor("");
+    void call("trackers.saveSecret", tracker.id, digitado)
+      .then(recarregar, () => undefined)
+      .finally(() => {
+        setSalvando(false);
+        // O teste anterior era da credencial antiga, e o serviço já o apagou.
+        setExame({ fase: "parado" });
+      });
+  };
+
+  const esquecer = (): void => {
+    void call("trackers.forgetSecret", tracker.id)
+      .then(recarregar, () => undefined)
+      .finally(() => setExame({ fase: "parado" }));
+  };
+
+  const testar = (): void => {
+    setExame({ fase: "testando" });
+    void call("trackers.test", tracker.id).then(
+      (resultado) => {
+        setExame({ fase: "respondeu", resultado });
+        void recarregar();
+      },
+      // `test` devolve a recusa do tracker como dado, então chegar aqui quer
+      // dizer que a ponte recusou, e não que a credencial está errada.
+      (falha: unknown) =>
+        setExame({ fase: "recusado", erro: falha instanceof Error ? falha.message : String(falha) }),
+    );
+  };
+
+  const testadoEm =
+    tracker.checkedAt === null
+      ? null
+      : new Date(tracker.checkedAt * 1000).toLocaleString(i18n.language);
+
+  return (
+    <li
+      className="border-border flex flex-col gap-1.5 rounded-md border px-3 py-2 text-sm"
+      data-locum-tracker={tracker.id}
+      data-locum-tracker-destino={tracker.project ?? ""}
+      data-locum-tracker-guardado={tracker.stored ? "sim" : "nao"}
+      data-locum-tracker-ligado={tracker.enabled ? "sim" : "nao"}
+      data-locum-tracker-kind={tracker.kind}
+      data-locum-tracker-projetos={tracker.projectCount ?? -1}
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="font-mono text-[13px]">{tracker.id}</span>
+        <span className="text-muted-foreground text-xs">{tracker.label}</span>
+        <Badge variant="outline">
+          {t(
+            tracker.kind === "jira"
+              ? "settings.trackers.kindJira"
+              : "settings.trackers.kindGithub",
+          )}
+        </Badge>
+        <span className="text-muted-foreground font-mono text-xs">{tracker.baseUrl}</span>
+        {tracker.project === null ? null : (
+          <span className="text-muted-foreground font-mono text-xs">{tracker.project}</span>
+        )}
+
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            data-locum-tracker-ligar={tracker.id}
+            disabled={ocupado}
+            onClick={() => {
+              void call("trackers.setEnabled", tracker.id, !tracker.enabled).then(
+                recarregar,
+                () => undefined,
+              );
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            {t(tracker.enabled ? "settings.trackers.disable" : "settings.trackers.enable")}
+          </Button>
+          <Button
+            data-locum-tracker-remover={tracker.id}
+            disabled={ocupado}
+            onClick={() => {
+              void call("trackers.remove", tracker.id).then(recarregar, () => undefined);
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.trackers.remove")}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.trackers.field", { tracker: tracker.id })}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-tracker-credencial={tracker.id}
+          disabled={!tracker.vault}
+          onChange={(evento) => setValor(evento.target.value)}
+          placeholder={t(
+            tracker.vault ? "settings.trackers.placeholder" : "settings.trackers.noVault",
+          )}
+          spellCheck={false}
+          type="password"
+          value={valor}
+        />
+        <Button
+          data-locum-tracker-guardar={tracker.id}
+          disabled={salvando || !tracker.vault || valor.trim().length === 0}
+          onClick={guardar}
+          size="sm"
+          variant="secondary"
+        >
+          {t(salvando ? "settings.trackers.saving" : "settings.trackers.save")}
+        </Button>
+        <Button
+          data-locum-tracker-testar={tracker.id}
+          disabled={exame.fase === "testando"}
+          onClick={testar}
+          size="sm"
+          variant="ghost"
+        >
+          {t(exame.fase === "testando" ? "settings.trackers.testing" : "settings.trackers.test")}
+        </Button>
+        {tracker.stored ? (
+          <Button
+            data-locum-tracker-esquecer={tracker.id}
+            onClick={esquecer}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.trackers.forget")}
+          </Button>
+        ) : null}
+      </div>
+
+      <p className="text-muted-foreground text-xs">
+        {t(tracker.stored ? "settings.trackers.stored" : "settings.trackers.absent")}
+        {testadoEm === null
+          ? null
+          : ` · ${t("settings.trackers.lastCheck", {
+              count: tracker.projectCount ?? 0,
+              when: testadoEm,
+            })}`}
+      </p>
+
+      <ResultadoDoTracker exame={exame} tracker={tracker.id} />
+    </li>
+  );
+}
+
+function ResultadoDoTracker({ exame, tracker }: { exame: ExameDoTracker; tracker: string }) {
+  const { t } = useTranslation();
+  if (exame.fase === "parado" || exame.fase === "testando") return null;
+
+  if (exame.fase === "recusado") {
+    return (
+      <p
+        className="text-destructive text-xs"
+        data-locum-tracker-resultado="recusado"
+        data-locum-tracker-teste={tracker}
+      >
+        {t("settings.trackers.bridgeRefused", { message: exame.erro })}
+      </p>
+    );
+  }
+
+  const resultado = exame.resultado;
+  if (resultado.ok) {
+    return (
+      <p
+        className="text-muted-foreground text-xs"
+        data-locum-ok="sim"
+        data-locum-projetos={resultado.count}
+        data-locum-tracker-resultado="ok"
+        data-locum-tracker-teste={tracker}
+      >
+        {t("settings.trackers.answered", { count: resultado.count })}
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className="text-destructive text-xs"
+      data-locum-ok="nao"
+      data-locum-projetos={-1}
+      data-locum-tracker-resultado={resultado.reason}
+      data-locum-tracker-teste={tracker}
+    >
+      {resultado.reason === "missing"
+        ? t("settings.trackers.missing")
+        : t("settings.trackers.failed", { error: resultado.message })}
     </p>
   );
 }
