@@ -44,3 +44,4 @@
 2026-09-20  M6.1  feito      credencial do GitHub no keychain pela interface, source lendo do cofre, smoke com sonda trocada
 2026-09-20  M6.2  feito      repositórios observados na configuração, dono e padrão no cadastro do gatilho, agendador respondendo última e próxima batida, smoke cadastra parado, liga e remove
 2026-09-20  M6.3  feito      conferência de PR fechado na batida do agendador, cursor por execução, smoke com duas batidas
+2026-09-20  M6.4  feito      node_modules fora do pacote e processo principal embutido, traduções do Chromium cortadas por pt_BR, .app de 420 para 234 MB e imagem de 138 para 100 MB

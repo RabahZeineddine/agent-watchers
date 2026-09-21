@@ -56,7 +56,7 @@ que a interface vai usar.
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
-| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
+| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote; `node_modules` fora e o processo principal embutido, `.app` de 234 MB e imagem de 100 MB |
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
@@ -623,6 +623,27 @@ electron-builder e é onde o esbuild e o Vite já escrevem: sem mudar para
 **O mapa de origem fica fora do pacote.** São mais de cinco mil arquivos que só
 servem a quem tem o código, e quem tem o código roda por `npm start`. Dentro do
 `.app` eles dobravam o tamanho do asar sem ninguém para abrir.
+
+**O `node_modules` também fica fora, e por isso o processo principal sai
+embutido.** O padrão do electron-builder é embrulhar a árvore de produção
+inteira, e quase nada dela era alcançado de dentro do `.app`: React, Radix,
+Shiki e as fontes já tinham sido embutidos pelo Vite na página da janela e
+viajavam de novo em código-fonte, e o Octokit sozinho passava de cem megabytes.
+O `esbuild` passou a embutir em `dist/main.cjs` tudo o que o processo principal
+importa, com `external` só para `electron`, que vem do runtime, e para
+`better-sqlite3`, que chega ao `.node` por `require` de caminho. As duas pontas
+são uma coisa só: mexer no `external` sem mexer no `!node_modules/**`, ou o
+contrário, quebra a subida do pacote e passa batido no `smoke` de
+desenvolvimento, que ainda enxerga o `node_modules` do repositório.
+
+**As traduções do Chromium seguem o nome da pasta, não a etiqueta do
+dicionário.** O Electron traz 220 `.lproj` e o Locum fala duas, então
+`electronLanguages` corta o resto. Só que esta versão do electron-builder
+compara o nome do arquivo em minúsculas: `pt-BR` não casa com `pt_BR.lproj` e
+apaga a tradução que se queria manter. O estrago é silencioso porque o macOS
+decide o idioma do aplicativo pelos `.lproj` que sobraram, e sem `pt_BR` o
+`app.getLocale()` devolve `en` até em sistema em português, com a interface
+inteira trocando de idioma.
 
 **O `--smoke` de desenvolvimento passava e o do pacote não.** As duas coisas que
 quebraram são exatamente as que só aparecem depois de empacotar. O servidor de

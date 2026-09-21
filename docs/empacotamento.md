@@ -64,6 +64,38 @@ exige macOS, com o `sips` e o `iconutil` do próprio sistema:
 npm run build:icon
 ```
 
+### O que entra no pacote, e o tamanho que dá
+
+| | antes | depois |
+|---|---|---|
+| `Locum.app` | 420 MB | 234 MB |
+| `Locum-0.1.0-arm64.dmg` | 138 MB | 100 MB |
+
+Medido com `du -sm` no `.app` de `dist:dir` e no `.dmg` de `dist`, nas duas
+versões da configuração, na mesma máquina arm64.
+
+Os 186 MB que saíram do aplicativo vieram de dois lugares.
+
+O maior era `node_modules`. O `electron-builder` embrulha a árvore de produção
+inteira por padrão, e quase nada dela servia para alguma coisa dentro do
+`.app`: React, Radix, Shiki e as fontes já tinham sido embutidos pelo Vite na
+página da janela, e viajavam de novo em código-fonte; o Octokit sozinho passava
+de cem megabytes. Agora o `esbuild` embute tudo o que o processo principal
+importa em `dist/main.cjs`, e o pacote sai sem `node_modules`. A exceção é o
+invólucro JS do `better-sqlite3`, que chega ao binário nativo por `require` de
+caminho e por isso não se deixa embutir.
+
+O resto eram as 220 traduções do Chromium que o Electron traz. A interface do
+Locum existe em duas, e sistema em qualquer outro idioma já cai em inglês.
+
+As duas pontas são uma coisa só: o `external` em `app/scripts/build-main.mjs` e
+o `!node_modules/**` em `app/electron-builder.yml` só funcionam juntos. Uma
+dependência nova que o processo principal importe entra no pacote pelo bundle,
+sem precisar de nada; mas algo que resolva módulo por caminho em tempo de
+execução precisa ser declarado nos dois lugares, e a falta só aparece no
+`smoke:dist`, nunca no `smoke` de desenvolvimento, que ainda tem o
+`node_modules` do repositório ao alcance.
+
 ## Abrir sem assinatura
 
 O pacote sai sem assinatura da Apple, e é isso que quem instala encontra.

@@ -516,7 +516,7 @@
       "description": "O pacote leva 421 MB de aplicativo e 138 MB de imagem, porque vai node_modules inteiro, incluindo provedores de modelo que só o processo principal usa e ferramentas de desenvolvimento que ele não usa nunca. Configurar files e asar para levar só o necessário, medir antes e depois, e registrar os dois números no documento de empacotamento.",
       "done_when": "O .app encolhe de forma mensurável e o smoke contra o pacote continua passando.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && npm run smoke:dist",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
