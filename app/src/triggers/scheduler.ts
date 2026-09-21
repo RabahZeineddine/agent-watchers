@@ -6,6 +6,10 @@ import { McpRegistry } from "../mcp/registry.js";
 import { executionService, type ExecutionService } from "../services/execution-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
+// So tipo: o servico de reconciliacao puxa o octokit pelo topo do modulo, e
+// quem carrega este agendador nem sempre quer isso junto. O valor entra por
+// import dinamico la embaixo.
+import type { SweepOptions, SweepReport } from "../services/reconcile-service.js";
 
 type Db = typeof defaultDb;
 
@@ -42,6 +46,8 @@ export interface TickResult {
   outcomes: TriggerOutcome[];
   /** A batida mais proxima que algum gatilho pediu. Nulo quando nao ha nenhum. */
   nextDueAt: number | null;
+  /** O que a conferencia de pull request fechado fez nesta batida. */
+  reconciled: SweepSummary;
 }
 
 export interface TickOptions {
@@ -54,6 +60,25 @@ export interface TickOptions {
 
 /** A varredura do GitHub entra como dependencia para poder ser trocada em teste. */
 export type PollFn = (owner: string, repoFilter: RegExp) => Promise<string[]>;
+
+/** A conferencia de pull request fechado, trocavel pelo mesmo motivo. */
+export type SweepFn = (options?: SweepOptions) => Promise<SweepReport>;
+
+/**
+ * O que a conferencia fez numa batida.
+ *
+ * Contagem, e nao os relatorios inteiros: quem le uma batida quer saber se
+ * alguma execucao ganhou desfecho, e o detalhe de cada achado ja esta no banco.
+ */
+export interface SweepSummary {
+  checked: number;
+  settled: number;
+  stillOpen: number;
+  unreadable: number;
+  failed: number;
+  /** Erro da propria conferencia, quando ela nem chegou a olhar execucao. */
+  detail?: string;
+}
 
 /**
  * O que um gatilho respondeu quando alguem perguntou pelo relogio, sem bater.
@@ -102,6 +127,12 @@ const varrerNoGithub: PollFn = async (owner, repoFilter) => {
   return pollOpenPullRequests(owner, repoFilter);
 };
 
+/** Pelo mesmo motivo do `varrerNoGithub`: o octokit so entra quando bate. */
+const conferirFechados: SweepFn = async (options) => {
+  const { reconcileService } = await import("../services/reconcile-service.js");
+  return reconcileService.sweep(options);
+};
+
 /**
  * Quem acorda os gatilhos habilitados.
  *
@@ -125,6 +156,7 @@ export class Scheduler {
     private readonly executions: ExecutionService = executionService,
     private readonly mcp: McpService = mcpService,
     private readonly poll: PollFn = varrerNoGithub,
+    private readonly sweep: SweepFn = conferirFechados,
   ) {}
 
   /** Batida vinda do evento de acordar da maquina, que o M3 vai ligar. */
@@ -141,8 +173,49 @@ export class Scheduler {
       outcomes.push(await this.runTrigger(trigger, at, options.wait ?? false));
     }
 
+    // Depois dos gatilhos, e fora do laco deles: a conferencia nao pertence a
+    // gatilho nenhum. Ela olha execucao que ja existe, e roda mesmo numa
+    // maquina onde ninguem habilitou nada.
+    const reconciled = await this.reconcile(at);
+
     const due = outcomes.map((o) => o.nextDueAt).filter((v): v is number => v !== null);
-    return { at, reason, outcomes, nextDueAt: due.length > 0 ? Math.min(...due) : null };
+    return {
+      at,
+      reason,
+      outcomes,
+      nextDueAt: due.length > 0 ? Math.min(...due) : null,
+      reconciled,
+    };
+  }
+
+  /**
+   * A conferencia da batida, com o erro dela parando aqui.
+   *
+   * GitHub fora do ar nao pode derrubar a batida inteira: os gatilhos ja
+   * dispararam quando isto roda, e deixar a excecao subir faria o chamador
+   * achar que a batida nao aconteceu.
+   */
+  private async reconcile(at: number): Promise<SweepSummary> {
+    const vazio: SweepSummary = {
+      checked: 0,
+      settled: 0,
+      stillOpen: 0,
+      unreadable: 0,
+      failed: 0,
+    };
+
+    try {
+      const report = await this.sweep({ at });
+      return {
+        checked: report.checked,
+        settled: report.settled.length,
+        stillOpen: report.stillOpen,
+        unreadable: report.unreadable,
+        failed: report.failed.length,
+      };
+    } catch (err) {
+      return { ...vazio, detail: message(err) };
+    }
   }
 
   /**

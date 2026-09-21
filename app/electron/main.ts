@@ -10,6 +10,7 @@ import { join, sep } from "node:path";
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
 // apontar o binario do Electron.
 import type { RunService } from "../src/services/run-service.js";
+import type { AftermathFetcher } from "../src/services/reconcile-service.js";
 
 const smoke = process.argv.includes("--smoke");
 const capturas = process.argv.includes("--capturas");
@@ -260,6 +261,184 @@ async function checkPower(): Promise<string> {
   }
 
   return t("smoke.power", { minutes: sleep / 60_000 });
+}
+
+
+/** A conferência não varre: gatilho de varredura não chega a este agendador. */
+const proibirVarredura = async (): Promise<string[]> => {
+  throw new Error("o smoke da conferencia nao pode varrer o GitHub");
+};
+/**
+ * Prova que a conferência de pull request fechado roda na batida do agendador,
+ * e que ela não reprocessa quem já ganhou desfecho.
+ *
+ * Nada aqui fala com o GitHub: o leitor do que aconteceu depois do review entra
+ * trocado, contando quantas vezes cada pull request foi visitado. É o que
+ * permite exigir a parte difícil da story, que é uma afirmação sobre a segunda
+ * batida: a execução fechada não pode ser visitada de novo, e a que ficou com o
+ * pull request aberto tem que voltar.
+ *
+ * O agendador entra inteiro, com o serviço de gatilhos trocado por um que não
+ * enxerga nada habilitado. Sem isso a batida dispararia o que estiver ligado no
+ * banco de quem desenvolve, e o smoke gastaria assinatura sem ninguém pedir.
+ *
+ * As duas execuções são plantadas e apagadas aqui mesmo. O smoke roda no banco
+ * de verdade, e evento de origem `github` que sobrevivesse entraria na fila de
+ * conferência da próxima subida do app.
+ */
+async function checkReconcile(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { runService } = await import("../src/services/run-service.js");
+  const { ReconcileService } = await import("../src/services/reconcile-service.js");
+  const { TriggerService } = await import("../src/services/trigger-service.js");
+  const { executionService } = await import("../src/services/execution-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { Scheduler } = await import("../src/triggers/scheduler.js");
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para reconciliar");
+  const versao = await agentService.getLatestVersion(agent.id);
+  if (versao === undefined) throw new Error(`agent ${agent.id} sem versao gravada`);
+
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const arquivo = "src/Auth/TokenValidator.cs";
+  const problema = "`DateTime.Now` devolve hora local e o token expira tarde demais.";
+  // Corpo do comentário humano inventado. Sai em variável porque o guarda de
+  // i18n olha a propriedade `body`, e este texto é dado de teste, não produto.
+  const comentario = "o mesmo ponto, visto por uma pessoa";
+
+  const fechado = { runId: `smoke-run-${randomUUID()}`, eventId: `smoke-event-${randomUUID()}`, pull: 1 };
+  const aberto = { runId: `smoke-run-${randomUUID()}`, eventId: `smoke-event-${randomUUID()}`, pull: 2 };
+
+  for (const alvo of [fechado, aberto]) {
+    await db.insert(schema.events).values({
+      id: alvo.eventId,
+      source: "github",
+      externalId: `pr:${dono}/${repo}#${alvo.pull}:sha:abc123`,
+      payload: { owner: dono, repoName: repo, pull: alvo.pull, headSha: "abc123" },
+    });
+    await db.insert(schema.runs).values({
+      id: alvo.runId,
+      agentVersionId: versao.id,
+      eventId: alvo.eventId,
+      triggerId: null,
+      status: "done",
+    });
+    await db.insert(schema.steps).values({
+      id: `${alvo.runId}-audit`,
+      runId: alvo.runId,
+      idx: 0,
+      stepKey: "audit",
+      name: "Auditoria",
+      status: "done",
+      output: {
+        findings: [
+          { file: arquivo, line: 41, severity: "critical", category: "correcao", problem: problema },
+        ],
+      },
+    });
+  }
+
+  /** Quantas vezes cada pull request foi visitado, por número. */
+  const visitas = new Map<number, number>();
+  const olhar: AftermathFetcher = async (owner, nome, pull, sha) => {
+    if (owner !== dono || nome !== repo) {
+      throw new Error(`a conferencia visitou ${owner}/${nome}, que nao e o alvo plantado`);
+    }
+    visitas.set(pull, (visitas.get(pull) ?? 0) + 1);
+    const encerrado = pull === fechado.pull;
+    return {
+      prKey: `${owner}/${nome}#${pull}`,
+      state: encerrado ? "merged" : "open",
+      headSha: sha,
+      // O sinal cai na mesma linha do achado, que é o que faz o desfecho sair
+      // como confirmado e não como ignorado.
+      signals: encerrado
+        ? [{ author: "revisora", kind: "comment" as const, file: arquivo, line: 41, body: comentario }]
+        : [],
+      changedAfter: new Map(),
+    };
+  };
+
+  const conferencia = new ReconcileService(db, runService, olhar);
+  const semGatilho = new (class extends TriggerService {
+    async enabled() {
+      return [];
+    }
+  })(db);
+  const agendador = new Scheduler(db, semGatilho, executionService, mcpService, proibirVarredura, (o) =>
+    conferencia.sweep(o),
+  );
+
+  try {
+    // As contagens da batida sao pisos, e nao igualdades: o smoke roda no banco
+    // de quem desenvolve, e uma execucao antiga de origem `github` entraria na
+    // mesma fila. O que e exigido com numero exato e o que o contador de
+    // visitas diz sobre as duas execucoes plantadas aqui.
+    const primeira = await agendador.tick({ reason: "timer" });
+    if (primeira.reconciled.settled < 1 || primeira.reconciled.stillOpen < 1) {
+      throw new Error(
+        `a primeira batida deu ${primeira.reconciled.settled} desfecho(s) e deixou ` +
+          `${primeira.reconciled.stillOpen} aberto(s), e o esperado era ao menos um de cada`,
+      );
+    }
+    if (visitas.get(fechado.pull) !== 1 || visitas.get(aberto.pull) !== 1) {
+      throw new Error("a primeira batida nao visitou as duas execucoes plantadas uma vez cada");
+    }
+
+    const desfechos = await db
+      .select({ state: schema.findingOutcomes.state })
+      .from(schema.findingOutcomes)
+      .innerJoin(schema.findings, eq(schema.findingOutcomes.findingId, schema.findings.id))
+      .where(eq(schema.findings.runId, fechado.runId));
+    if (desfechos.length !== 1 || desfechos[0]?.state !== "confirmed_by_human") {
+      throw new Error(
+        `a execucao fechada ganhou ${desfechos.length} desfecho(s): ` +
+          `${desfechos.map((d) => d.state).join(", ")}`,
+      );
+    }
+    const semDesfecho = await db
+      .select({ id: schema.findings.id })
+      .from(schema.findings)
+      .where(eq(schema.findings.runId, aberto.runId));
+    if (semDesfecho.length !== 0) {
+      throw new Error("a execucao de PR aberto gravou achado antes de o pull request fechar");
+    }
+
+    const segunda = await agendador.tick({ reason: "timer" });
+    if (segunda.reconciled.settled !== 0) {
+      throw new Error(`a segunda batida gravou ${segunda.reconciled.settled} desfecho(s) de novo`);
+    }
+    if (visitas.get(fechado.pull) !== 1) {
+      throw new Error(`o PR fechado foi visitado ${String(visitas.get(fechado.pull))} vez(es), e nao uma`);
+    }
+    if (visitas.get(aberto.pull) !== 2) {
+      throw new Error(`o PR aberto foi visitado ${String(visitas.get(aberto.pull))} vez(es), e nao duas`);
+    }
+
+    return t("smoke.reconcile", { settled: primeira.reconciled.settled });
+  } finally {
+    const runIds = [fechado.runId, aberto.runId];
+    const achados = await db
+      .select({ id: schema.findings.id })
+      .from(schema.findings)
+      .where(inArray(schema.findings.runId, runIds));
+    if (achados.length > 0) {
+      await db.delete(schema.findingOutcomes).where(
+        inArray(schema.findingOutcomes.findingId, achados.map((a) => a.id)),
+      );
+    }
+    await db.delete(schema.findings).where(inArray(schema.findings.runId, runIds));
+    await db.delete(schema.reviewSignals).where(eq(schema.reviewSignals.prKey, `${dono}/${repo}#${fechado.pull}`));
+    await db.delete(schema.cursors).where(
+      and(eq(schema.cursors.source, "reconcile"), inArray(schema.cursors.key, runIds)),
+    );
+    await db.delete(schema.steps).where(inArray(schema.steps.runId, runIds));
+    await db.delete(schema.runs).where(inArray(schema.runs.id, runIds));
+    await db.delete(schema.events).where(inArray(schema.events.id, [fechado.eventId, aberto.eventId]));
+  }
 }
 
 /**
@@ -2771,6 +2950,7 @@ async function main(): Promise<void> {
     const updates = await checkUpdates();
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
+    const conferencia = await checkReconcile();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
     const renderer = await checkRenderer();
@@ -2785,6 +2965,7 @@ async function main(): Promise<void> {
         updates,
         secrets,
         notifications: avisos,
+        reconcile: conferencia,
         deepLink,
         bridge: ponte,
         renderer,

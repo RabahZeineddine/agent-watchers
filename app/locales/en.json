@@ -348,7 +348,7 @@
     "low": "low"
   },
   "smoke": {
-    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
+    "ok": "smoke ok: database opened, agents: {{agents}}, {{schema}}, tray created with pending: {{pending}}, start at login with {{loginItem}}, power with {{power}}, updates with {{updates}}, keychain with {{secrets}}, notification with {{notifications}}, reconciliation with {{reconcile}}, deep link with {{deepLink}}, bridge with {{bridge}}, interface with {{renderer}}, main process with {{mainText}}",
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
@@ -357,6 +357,7 @@
     "feedAbsent": "absent",
     "secrets": "secret encrypted on disk, reference in the database, value only in the connection",
     "notifications": "notice built without showing, three criticals in a single run, click pointing to the run",
+    "reconcile": "scheduler beat crossing human review with findings, {{settled}} run(s) settled, open pull request comes back next beat and a closed one is not reprocessed",
     "deepLink": "locum scheme {{scheme}}, OAuth callback routed, token in the vault and reference in the registry",
     "schemeRegistered": "registered",
     "schemeRefused": "not accepted outside a packaged app",

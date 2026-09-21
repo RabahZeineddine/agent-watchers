@@ -505,7 +505,7 @@
       "description": "O reconciliador existe mas nunca roda sozinho. Ligar no agendador: a cada batida, para cada execução cujo pull request fechou desde a última conferência, cruzar review humano com os achados e gravar os desfechos. Guardar cursor próprio para não reprocessar. Comando manual continua existindo.",
       "done_when": "Duas batidas seguidas não reprocessam a mesma execução, e uma execução com pull request fechado ganha desfecho.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

@@ -28,14 +28,14 @@ que a interface vai usar.
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
-| reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
+| reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token; disparado pela batida do agendador, com cursor próprio por execução |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
 | camada de serviço, dez serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
-| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
+| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor`; cada batida confere o que fechou desde a última |
 | casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
@@ -97,7 +97,7 @@ npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
 npm run dev metrics                   # recalcula e imprime precisão por versão
 npm run dev rerun <run-id> audit
 npm run dev triggers                  # gatilhos cadastrados e quando o agendador quer a próxima batida
-npm run dev tick                      # uma batida nos gatilhos habilitados
+npm run dev tick                      # uma batida nos gatilhos habilitados, e a conferência do que fechou
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'

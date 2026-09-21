@@ -242,10 +242,7 @@ async function triggers(): Promise<void> {
 /** Uma batida do agendador. Quem repete e o sistema, nao um laco daqui. */
 async function tick(wait: boolean): Promise<void> {
   const result: TickResult = await scheduler.tick({ wait });
-  if (result.outcomes.length === 0) {
-    console.log("nenhum gatilho habilitado");
-    return;
-  }
+  if (result.outcomes.length === 0) console.log("nenhum gatilho habilitado");
   for (const o of result.outcomes) {
     const detalhe = o.detail ? `  ${o.detail}` : "";
     console.log(
@@ -254,8 +251,18 @@ async function tick(wait: boolean): Promise<void> {
     );
     for (const runId of o.runs) console.log(`         run ${runId}`);
   }
+
+  // A conferencia sai sempre, inclusive sem gatilho nenhum habilitado: ela nao
+  // depende de gatilho, e quem roda o `tick` a mao esta perguntando tambem se
+  // algum pull request fechou desde a ultima vez.
+  const c = result.reconciled;
+  const erro = c.detail ? `  ${c.detail}` : "";
   console.log(
-    `\nproxima batida: ${result.nextDueAt === null ? "nenhuma" : new Date(result.nextDueAt).toISOString()}`,
+    `\nconferencia: ${c.checked} execucao(oes) olhada(s), ${c.settled} com desfecho, ` +
+      `${c.stillOpen} com PR aberto, ${c.unreadable} sem PR, ${c.failed} com falha${erro}`,
+  );
+  console.log(
+    `proxima batida: ${result.nextDueAt === null ? "nenhuma" : new Date(result.nextDueAt).toISOString()}`,
   );
 }
 
