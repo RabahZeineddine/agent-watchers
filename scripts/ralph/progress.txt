@@ -51,3 +51,4 @@
 2026-09-21  M7.3  feito      tracker de tarefa com Jira e GitHub Issues, credencial no keychain, teste de conexão e destinos pela tela, ponte sem canal que abra tarefa
 2026-09-21  M7.4  feito      passo tracker.create_issue propondo o item e parando na fila, modo travado em approve pelo handler, corpo vindo do passo de modelo
 2026-09-21  M7.5  feito      filtro de autoria no gatilho de varredura, conta do token vinda da conferência guardada, tela cadastrando e smoke com dois gatilhos no mesmo tick
+2026-09-21  M7.6  feito      guia com passo de provedor pela interface e seção de tracker, numeração corrigida e campo de autoria no gatilho

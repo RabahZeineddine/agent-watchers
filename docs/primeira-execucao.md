@@ -6,7 +6,7 @@ documento é o outro lado, o de ligar o aplicativo num repositório de verdade
 pela primeira vez.
 
 Os passos estão na ordem em que alguém os faria. Vale a pena ler até o fim antes
-de criar o token, porque o penúltimo passo explica por que a primeira varredura
+de criar o token, porque a seção sobre a primeira varredura explica por que ela
 pode não acontecer sozinha.
 
 Uma coisa antes de tudo, porque muda como se lê o resto: **o passo que comenta
@@ -39,11 +39,76 @@ Semear pelo terminal e abrir o `Locum.app` depois funciona: é o mesmo arquivo.
 **Um runtime que saiba executar os passos.** O agent semente pede
 `claude-code/claude-sonnet-5` na triagem e `claude-code/claude-opus-5` na
 auditoria, que gastam a sua assinatura pelo binário do Claude Code já
-autenticado na máquina. Sem esse binário, cadastre uma substituição de modelo na
-seção de provedores da configuração, apontando esses dois para um provedor por
-chave de API. A tela de provedores mostra quais estão disponíveis nesta máquina.
+autenticado na máquina. Se esse binário existir e estiver autenticado, não há
+nada a fazer aqui, e o passo 1 é só conferência. Se não existir, é o passo 1 que
+resolve.
 
-## 1. Criar o token com as permissões mínimas
+## 1. Ter um modelo que rode nesta máquina
+
+A tela de configuração abre na seção **Provedores**, que lista o que roda neste
+computador. Cada linha diz o nome do provedor, se ele está disponível ou
+indisponível, e quais variáveis ele usa. O `claude-code` aparece marcado como
+assinatura: ele não pede chave, pede o binário. Pela linha de comando a mesma
+lista sai de `npm run dev providers`.
+
+Se o provedor que o agent semente pede estiver indisponível, há duas coisas a
+fazer, nesta ordem: dar uma chave a algum provedor, e mandar os modelos do spec
+caírem nele.
+
+### Guardar a chave de um provedor
+
+Na linha do provedor que você tem chave, o campo **chave de API do
+`<provedor>`** aceita colar e **guardar**. É a mesma viagem de mão única da
+credencial do GitHub: o valor vai para o keychain do macOS, sob a referência
+`provider/<nome>`, e não volta por canal nenhum. O que a tela mostra é se existe
+algo guardado, e não o quê.
+
+Guardar deixa o provedor disponível na hora, sem reabrir a janela: quem grava
+remonta o registro com a chave nova antes de responder.
+
+**Conferir catálogo** pergunta ao provedor a lista de modelos dele e escreve
+quantos vieram, com a data. Serve para separar "a chave está errada" de "o
+modelo que eu escrevi no spec não existe lá", que é uma dúvida cara de tirar
+dentro de uma execução. Fica atrás de um clique porque sai para a rede, e abrir
+a configuração não é pedir exame. Provedor que não publica catálogo, como o
+`google`, responde dizendo isso, e não é falha da chave.
+
+Se o keychain estiver fora de alcance neste processo, o campo diz qual variável
+de ambiente usar no lugar, por exemplo `ANTHROPIC_API_KEY`. O cofre vem primeiro
+quando os dois existem.
+
+### Cadastrar um provedor que não vem de fábrica
+
+A seção **Provedores compatíveis** é para quem fala o protocolo da OpenAI e não
+está na lista de fábrica: um segundo endereço da empresa, um Ollama em outra
+máquina, um OpenRouter. São três campos, e nenhum deles é a chave:
+
+| campo | o que é |
+|---|---|
+| identificador | vira o prefixo do modelo, como `meu-gateway` |
+| nome | como você chama ele na tela |
+| endereço base | `https://gateway.exemplo/v1`, onde mora o `/models` |
+
+Depois de cadastrado, um passo aponta para `meu-gateway/nome-do-modelo`, e a
+linha dele aparece na seção de provedores acima, com o mesmo campo de chave dos
+de fábrica. A variável de ambiente equivalente é
+`LOCUM_PROVIDER_MEU_GATEWAY_KEY`, derivada do identificador.
+
+Duas recusas que são de propósito. Nome de provedor de fábrica não pode ser
+tomado: cadastrar `anthropic` apontando para outro endereço mandaria a chave da
+Anthropic para lá. E **remover** um provedor que está em uso avisa onde ele
+aparece, passo por passo e substituição por substituição, e só remove no segundo
+clique, em **remover mesmo assim**. O aviso existe porque a remoção não quebra
+nada na hora: ela quebra o próximo run, que é quando ninguém está olhando.
+
+### Mandar o modelo do spec cair no provedor
+
+Com a chave guardada, a seção **Substituição de modelo** aponta
+`claude-code/claude-sonnet-5` e `claude-code/claude-opus-5` para os modelos do
+provedor que você tem. A substituição é por máquina, e é ela que deixa o mesmo
+agent rodar aqui e noutro computador sem editar o spec.
+
+## 2. Criar o token com as permissões mínimas
 
 O token sai de [github.com/settings/tokens](https://github.com/settings/tokens),
 na sua conta. Ele é pessoal: o Locum observa com a sua identidade, e o que ele
@@ -79,7 +144,7 @@ clássico com `read:org` é o que responde o esperado.
 Nada de colocar esse token em arquivo do repositório, em variável de ambiente
 comitada ou em script. O lugar dele é o passo seguinte.
 
-## 2. Guardar o token pela interface
+## 3. Guardar o token pela interface
 
 Abra a configuração e vá até **Credencial do GitHub**. Cole o token no campo e
 clique em **guardar**.
@@ -112,9 +177,9 @@ propósito. Eles descreviam o token antigo, e mantê-los faria a tela afirmar, c
 cara de dado conferido, uma conta que o token novo pode nem ter. Depois de
 trocar, confira de novo.
 
-## 3. Escolher o repositório
+## 4. Escolher o repositório
 
-Ainda na configuração, a seção **Repositórios observados**. São quatro campos:
+Ainda na configuração, a seção **Repositórios observados**. São cinco campos:
 
 **O agent que vai revisar.** Depois do `seed`, `pr-review` é o único, e já vem
 escolhido.
@@ -127,13 +192,18 @@ tenham isso no nome. Comece por um repositório só: a primeira varredura é a h
 de descobrir que o padrão pega mais coisa do que você pensava, e descobrir isso
 com um repositório custa menos.
 
+**De quem são os pull requests**, entre qualquer pessoa, os seus e os do time.
+O padrão é qualquer pessoa. A comparação é com o login que a conferência do
+token guardou no passo 3, e não com uma pergunta nova ao GitHub, então um
+gatilho de "meus" ou "do time" falha enquanto o token não tiver sido conferido.
+
 **A cadência em minutos**, que é de quanto em quanto tempo aquele gatilho se
 considera vencido.
 
 Clique em **observar**. A linha aparece na lista marcada como **parado**, e é
 isso mesmo: cadastrar não liga nada.
 
-## 4. Habilitar o gatilho
+## 5. Habilitar o gatilho
 
 Na linha que acabou de aparecer, clique em **ligar**.
 
@@ -145,7 +215,7 @@ que ninguém tenha pedido seria só demora.
 A linha passa a mostrar a última varredura e a próxima. Enquanto não houver
 varredura nenhuma, a última aparece como "nunca".
 
-## 5. O que esperar na primeira varredura
+## 6. O que esperar na primeira varredura
 
 Aqui está a parte que surpreende, e é melhor saber antes: **o agendador não tem
 relógio próprio**. Ele anda por cursor de tempo e é batido de fora. Hoje quem
@@ -197,7 +267,7 @@ O gasto aparece na seção de orçamentos da configuração. O agent semente nas
 com teto de 0,40 dólar por execução e 6 por dia, e a execução para ao estourar,
 em vez de continuar e cobrar.
 
-## 6. Ler o primeiro review na fila
+## 7. Ler o primeiro review na fila
 
 A contagem na bandeja é o primeiro sinal. Clicando nela, ou abrindo a janela, a
 **Inbox** lista o que espera você, com a severidade pior do item numa régua
@@ -226,6 +296,92 @@ agendador e cruza o que o Locum apontou com o que as pessoas comentaram e com o
 que mudou de fato no código. É o que alimenta a precisão por versão de agent, em
 `npm run dev metrics`. Não é preciso fazer nada para isso acontecer: essa parte
 só lê.
+
+## 8. Quando o achado precisa virar tarefa
+
+Este passo é opcional, e fica por último de propósito: ele só faz sentido depois
+que você leu alguns reviews e concluiu que uma parte do que sai merece card no
+quadro, e não comentário no pull request. O agent semente não abre tarefa
+nenhuma, e nada do que está aqui liga sozinho.
+
+### Onde pegar a credencial
+
+São dois trackers, e cada um pede uma coisa diferente.
+
+**Jira.** O token sai de
+[id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens),
+e ele não anda sozinho: o Jira Cloud autentica por básica, com o e-mail da conta
+junto do token. Por isso o cadastro pede o e-mail, e recusa sem ele. O endereço
+base é o da sua instância, `https://empresa.atlassian.net`.
+
+**GitHub Issues.** Um token com escrita em Issues no repositório de destino
+basta. Ele é separado do token da varredura de propósito: são permissões
+diferentes, e um token que só lê pull request não abre issue. Separar os dois é
+o que permite conceder escrita de issue sem conceder escrita em pull request. O
+endereço base é `https://api.github.com`, que é o que fica se o campo for
+deixado vazio.
+
+### Cadastrar
+
+Na configuração, a seção **Trackers de tarefa**. O tipo escolhe entre os dois, o
+identificador é como o passo de ação vai apontar para este cadastro, e o destino
+padrão é onde a tarefa cai: a chave do projeto no Jira, `ABC`, ou `dono/repo` no
+GitHub.
+
+Feito o cadastro, a linha ganha o campo de credencial. Colar e **guardar** manda
+o valor para o keychain, sob `tracker/<identificador>`, e a tela passa a dizer
+só que existe algo guardado. **Testar** pergunta ao tracker quais destinos esta
+credencial alcança e escreve quantos são. É o teste de conexão e o de permissão
+ao mesmo tempo: credencial que enxerga zero destino não vai conseguir criar nada.
+
+Cadastrar não abre tarefa nenhuma, e nem liga passo nenhum. O cadastro é só o
+endereço e a credencial.
+
+### O que o Locum cria
+
+O par de passos que abre tarefa mora em `app/src/seed/tracker-issue.ts`, como
+fragmento, e não dentro do agent semente: abrir tarefa é escolha de quem escreve
+o agent, e o `pr-review` de fábrica não tem tracker para apontar. Quem quiser
+concatena os dois passos ao spec do agent dele.
+
+São dois, e não um handler esperto. O primeiro é de modelo e escreve só prosa,
+em três campos: o objetivo, o que mudou e o que testar. O segundo é de ação,
+monta o item e para na fila. A divisão é o ponto: o texto que sai em nome de uma
+pessoa precisa ser legível por ela antes de sair, e prosa montada dentro da
+publicação só apareceria depois de publicada.
+
+O que o modelo não escolhe: o título, que sai como `repo#numero: título do pull
+request`, para que dois cards nascidos de pull requests parecidos não fiquem
+indistinguíveis na lista de quem vai pegar um deles; e o destino, que vem do
+cadastro. Um modelo que escolhesse o projeto abriria tarefa no quadro errado.
+
+O corpo sai com **Objetivo**, **O que mudou**, **O que testar** e **Links**, com
+o endereço do pull request no fim. Esse endereço no corpo não é enfeite: é por
+ele que a publicação procura se já existe tarefa para aquele pull request, e
+desiste em silêncio se achar. Sem isso, uma segunda execução aprovada dias
+depois abriria um segundo card para a mesma coisa.
+
+No Jira a tarefa nasce como `Task`. As etiquetas que o modelo sugerir vão junto,
+e o tracker que não conhecer uma delas é quem recusa.
+
+### Por que criar tarefa nunca é automático
+
+O passo de ação `tracker.create_issue` aceita um modo só, `approve`, e isso está
+travado no handler, não no spec. É diferente do passo que comenta no GitHub, que
+tem `draft` e `auto` desligados: aqui os outros modos não existem.
+
+A razão é que card em sistema de tarefa aparece assinado por você para o time
+inteiro, e um agent que decidisse sozinho abriria tarefa em nome de quem nunca
+leu o texto. Uma trava por configuração dependeria de a linha certa estar
+escrita na spec, e spec se edita à mão.
+
+Não há `draft` por uma segunda razão: rascunho de tarefa não existe nos dois
+trackers, e emular um criando e fechando deixaria o card no histórico do quadro,
+que é exatamente o que não se queria.
+
+E não há canal na ponte que crie tarefa. A janela cadastra, testa e aponta o
+destino padrão; criar é só pelo passo de ação, que para na fila. Um canal de
+janela seria um segundo caminho até o tracker, sem a fila no meio.
 
 ## O que não sai sem o seu clique
 

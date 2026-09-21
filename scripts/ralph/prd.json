@@ -593,7 +593,7 @@
       "description": "Atualizar docs/primeira-execucao.md com o cadastro de provedor pela interface, e escrever a seção sobre tracker: onde pegar a credencial, o que o Locum cria, e por que criar tarefa nunca é automático.",
       "done_when": "Os dois assuntos estão documentados e o guia continua na ordem em que alguém faria.",
       "verify": "test -f ../docs/primeira-execucao.md && grep -q tracker ../docs/primeira-execucao.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

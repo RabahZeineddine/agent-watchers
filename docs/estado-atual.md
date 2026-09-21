@@ -64,6 +64,7 @@ que a interface vai usar.
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
+| guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
 
 ## Execução verificada
 
