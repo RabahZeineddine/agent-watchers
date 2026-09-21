@@ -41,3 +41,8 @@
 2026-09-20  M5.4  feito      smoke:dist contra o .app, fixture empacotado e guarda de i18n seguindo isPackaged
 2026-09-20  M5.5  feito      atualização automática atrás de interruptor, desligada por padrão, smoke contando requisição de rede
 2026-09-20  M5.6  feito      docs/empacotamento.md com build, Gatekeeper, conta Apple e updater, README com instalação
+2026-09-20  M6.1  feito      credencial do GitHub no keychain pela interface, source lendo do cofre, smoke com sonda trocada
+2026-09-20  M6.2  feito      repositórios observados na configuração, dono e padrão no cadastro do gatilho, agendador respondendo última e próxima batida, smoke cadastra parado, liga e remove
+2026-09-20  M6.3  feito      conferência de PR fechado na batida do agendador, cursor por execução, smoke com duas batidas
+2026-09-20  M6.4  feito      node_modules fora do pacote e processo principal embutido, traduções do Chromium cortadas por pt_BR, .app de 420 para 234 MB e imagem de 138 para 100 MB
+2026-09-20  M6.5  feito      guia da primeira execução real, seis passos na ordem e a promessa do clique

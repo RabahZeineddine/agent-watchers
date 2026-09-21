@@ -24,10 +24,11 @@ import type {
  * aparecer depois. Acrescentar canal aqui e um ato, nao uma consequencia.
  *
  * Fora da lista de proposito: `approvals.decide`, que e o clique de uma pessoa
- * na inbox e passa pela gate; e `runs.rerunStep`, `triggers.setEnabled`,
- * `startup.set`, `mcp.test` e `mcp.tools`, que escrevem ou sobem processo e
- * nao cabem num hook que dispara sozinho ao montar a tela. O que dessas a
- * janela ja pode pedir esta em `ACTION_CHANNELS`, logo abaixo.
+ * na inbox e passa pela gate; e `runs.rerunStep`, `triggers.set`,
+ * `triggers.remove`, `triggers.setEnabled`, `startup.set`, `mcp.test` e
+ * `mcp.tools`, que escrevem ou sobem processo e nao cabem num hook que dispara
+ * sozinho ao montar a tela. O que dessas a janela ja pode pedir esta em
+ * `ACTION_CHANNELS`, logo abaixo.
  *
  * `credentials.overview` esta aqui e nao la porque ela nao abre o cofre: ela
  * responde endereco e se ha valor guardado, que e o que a tela de configuracao
@@ -49,10 +50,16 @@ export const READ_CHANNELS = [
   "providers.fallbacks",
   "providers.preview",
   "credentials.overview",
+  // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
+  // que a última conferência descobriu. O token não volta por canal nenhum.
+  "github.status",
   "chat.status",
   "metrics.report",
   "machine.profile",
   "triggers.list",
+  // Cadastro e agenda, sem bater em gatilho nenhum: ler quando foi a última
+  // varredura não dispara a próxima.
+  "triggers.schedule",
   "startup.get",
   "i18n.state",
   "window.inboxTarget",
@@ -80,6 +87,16 @@ export type ReadChannel = (typeof READ_CHANNELS)[number];
  */
 export const ACTION_CHANNELS = [
   "runs.rerunStep",
+  // O token do GitHub indo para o keychain, e o único segredo que a janela
+  // manda. Está aqui e não na leitura porque é escrita, e porque exige alguém
+  // digitando: um hook que dispara ao montar a tela não tem o que gravar. A
+  // viagem é de mão única, e a prova disso está no catálogo de leitura, onde
+  // não existe canal que devolva valor de segredo.
+  "github.save",
+  "github.forget",
+  // Conferir sai para a rede e responde quem é a conta, então fica atrás de um
+  // clique pelo mesmo motivo de `mcp.test`: abrir a tela não é pedir exame.
+  "github.check",
   "mcp.test",
   "mcp.tools",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um
@@ -89,6 +106,12 @@ export const ACTION_CHANNELS = [
   "chat.setModel",
   "chat.send",
   "chat.cancel",
+  // Escolher o que observar, e ligar ou desligar a varredura. Cada um é um
+  // clique de quem está usando, e o gatilho gravado nasce parado: ligar é o
+  // segundo clique, e não uma consequência de ter cadastrado.
+  "triggers.set",
+  "triggers.remove",
+  "triggers.setEnabled",
   // Escolher idioma é um clique de quem está usando, e a escrita em `settings`
   // vale para a próxima subida também. Não é leitura de tela.
   "i18n.setPreference",

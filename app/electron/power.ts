@@ -93,7 +93,8 @@ async function beatScheduler(): Promise<void> {
   const runs = result.outcomes.reduce((total, o) => total + o.runs.length, 0);
   console.log(
     `energia: batida de acordar em ${result.outcomes.length} gatilho(s), ` +
-      `${fired} disparado(s), ${runs} run(s) criado(s)`,
+      `${fired} disparado(s), ${runs} run(s) criado(s), ` +
+      `${result.reconciled.settled} execução(ões) com desfecho`,
   );
 }
 

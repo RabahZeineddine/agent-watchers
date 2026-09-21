@@ -23,6 +23,39 @@ files:
   # por `npm run start`. No pacote sao mais de cinco mil arquivos que ninguem
   # abre, e o download dobra de tamanho por causa deles.
   - "!dist/**/*.map"
+  # `node_modules` inteiro fica de fora, e o que roda vem embutido em
+  # `dist/main.cjs`. Por padrao o electron-builder embrulha toda a arvore de
+  # producao, e a maior parte dela nao serve para nada dentro do `.app`: o
+  # React, o Shiki e o Radix ja foram embutidos pelo Vite na pagina da janela,
+  # e viajavam de novo em codigo-fonte; o Octokit sozinho passava de cem
+  # megabytes. O `external` do esbuild em `scripts/build-main.mjs` e o outro
+  # lado desta linha, e mexer num sem o outro quebra a subida.
+  - "!node_modules/**"
+  # A excecao e o invólucro JS do better-sqlite3, que o bundle nao embute
+  # porque ele faz `require` de caminho para chegar no binario nativo. So
+  # `lib/` e o `package.json` entram: `deps/`, `src/` e `binding.gyp` sao o
+  # fonte do SQLite, que serve para compilar e nunca e lido em execucao, e
+  # `build/` e a copia compilada para o ABI do Node, que o Electron recusa. A
+  # copia que vale e a de `native/`, apontada por `LOCUM_SQLITE_BINDING`.
+  - node_modules/better-sqlite3/package.json
+  - node_modules/better-sqlite3/lib/**
+
+# O Electron traz 220 traduções do Chromium, e a interface do Locum existe em
+# duas. As outras 218 são o menu de contexto e o corretor ortográfico em idioma
+# que o aplicativo não fala: o dicionário em `locales/` tem `en` e `pt-BR`, e
+# qualquer outro sistema já cai em `en`. Deixá-las de fora alinha o que o
+# macOS anuncia como idioma do aplicativo com o que ele de fato responde.
+#
+# Os nomes aqui sao os das pastas `.lproj` do Electron, e nao as etiquetas BCP
+# 47 do dicionario: esta versao do electron-builder compara o nome do arquivo
+# em minusculas, entao `pt-BR` nao casa com `pt_BR.lproj` e apaga a traducao
+# que a gente queria manter. O estrago e silencioso, porque o macOS decide o
+# idioma do aplicativo pelos `.lproj` que sobraram: sem `pt_BR`, o
+# `app.getLocale()` devolve `en` mesmo em sistema em portugues, e a interface
+# inteira troca de idioma.
+electronLanguages:
+  - en
+  - pt_BR
 
 # O binário do better-sqlite3 precisa sair do asar. O asar é um arquivo só, e
 # `require` de módulo nativo passa pelo `dlopen` do sistema, que não enxerga

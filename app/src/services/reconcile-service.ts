@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import {
   fetchAftermath,
@@ -11,6 +11,49 @@ import {
 import { runService, RunService, type RunFinding } from "./run-service.js";
 
 type Db = typeof defaultDb;
+
+/**
+ * Onde fica a marca de "esta execução já foi conferida".
+ *
+ * Cursor próprio, e não uma coluna em `runs`: quem escreve aqui é a
+ * reconciliação, que é derivada, e misturar isso com o estado da execução
+ * faria um `reset` de run apagar a conferência junto.
+ */
+const CURSOR_SOURCE = "reconcile";
+
+/**
+ * Status de execução que vale conferir.
+ *
+ * `done` é a execução que chegou ao fim, e `paused` é a que parou na fila de
+ * aprovação, que é onde o pipeline de review para de propósito. As duas
+ * produziram achados, e é o achado que ganha desfecho. Execução que falhou no
+ * meio não entra: o que ela tem não é opinião do agent, é pedaço de trabalho
+ * interrompido.
+ */
+const SWEEPABLE = ["done", "paused"];
+
+/**
+ * Quanto a varredura olha para trás, em dias.
+ *
+ * Pull request que ficou aberto um mês inteiro é conferido a cada batida, e
+ * sem teto essa conta só cresce. Passado o prazo a execução sai da fila: o
+ * desfecho dela deixou de ser sinal de qualidade do agent e virou história do
+ * repositório, e o comando manual continua alcançando quem precisar.
+ */
+const SWEEP_WINDOW_DAYS = 30;
+
+/** Quantas execuções uma batida confere, no máximo. */
+const SWEEP_BATCH = 25;
+
+/**
+ * Execução que nunca vai poder ser conferida.
+ *
+ * Separada do erro comum porque o tratamento é oposto: GitHub fora do ar é
+ * para tentar de novo na próxima batida, e evento que não identifica um pull
+ * request é para marcar e nunca mais visitar, senão ele toma uma vaga da
+ * batida para sempre.
+ */
+export class UnreadableRun extends Error {}
 
 /** Os estados que `finding_outcomes` aceita. */
 export type OutcomeState =
@@ -42,6 +85,30 @@ export interface ReconcileOptions {
    * antes do fim, sabendo que o desfecho ainda pode mudar.
    */
   force?: boolean;
+  /** Relógio da conferência, que é o que fica gravado no cursor. */
+  at?: number;
+}
+
+export interface SweepOptions {
+  /** Relógio da batida. Existe para teste e para reproduzir uma batida antiga. */
+  at?: number;
+  /** Teto de execuções conferidas nesta passada. */
+  limit?: number;
+  /** Janela para trás, em dias. */
+  days?: number;
+}
+
+export interface SweepReport {
+  /** Execuções que a batida chegou a olhar. */
+  checked: number;
+  /** As que ganharam desfecho agora. */
+  settled: ReconcileReport[];
+  /** Pull request ainda aberto: volta na próxima batida. */
+  stillOpen: number;
+  /** Execuções marcadas de vez por não identificarem um pull request. */
+  unreadable: number;
+  /** Quem falhou por motivo passageiro, e por isso volta na próxima batida. */
+  failed: { runId: string; detail: string }[];
 }
 
 export type AftermathFetcher = (
@@ -110,6 +177,12 @@ export class ReconcileService {
     const counts = zeroed();
     for (const state of outcomes.values()) counts[state.state] += 1;
 
+    // A marca vale para quem chamou pela batida e para quem chamou pela linha
+    // de comando: o que ela guarda é que esta execução já ganhou desfecho, e
+    // não quem pediu. Pull request aberto conferido com `force` fica de fora
+    // de propósito, porque o desfecho dele ainda pode mudar.
+    if (aftermath.state !== "open") await this.markChecked(runId, aftermath.state, options.at);
+
     return {
       ...base,
       unmatchedSignals: aftermath.signals.filter(
@@ -119,17 +192,105 @@ export class ReconcileService {
     };
   }
 
+  /**
+   * Confere as execuções cujo pull request fechou desde a última passada.
+   *
+   * Existe porque desfecho não chega sozinho: o agent termina antes do review
+   * humano, e o que interessa só acontece depois. Sem isto a tabela de
+   * desfechos só enchia quando alguém lembrasse de rodar o comando à mão, e a
+   * métrica de precisão media o que tivesse sido conferido, não o que tinha
+   * acontecido.
+   *
+   * Nada aqui escreve no GitHub: a leitura do que aconteceu é o mesmo caminho
+   * do comando manual, e o passo de ação continua parando na fila de aprovação.
+   */
+  async sweep(options: SweepOptions = {}): Promise<SweepReport> {
+    const at = options.at ?? Date.now();
+    const limit = options.limit ?? SWEEP_BATCH;
+    const desde = Math.floor(at / 1000) - (options.days ?? SWEEP_WINDOW_DAYS) * 86_400;
+
+    const conferidas = await this.checkedRuns();
+    const candidatas = await this.db
+      .select({ id: schema.runs.id })
+      .from(schema.runs)
+      .innerJoin(schema.events, eq(schema.runs.eventId, schema.events.id))
+      .where(
+        and(
+          // Só o que veio do GitHub tem review humano para cruzar. O evento
+          // sintético do `demo` e o do fixture ficam de fora por aqui.
+          eq(schema.events.source, "github"),
+          inArray(schema.runs.status, SWEEPABLE),
+          gte(schema.runs.createdAt, desde),
+        ),
+      )
+      // Mais velha primeiro, para que uma fila maior que o lote drene em ordem
+      // em vez de deixar sempre as mesmas execuções de fora.
+      .orderBy(asc(schema.runs.createdAt));
+
+    const report: SweepReport = {
+      checked: 0,
+      settled: [],
+      stillOpen: 0,
+      unreadable: 0,
+      failed: [],
+    };
+
+    for (const { id } of candidatas) {
+      if (conferidas.has(id)) continue;
+      if (report.checked >= limit) break;
+      report.checked += 1;
+
+      try {
+        const desfecho = await this.reconcileRun(id, { at });
+        if (desfecho.skipped !== undefined) report.stillOpen += 1;
+        else report.settled.push(desfecho);
+      } catch (err) {
+        if (err instanceof UnreadableRun) {
+          await this.markChecked(id, "unreadable", at);
+          report.unreadable += 1;
+          continue;
+        }
+        // Uma execução que não deu para conferir não pode derrubar as outras:
+        // a batida é uma só e a próxima só vem daqui a uma cadência.
+        report.failed.push({ runId: id, detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    return report;
+  }
+
+  /** Execuções que já ganharam desfecho, pela batida ou pelo comando manual. */
+  private async checkedRuns(): Promise<Set<string>> {
+    const rows = await this.db
+      .select({ key: schema.cursors.key })
+      .from(schema.cursors)
+      .where(eq(schema.cursors.source, CURSOR_SOURCE));
+    return new Set(rows.map((row) => row.key));
+  }
+
+  private async markChecked(runId: string, state: string, at: number = Date.now()): Promise<void> {
+    await this.db
+      .insert(schema.cursors)
+      .values({ source: CURSOR_SOURCE, key: runId, value: state })
+      .onConflictDoUpdate({
+        target: [schema.cursors.source, schema.cursors.key],
+        set: { value: state, updatedAt: Math.floor(at / 1000) },
+      });
+  }
+
   /** Dados do pull request que originou o run, direto do evento gravado. */
   private async prOf(eventId: string | null) {
-    if (!eventId) throw new Error("run sem evento: nao ha pull request para reconciliar");
+    if (!eventId) throw new UnreadableRun("run sem evento: nao ha pull request para reconciliar");
 
     const [event] = await this.db
       .select()
       .from(schema.events)
       .where(eq(schema.events.id, eventId));
-    if (!event) throw new Error(`evento ${eventId} nao encontrado`);
+    if (!event) throw new UnreadableRun(`evento ${eventId} nao encontrado`);
     if (event.source !== "github") {
-      throw new Error(`evento de origem "${event.source}" nao tem review humano para reconciliar`);
+      throw new UnreadableRun(
+        `evento de origem "${event.source}" nao tem review humano para reconciliar`,
+      );
     }
 
     const p = event.payload as Record<string, unknown>;
@@ -137,7 +298,7 @@ export class ReconcileService {
     const repo = typeof p.repoName === "string" ? p.repoName : undefined;
     const pull = typeof p.pull === "number" ? p.pull : undefined;
     if (!owner || !repo || pull === undefined) {
-      throw new Error(`evento ${eventId} nao identifica um pull request`);
+      throw new UnreadableRun(`evento ${eventId} nao identifica um pull request`);
     }
     return { owner, repo, pull, headSha: typeof p.headSha === "string" ? p.headSha : "" };
   }

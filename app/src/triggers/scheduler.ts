@@ -6,7 +6,10 @@ import { McpRegistry } from "../mcp/registry.js";
 import { executionService, type ExecutionService } from "../services/execution-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
-import { pollOpenPullRequests } from "../sources/github.js";
+// So tipo: o servico de reconciliacao puxa o octokit pelo topo do modulo, e
+// quem carrega este agendador nem sempre quer isso junto. O valor entra por
+// import dinamico la embaixo.
+import type { SweepOptions, SweepReport } from "../services/reconcile-service.js";
 
 type Db = typeof defaultDb;
 
@@ -43,6 +46,8 @@ export interface TickResult {
   outcomes: TriggerOutcome[];
   /** A batida mais proxima que algum gatilho pediu. Nulo quando nao ha nenhum. */
   nextDueAt: number | null;
+  /** O que a conferencia de pull request fechado fez nesta batida. */
+  reconciled: SweepSummary;
 }
 
 export interface TickOptions {
@@ -55,6 +60,78 @@ export interface TickOptions {
 
 /** A varredura do GitHub entra como dependencia para poder ser trocada em teste. */
 export type PollFn = (owner: string, repoFilter: RegExp) => Promise<string[]>;
+
+/** A conferencia de pull request fechado, trocavel pelo mesmo motivo. */
+export type SweepFn = (options?: SweepOptions) => Promise<SweepReport>;
+
+/**
+ * O que a conferencia fez numa batida.
+ *
+ * Contagem, e nao os relatorios inteiros: quem le uma batida quer saber se
+ * alguma execucao ganhou desfecho, e o detalhe de cada achado ja esta no banco.
+ */
+export interface SweepSummary {
+  checked: number;
+  settled: number;
+  stillOpen: number;
+  unreadable: number;
+  failed: number;
+  /** Erro da propria conferencia, quando ela nem chegou a olhar execucao. */
+  detail?: string;
+}
+
+/**
+ * O que um gatilho respondeu quando alguem perguntou pelo relogio, sem bater.
+ *
+ * Existe porque a interface mostra cadastro e agenda na mesma linha, e as duas
+ * coisas moram em lugares diferentes: a configuracao esta na tabela de
+ * gatilhos, e a ultima batida no cursor deste agendador.
+ */
+export interface TriggerSchedule {
+  triggerId: string;
+  agentId: string;
+  kind: TriggerConfig["kind"];
+  enabled: boolean;
+  /**
+   * O cadastro inteiro, e nao so o tipo.
+   *
+   * Quem mostra agenda mostra do lado o que esta sendo observado, e separar as
+   * duas metades em duas leituras obrigaria a tela a juntar por identificador
+   * o que ja sai junto daqui.
+   */
+  config: TriggerConfig;
+  /** Cadencia desejada. Nulo e gatilho que nao anda pelo relogio. */
+  everyMinutes: number | null;
+  /** Ultima batida deste gatilho, em epoch de milissegundos. */
+  lastFireAt: number | null;
+  /**
+   * Quando o agendador vai acordar este gatilho.
+   *
+   * Nulo quando ninguem vai: gatilho desabilitado nao entra na batida, e
+   * webhook espera chamada e nao relogio. Dizer uma data para esses dois seria
+   * prometer na tela uma batida que nunca vem.
+   */
+  nextDueAt: number | null;
+}
+
+/**
+ * A varredura de verdade entra por import dinamico, e nao pelo topo do modulo.
+ *
+ * Este agendador e carregado pela ponte na subida da janela, so para responder
+ * quando foi a ultima batida de cada gatilho. O `octokit` que o source importa
+ * viria junto nessa carona, e ele nao tem o que fazer ate alguem habilitar um
+ * gatilho de varredura.
+ */
+const varrerNoGithub: PollFn = async (owner, repoFilter) => {
+  const { pollOpenPullRequests } = await import("../sources/github.js");
+  return pollOpenPullRequests(owner, repoFilter);
+};
+
+/** Pelo mesmo motivo do `varrerNoGithub`: o octokit so entra quando bate. */
+const conferirFechados: SweepFn = async (options) => {
+  const { reconcileService } = await import("../services/reconcile-service.js");
+  return reconcileService.sweep(options);
+};
 
 /**
  * Quem acorda os gatilhos habilitados.
@@ -78,7 +155,8 @@ export class Scheduler {
     private readonly triggers: TriggerService = triggerService,
     private readonly executions: ExecutionService = executionService,
     private readonly mcp: McpService = mcpService,
-    private readonly poll: PollFn = pollOpenPullRequests,
+    private readonly poll: PollFn = varrerNoGithub,
+    private readonly sweep: SweepFn = conferirFechados,
   ) {}
 
   /** Batida vinda do evento de acordar da maquina, que o M3 vai ligar. */
@@ -95,19 +173,99 @@ export class Scheduler {
       outcomes.push(await this.runTrigger(trigger, at, options.wait ?? false));
     }
 
+    // Depois dos gatilhos, e fora do laco deles: a conferencia nao pertence a
+    // gatilho nenhum. Ela olha execucao que ja existe, e roda mesmo numa
+    // maquina onde ninguem habilitou nada.
+    const reconciled = await this.reconcile(at);
+
     const due = outcomes.map((o) => o.nextDueAt).filter((v): v is number => v !== null);
-    return { at, reason, outcomes, nextDueAt: due.length > 0 ? Math.min(...due) : null };
+    return {
+      at,
+      reason,
+      outcomes,
+      nextDueAt: due.length > 0 ? Math.min(...due) : null,
+      reconciled,
+    };
   }
 
-  /** Quando o agendador quer ser acordado, sem disparar nada agora. */
-  async nextDueAt(): Promise<number | null> {
-    const times: number[] = [];
-    for (const trigger of await this.triggers.enabled()) {
-      const cadence = cadenceMs(trigger.config);
-      if (cadence === null) continue;
-      const last = await this.lastFire(trigger.id);
-      times.push(last === null ? 0 : last + cadence);
+  /**
+   * A conferencia da batida, com o erro dela parando aqui.
+   *
+   * GitHub fora do ar nao pode derrubar a batida inteira: os gatilhos ja
+   * dispararam quando isto roda, e deixar a excecao subir faria o chamador
+   * achar que a batida nao aconteceu.
+   */
+  private async reconcile(at: number): Promise<SweepSummary> {
+    const vazio: SweepSummary = {
+      checked: 0,
+      settled: 0,
+      stillOpen: 0,
+      unreadable: 0,
+      failed: 0,
+    };
+
+    try {
+      const report = await this.sweep({ at });
+      return {
+        checked: report.checked,
+        settled: report.settled.length,
+        stillOpen: report.stillOpen,
+        unreadable: report.unreadable,
+        failed: report.failed.length,
+      };
+    } catch (err) {
+      return { ...vazio, detail: message(err) };
     }
+  }
+
+  /**
+   * O que o agendador enxerga de cada gatilho cadastrado, sem bater em nenhum.
+   *
+   * Vem daqui e nao do `TriggerService` porque metade da resposta e o cursor,
+   * que e estado desta classe: o cadastro sabe a cadencia desejada, e so o
+   * agendador sabe quando o gatilho disparou pela ultima vez.
+   *
+   * Entra tambem o que esta desabilitado, que e o estado em que todo gatilho
+   * nasce: quem acabou de cadastrar precisa ver a linha na tela para poder
+   * habilita-la.
+   */
+  async schedule(at: number = Date.now()): Promise<TriggerSchedule[]> {
+    const schedules: TriggerSchedule[] = [];
+
+    for (const trigger of await this.triggers.list()) {
+      const cadence = cadenceMs(trigger.config);
+      const last = await this.lastFire(trigger.id);
+      schedules.push({
+        triggerId: trigger.id,
+        agentId: trigger.agentId,
+        kind: trigger.config.kind,
+        enabled: trigger.enabled,
+        config: trigger.config,
+        everyMinutes: cadence === null ? null : cadence / 60_000,
+        lastFireAt: last,
+        // Gatilho que nunca disparou esta vencido, e a batida dele e a proxima
+        // que acontecer. Nao e o mesmo que "daqui a uma cadencia": esperar um
+        // ciclo inteiro depois de habilitar faria a primeira varredura demorar
+        // sem que ninguem tivesse pedido isso.
+        nextDueAt:
+          !trigger.enabled || cadence === null ? null : last === null ? at : last + cadence,
+      });
+    }
+
+    return schedules;
+  }
+
+  /**
+   * Quando o agendador quer ser acordado, sem disparar nada agora.
+   *
+   * O relogio entra por parametro pelo mesmo motivo do `schedule`: gatilho que
+   * nunca disparou esta vencido agora, e duas chamadas com dois `Date.now()`
+   * respondem numeros diferentes para a mesma pergunta.
+   */
+  async nextDueAt(at: number = Date.now()): Promise<number | null> {
+    const times = (await this.schedule(at))
+      .map((s) => s.nextDueAt)
+      .filter((v): v is number => v !== null);
     return times.length > 0 ? Math.min(...times) : null;
   }
 
@@ -177,8 +335,13 @@ export class Scheduler {
         if (config.source !== "github") {
           throw new Error(`fonte "${config.source}" nao tem varredura cadastrada`);
         }
-        const owner = process.env.GITHUB_OWNER;
-        if (!owner) throw new Error("GITHUB_OWNER ausente, a varredura do GitHub precisa da org");
+        // O cadastro vem antes do ambiente, pela mesma razao do token: quem
+        // escolheu o dono na tela espera que a varredura visite aquele, e nao
+        // um `GITHUB_OWNER` esquecido no shell de onde o app subiu.
+        const owner = config.owner ?? process.env.GITHUB_OWNER;
+        if (!owner) {
+          throw new Error("gatilho sem dono e sem GITHUB_OWNER, a varredura precisa da org");
+        }
 
         const created = await this.poll(owner, new RegExp(config.repoMatch));
         const runs = await this.runsFor(trigger, created, wait);

@@ -23,31 +23,31 @@ que a interface vai usar.
 | executor durável com retomada | pronto e verificado |
 | orçamento por execução e por dia | pronto e verificado |
 | fila de aprovação com identificador externo antes da publicação | pronto |
-| fonte GitHub com varredura por cursor | escrito, sem teste com token |
+| fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
-| cadastro de gatilho | serviço pronto, nasce desabilitado, sem quem dispare |
-| reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token |
+| cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
+| reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token; disparado pela batida do agendador, com cursor próprio por execução |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
 | camada de serviço, dez serviços | pronto |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
-| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor` |
+| agendador por cursor | pronto, batido pelo `resume` do `powerMonitor`; cada batida confere o que fechou desde a última |
 | casca Electron | processo principal com `--smoke`, bandeja com contagem de pendências, início no login por preferência guardada, eventos de energia batendo o agendador e deep link de OAuth |
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 33 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
+| ponte entre janela e serviços | preload em sandbox, 42 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura, e orçamentos com o gasto do dia |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -56,9 +56,11 @@ que a interface vai usar.
 | guarda contra literal solto | `app/scripts/check-i18n.mjs` varre `renderer/src`, `renderer/lib` e `electron` por posição visível e falha com a lista; ligado em `npm run verify` |
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
-| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote |
+| empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote; `node_modules` fora e o processo principal embutido, `.app` de 234 MB e imagem de 100 MB |
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
+| credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
+| repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 
 ## Execução verificada
 
@@ -95,7 +97,7 @@ npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
 npm run dev metrics                   # recalcula e imprime precisão por versão
 npm run dev rerun <run-id> audit
 npm run dev triggers                  # gatilhos cadastrados e quando o agendador quer a próxima batida
-npm run dev tick                      # uma batida nos gatilhos habilitados
+npm run dev tick                      # uma batida nos gatilhos habilitados, e a conferência do que fechou
 npm run dev providers
 npm run dev mcp
 npm run dev mcp:register locum-fixture stdio 'npx tsx src/fixtures/mcp-fixture-server.ts'
@@ -477,6 +479,30 @@ isso o `credentials.overview` devolve os usuários de cada referência e a tela
 indexa por `kind:name`. O que ele nunca devolve é valor: o cofre só se abre no
 caminho de quem vai conectar, e a janela não é esse caminho.
 
+**O token do GitHub atravessa a ponte numa direção só.** A regra de que a
+janela não abre o cofre continua de pé: nenhum canal devolve valor de segredo, e
+`github.status` responde endereço, se há algo guardado, de quem é a conta e
+quando foi a última conferência. O que mudou é que existe um canal de ida,
+`github.save`, porque digitar o token em algum lugar é o único jeito de ele
+chegar ao keychain sem abrir terminal. A prova de que a volta não existe está no
+catálogo de leitura, escrito à mão, e o smoke a repete de fora: depois de
+guardar, o valor não aparece no campo nem no HTML da página.
+
+**Guardar token novo apaga a conta do anterior.** O login e os escopos descrevem
+o token que estava ali, e não a referência. Mantê-los depois da troca faria a
+tela afirmar, com cara de dado conferido, uma conta que o token novo pode nem
+ter. Por isso `setToken` e `clearToken` limpam a conferência, e o smoke cobra
+isso.
+
+**A conferência do GitHub é exercitada sem falar com o GitHub.** O marco proíbe
+credencial de verdade, e a proibição não tira nada do que a story pede: guardar,
+ler do cofre, conferir e esquecer terminam dentro da máquina. O único pedaço que
+sairia é a resposta do GitHub a um token, e ela entra pelo construtor do
+`GithubService`, que aceita a sonda trocada. Na interface o clique de conferir só
+acontece com o cofre vazio, quando a resposta é "não há token" e não sai daqui;
+com token guardado o exame pula o clique, porque ele viraria uma chamada
+autenticada feita por um loop que roda sem ninguém olhando.
+
 **O único clique do smoke é testar conexão.** O botão de reexecutar passo
 continua sendo só conferido por existir, porque clicar solta o executor de
 verdade. Testar conexão é diferente: o alvo é o `mcp-fixture-server.ts`, que é
@@ -598,6 +624,27 @@ electron-builder e é onde o esbuild e o Vite já escrevem: sem mudar para
 servem a quem tem o código, e quem tem o código roda por `npm start`. Dentro do
 `.app` eles dobravam o tamanho do asar sem ninguém para abrir.
 
+**O `node_modules` também fica fora, e por isso o processo principal sai
+embutido.** O padrão do electron-builder é embrulhar a árvore de produção
+inteira, e quase nada dela era alcançado de dentro do `.app`: React, Radix,
+Shiki e as fontes já tinham sido embutidos pelo Vite na página da janela e
+viajavam de novo em código-fonte, e o Octokit sozinho passava de cem megabytes.
+O `esbuild` passou a embutir em `dist/main.cjs` tudo o que o processo principal
+importa, com `external` só para `electron`, que vem do runtime, e para
+`better-sqlite3`, que chega ao `.node` por `require` de caminho. As duas pontas
+são uma coisa só: mexer no `external` sem mexer no `!node_modules/**`, ou o
+contrário, quebra a subida do pacote e passa batido no `smoke` de
+desenvolvimento, que ainda enxerga o `node_modules` do repositório.
+
+**As traduções do Chromium seguem o nome da pasta, não a etiqueta do
+dicionário.** O Electron traz 220 `.lproj` e o Locum fala duas, então
+`electronLanguages` corta o resto. Só que esta versão do electron-builder
+compara o nome do arquivo em minúsculas: `pt-BR` não casa com `pt_BR.lproj` e
+apaga a tradução que se queria manter. O estrago é silencioso porque o macOS
+decide o idioma do aplicativo pelos `.lproj` que sobraram, e sem `pt_BR` o
+`app.getLocale()` devolve `en` até em sistema em português, com a interface
+inteira trocando de idioma.
+
 **O `--smoke` de desenvolvimento passava e o do pacote não.** As duas coisas que
 quebraram são exatamente as que só aparecem depois de empacotar. O servidor de
 brinquedo era alcançado por `tsx` lendo `src/`, e nenhum dos dois entra no
@@ -640,7 +687,11 @@ deploy passa a depender só de cadastrar o servidor certo.
 
 O agendador não tem relógio próprio. Ele é batido de fora, hoje pelo comando
 `tick`, e devolve em `nextDueAt` quando quer a próxima batida, para quem chama
-armar um temporizador só. Cada gatilho tem seu cursor de tempo na tabela
+armar um temporizador só. O `schedule()` responde o mesmo por gatilho, com a
+última batida ao lado do cadastro, que é o que a tela de configuração mostra. O
+relógio entra por parâmetro nos dois: gatilho que nunca disparou está vencido
+agora, e duas chamadas com dois `Date.now()` responderiam números diferentes
+para a mesma pergunta. Cada gatilho tem seu cursor de tempo na tabela
 `cursors`, então sono da máquina não perde janela: a primeira batida depois de
 acordar já encontra o gatilho vencido. Quem chama `onWake()` é o processo
 principal do Electron, em `app/electron/power.ts`, no `resume` do

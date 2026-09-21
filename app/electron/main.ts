@@ -10,6 +10,7 @@ import { join, sep } from "node:path";
 // `src/` aqui em cima carregaria o nucleo antes de `LOCUM_SQLITE_BINDING`
 // apontar o binario do Electron.
 import type { RunService } from "../src/services/run-service.js";
+import type { AftermathFetcher } from "../src/services/reconcile-service.js";
 
 const smoke = process.argv.includes("--smoke");
 const capturas = process.argv.includes("--capturas");
@@ -260,6 +261,184 @@ async function checkPower(): Promise<string> {
   }
 
   return t("smoke.power", { minutes: sleep / 60_000 });
+}
+
+
+/** A conferência não varre: gatilho de varredura não chega a este agendador. */
+const proibirVarredura = async (): Promise<string[]> => {
+  throw new Error("o smoke da conferencia nao pode varrer o GitHub");
+};
+/**
+ * Prova que a conferência de pull request fechado roda na batida do agendador,
+ * e que ela não reprocessa quem já ganhou desfecho.
+ *
+ * Nada aqui fala com o GitHub: o leitor do que aconteceu depois do review entra
+ * trocado, contando quantas vezes cada pull request foi visitado. É o que
+ * permite exigir a parte difícil da story, que é uma afirmação sobre a segunda
+ * batida: a execução fechada não pode ser visitada de novo, e a que ficou com o
+ * pull request aberto tem que voltar.
+ *
+ * O agendador entra inteiro, com o serviço de gatilhos trocado por um que não
+ * enxerga nada habilitado. Sem isso a batida dispararia o que estiver ligado no
+ * banco de quem desenvolve, e o smoke gastaria assinatura sem ninguém pedir.
+ *
+ * As duas execuções são plantadas e apagadas aqui mesmo. O smoke roda no banco
+ * de verdade, e evento de origem `github` que sobrevivesse entraria na fila de
+ * conferência da próxima subida do app.
+ */
+async function checkReconcile(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { runService } = await import("../src/services/run-service.js");
+  const { ReconcileService } = await import("../src/services/reconcile-service.js");
+  const { TriggerService } = await import("../src/services/trigger-service.js");
+  const { executionService } = await import("../src/services/execution-service.js");
+  const { mcpService } = await import("../src/services/mcp-service.js");
+  const { Scheduler } = await import("../src/triggers/scheduler.js");
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para reconciliar");
+  const versao = await agentService.getLatestVersion(agent.id);
+  if (versao === undefined) throw new Error(`agent ${agent.id} sem versao gravada`);
+
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const arquivo = "src/Auth/TokenValidator.cs";
+  const problema = "`DateTime.Now` devolve hora local e o token expira tarde demais.";
+  // Corpo do comentário humano inventado. Sai em variável porque o guarda de
+  // i18n olha a propriedade `body`, e este texto é dado de teste, não produto.
+  const comentario = "o mesmo ponto, visto por uma pessoa";
+
+  const fechado = { runId: `smoke-run-${randomUUID()}`, eventId: `smoke-event-${randomUUID()}`, pull: 1 };
+  const aberto = { runId: `smoke-run-${randomUUID()}`, eventId: `smoke-event-${randomUUID()}`, pull: 2 };
+
+  for (const alvo of [fechado, aberto]) {
+    await db.insert(schema.events).values({
+      id: alvo.eventId,
+      source: "github",
+      externalId: `pr:${dono}/${repo}#${alvo.pull}:sha:abc123`,
+      payload: { owner: dono, repoName: repo, pull: alvo.pull, headSha: "abc123" },
+    });
+    await db.insert(schema.runs).values({
+      id: alvo.runId,
+      agentVersionId: versao.id,
+      eventId: alvo.eventId,
+      triggerId: null,
+      status: "done",
+    });
+    await db.insert(schema.steps).values({
+      id: `${alvo.runId}-audit`,
+      runId: alvo.runId,
+      idx: 0,
+      stepKey: "audit",
+      name: "Auditoria",
+      status: "done",
+      output: {
+        findings: [
+          { file: arquivo, line: 41, severity: "critical", category: "correcao", problem: problema },
+        ],
+      },
+    });
+  }
+
+  /** Quantas vezes cada pull request foi visitado, por número. */
+  const visitas = new Map<number, number>();
+  const olhar: AftermathFetcher = async (owner, nome, pull, sha) => {
+    if (owner !== dono || nome !== repo) {
+      throw new Error(`a conferencia visitou ${owner}/${nome}, que nao e o alvo plantado`);
+    }
+    visitas.set(pull, (visitas.get(pull) ?? 0) + 1);
+    const encerrado = pull === fechado.pull;
+    return {
+      prKey: `${owner}/${nome}#${pull}`,
+      state: encerrado ? "merged" : "open",
+      headSha: sha,
+      // O sinal cai na mesma linha do achado, que é o que faz o desfecho sair
+      // como confirmado e não como ignorado.
+      signals: encerrado
+        ? [{ author: "revisora", kind: "comment" as const, file: arquivo, line: 41, body: comentario }]
+        : [],
+      changedAfter: new Map(),
+    };
+  };
+
+  const conferencia = new ReconcileService(db, runService, olhar);
+  const semGatilho = new (class extends TriggerService {
+    async enabled() {
+      return [];
+    }
+  })(db);
+  const agendador = new Scheduler(db, semGatilho, executionService, mcpService, proibirVarredura, (o) =>
+    conferencia.sweep(o),
+  );
+
+  try {
+    // As contagens da batida sao pisos, e nao igualdades: o smoke roda no banco
+    // de quem desenvolve, e uma execucao antiga de origem `github` entraria na
+    // mesma fila. O que e exigido com numero exato e o que o contador de
+    // visitas diz sobre as duas execucoes plantadas aqui.
+    const primeira = await agendador.tick({ reason: "timer" });
+    if (primeira.reconciled.settled < 1 || primeira.reconciled.stillOpen < 1) {
+      throw new Error(
+        `a primeira batida deu ${primeira.reconciled.settled} desfecho(s) e deixou ` +
+          `${primeira.reconciled.stillOpen} aberto(s), e o esperado era ao menos um de cada`,
+      );
+    }
+    if (visitas.get(fechado.pull) !== 1 || visitas.get(aberto.pull) !== 1) {
+      throw new Error("a primeira batida nao visitou as duas execucoes plantadas uma vez cada");
+    }
+
+    const desfechos = await db
+      .select({ state: schema.findingOutcomes.state })
+      .from(schema.findingOutcomes)
+      .innerJoin(schema.findings, eq(schema.findingOutcomes.findingId, schema.findings.id))
+      .where(eq(schema.findings.runId, fechado.runId));
+    if (desfechos.length !== 1 || desfechos[0]?.state !== "confirmed_by_human") {
+      throw new Error(
+        `a execucao fechada ganhou ${desfechos.length} desfecho(s): ` +
+          `${desfechos.map((d) => d.state).join(", ")}`,
+      );
+    }
+    const semDesfecho = await db
+      .select({ id: schema.findings.id })
+      .from(schema.findings)
+      .where(eq(schema.findings.runId, aberto.runId));
+    if (semDesfecho.length !== 0) {
+      throw new Error("a execucao de PR aberto gravou achado antes de o pull request fechar");
+    }
+
+    const segunda = await agendador.tick({ reason: "timer" });
+    if (segunda.reconciled.settled !== 0) {
+      throw new Error(`a segunda batida gravou ${segunda.reconciled.settled} desfecho(s) de novo`);
+    }
+    if (visitas.get(fechado.pull) !== 1) {
+      throw new Error(`o PR fechado foi visitado ${String(visitas.get(fechado.pull))} vez(es), e nao uma`);
+    }
+    if (visitas.get(aberto.pull) !== 2) {
+      throw new Error(`o PR aberto foi visitado ${String(visitas.get(aberto.pull))} vez(es), e nao duas`);
+    }
+
+    return t("smoke.reconcile", { settled: primeira.reconciled.settled });
+  } finally {
+    const runIds = [fechado.runId, aberto.runId];
+    const achados = await db
+      .select({ id: schema.findings.id })
+      .from(schema.findings)
+      .where(inArray(schema.findings.runId, runIds));
+    if (achados.length > 0) {
+      await db.delete(schema.findingOutcomes).where(
+        inArray(schema.findingOutcomes.findingId, achados.map((a) => a.id)),
+      );
+    }
+    await db.delete(schema.findings).where(inArray(schema.findings.runId, runIds));
+    await db.delete(schema.reviewSignals).where(eq(schema.reviewSignals.prKey, `${dono}/${repo}#${fechado.pull}`));
+    await db.delete(schema.cursors).where(
+      and(eq(schema.cursors.source, "reconcile"), inArray(schema.cursors.key, runIds)),
+    );
+    await db.delete(schema.steps).where(inArray(schema.steps.runId, runIds));
+    await db.delete(schema.runs).where(inArray(schema.runs.id, runIds));
+    await db.delete(schema.events).where(inArray(schema.events.id, [fechado.eventId, aberto.eventId]));
+  }
 }
 
 /**
@@ -1275,6 +1454,9 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     );
   }
 
+  const github = await checkGithub(window);
+  const watched = await checkWatched(window);
+
   return t("smoke.config", {
     providers: provedores.length,
     fallbacks: fallbacks.length,
@@ -1282,7 +1464,478 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     fixture: FIXTURE_SERVER,
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
+    github,
+    watched,
   });
+}
+
+/**
+ * Confere a secao dos repositorios observados, sem varrer nada.
+ *
+ * O caminho inteiro da story cabe dentro da maquina: cadastrar pela tela,
+ * conferir que o gatilho nasceu parado, liga-lo e ver o agendador calcular a
+ * proxima batida, e remover. Nenhum desses passos fala com o GitHub, porque
+ * quem falaria e a batida, e batida nenhuma acontece aqui: o `tick` nao e
+ * chamado, e o gatilho e removido antes de o smoke sair.
+ *
+ * O dono e o padrao de repositorio sao sorteados de proposito. O smoke roda no
+ * banco de quem desenvolve, e um padrao que casasse com repositorio de verdade
+ * deixaria para tras um gatilho apontado para trabalho real caso a limpeza
+ * falhasse.
+ */
+async function checkWatched(window: BrowserWindow): Promise<string> {
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { triggerService } = await import("../src/services/trigger-service.js");
+  const { scheduler } = await import("../src/triggers/scheduler.js");
+
+  const [agent] = await agentService.list();
+  if (agent === undefined) throw new Error("nenhum agent cadastrado para observar repositorio");
+
+  const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
+  const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
+  const cadencia = 7;
+  const antes = (await triggerService.list()).map((gatilho) => gatilho.id);
+
+  const preencheu = await window.webContents.executeJavaScript(
+    `(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set;
+      const digitar = (seletor, valor) => {
+        const campo = document.querySelector(seletor);
+        if (campo === null) return false;
+        setter.call(campo, valor);
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      };
+      const escolher = () => {
+        const campo = document.querySelector("[data-locum-observar-agent]");
+        if (campo === null) return false;
+        campo.value = ${JSON.stringify(agent.id)};
+        campo.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      };
+      if (!escolher()) return false;
+      if (!digitar("[data-locum-observar-dono]", ${JSON.stringify(dono)})) return false;
+      if (!digitar("[data-locum-observar-repo]", ${JSON.stringify(repo)})) return false;
+      if (!digitar("[data-locum-observar-cadencia]", ${JSON.stringify(String(cadencia))})) {
+        return false;
+      }
+      const botao = document.querySelector("[data-locum-observar-salvar]");
+      if (botao === null || botao.disabled) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de observar");
+
+  // O identificador so existe depois de o servico gravar, entao ele e
+  // descoberto por diferenca em vez de vir da tela: assim o exame nao depende
+  // de o marcador estar certo para achar o que tem que limpar depois.
+  const criado = await esperarDoServico(
+    "gatilho cadastrado pela tela",
+    async () => (await triggerService.list()).find((gatilho) => !antes.includes(gatilho.id)),
+  );
+
+  try {
+    // A recusa da ponte vira mensagem daqui antes de virar espera estourada:
+    // "o marcador nao ficou pronto" nao diz por que a linha nao apareceu.
+    const recusa = (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-observados-erro]")
+        ?.dataset.locumObservadosErro ?? null`,
+    )) as string | null;
+    if (recusa !== null) throw new Error(`a secao de observados recusou: ${recusa}`);
+
+    if (criado.enabled) throw new Error("o gatilho cadastrado pela tela nasceu habilitado");
+    if (criado.config.kind !== "poll") {
+      throw new Error(`a tela cadastrou um gatilho do tipo ${criado.config.kind}`);
+    }
+    if (criado.config.owner !== dono || criado.config.repoMatch !== repo) {
+      throw new Error(
+        `a tela gravou ${criado.config.owner}/${criado.config.repoMatch} e nao ${dono}/${repo}`,
+      );
+    }
+    if (criado.config.everyMinutes !== cadencia) {
+      throw new Error(`a cadencia gravada foi ${criado.config.everyMinutes} e nao ${cadencia}`);
+    }
+
+    const parado = (await scheduler.schedule()).find((s) => s.triggerId === criado.id);
+    if (parado === undefined) throw new Error("o gatilho novo nao apareceu no agendador");
+    // Parado nao tem proxima batida, e dizer uma data aqui seria prometer na
+    // tela uma varredura que o agendador nao vai fazer.
+    if (parado.nextDueAt !== null) {
+      throw new Error(`o gatilho parado disse que bate em ${parado.nextDueAt}`);
+    }
+
+    const naTela = await esperarProbe<{ habilitado: string; alvo: string; proxima: string }>(
+      window,
+      "gatilho na tela",
+      `(() => {
+        const linha = document.querySelector('[data-locum-gatilho="${criado.id}"]');
+        if (linha === null) return null;
+        return {
+          habilitado: linha.dataset.locumGatilhoHabilitado,
+          alvo: linha.dataset.locumGatilhoAlvo,
+          proxima: linha.dataset.locumGatilhoProxima,
+        };
+      })()`,
+    );
+    if (naTela.habilitado !== "nao") throw new Error("a tela mostrou o gatilho novo como ligado");
+    if (naTela.alvo !== `${dono}/${repo}`) {
+      throw new Error(`a tela mostrou o alvo ${naTela.alvo} e o cadastro diz ${dono}/${repo}`);
+    }
+    if (naTela.proxima !== "") {
+      throw new Error(`a tela anunciou a batida ${naTela.proxima} de um gatilho parado`);
+    }
+
+    // O clique que a story cobra: ligado, ele aparece no agendador com a
+    // proxima batida calculada. Ligar nao varre; quem varreria e o `tick`, que
+    // este exame nao chama.
+    const cliquei = Date.now();
+    const ligou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-gatilho-ligar="${criado.id}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (ligou !== true) throw new Error("a tela nao ofereceu botao de ligar o gatilho");
+
+    await esperarProbe<true>(
+      window,
+      "gatilho ligado pela tela",
+      `document.querySelector('[data-locum-gatilho="${criado.id}"]')
+        ?.dataset.locumGatilhoHabilitado === "sim" ? true : null`,
+    );
+
+    // O relogio e passado de fora para que as duas perguntas abaixo respondam
+    // sobre o mesmo instante: gatilho que nunca disparou esta vencido agora, e
+    // com dois `Date.now()` a comparacao viraria uma corrida de milissegundos.
+    const agora = Date.now();
+    const ligado = (await scheduler.schedule(agora)).find((s) => s.triggerId === criado.id);
+    if (ligado?.enabled !== true) throw new Error("o gatilho ligado na tela continuou parado");
+    if (ligado.nextDueAt === null) {
+      throw new Error("o agendador nao calculou a proxima batida do gatilho ligado");
+    }
+    if (ligado.everyMinutes !== cadencia) {
+      throw new Error(`o agendador leu a cadencia ${ligado.everyMinutes} e nao ${cadencia}`);
+    }
+    // Vencido, e nao daqui a uma cadencia: esperar sete minutos para a primeira
+    // varredura de um gatilho que alguem acabou de ligar seria demora que
+    // ninguem pediu.
+    if (ligado.nextDueAt !== agora) {
+      throw new Error(`o gatilho ligado agora quer bater em ${ligado.nextDueAt}`);
+    }
+    if ((await scheduler.nextDueAt(agora)) !== agora) {
+      throw new Error("a batida do gatilho novo ficou de fora da proxima batida do agendador");
+    }
+
+    const naTelaLigado = await esperarProbe<string>(
+      window,
+      "batida do gatilho na tela",
+      `(() => {
+        const linha = document.querySelector('[data-locum-gatilho="${criado.id}"]');
+        const proxima = linha?.dataset.locumGatilhoProxima;
+        return proxima === undefined || proxima === "" ? null : proxima;
+      })()`,
+    );
+    // A tela leu com o relogio dela, entao o que da para exigir e a janela: a
+    // batida anunciada caiu entre o clique de ligar e agora, que e o que
+    // "vencido" quer dizer. Igualdade exata aqui seria exigir que os dois lados
+    // tivessem lido o relogio no mesmo milissegundo.
+    const anunciada = Number(naTelaLigado);
+    if (!Number.isFinite(anunciada) || anunciada < cliquei || anunciada > Date.now()) {
+      throw new Error(`a tela anunciou a batida ${naTelaLigado}, fora da janela do clique`);
+    }
+
+    const removeu = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-gatilho-remover="${criado.id}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (removeu !== true) throw new Error("a tela nao ofereceu botao de remover o gatilho");
+
+    await esperarProbe<true>(
+      window,
+      "gatilho removido pela tela",
+      `document.querySelector('[data-locum-gatilho="${criado.id}"]') === null ? true : null`,
+    );
+    if ((await triggerService.list()).some((gatilho) => gatilho.id === criado.id)) {
+      throw new Error("o gatilho sobreviveu ao remover da tela");
+    }
+
+    return t("smoke.watched", {
+      target: `${dono}/${repo}`,
+      next: new Date(ligado.nextDueAt).toISOString(),
+    });
+  } finally {
+    // O clique de remover pode nao ter chegado, e um gatilho de varredura
+    // habilitado sobrevivendo ao smoke faria a proxima subida do app sair
+    // varrendo uma organizacao que nao existe.
+    await triggerService.remove(criado.id);
+  }
+}
+
+/**
+ * Espera o servico responder alguma coisa, com a mesma cadencia do `esperarProbe`.
+ *
+ * Existe porque o clique na tela e assincrono dos dois lados: o `call` volta
+ * pela ponte e so depois o servico grava. Perguntar uma vez so ao banco daria
+ * falso negativo por milissegundos.
+ */
+async function esperarDoServico<T>(
+  nome: string,
+  ler: () => Promise<T | undefined>,
+  limiteMs = 20_000,
+): Promise<T> {
+  const limite = Date.now() + limiteMs;
+
+  while (Date.now() < limite) {
+    const visto = await ler();
+    if (visto !== undefined) return visto;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`${nome} nao apareceu dentro de ${limiteMs / 1000}s`);
+}
+
+/**
+ * Confere a secao da credencial do GitHub, sem nunca falar com o GitHub.
+ *
+ * O marco proibe credencial de verdade, e essa proibicao nao tira nada do que
+ * a story pede: guardar, ler do cofre, conferir e esquecer sao quatro caminhos
+ * que terminam dentro da maquina. O unico pedaco que sairia daqui e a resposta
+ * do GitHub a um token, e ela e exercitada pelo servico com uma sonda trocada,
+ * que e o que existe para isso no construtor.
+ *
+ * O exame roda contra uma referencia sorteada, e nao contra `source/github`. O
+ * smoke roda no banco e no cofre de quem desenvolve, e escrever na referencia
+ * de verdade apagaria um token que pode estar em uso.
+ *
+ * Na interface, o clique de conferir so acontece com o cofre vazio, quando a
+ * resposta e "nao ha token" e nao sai da maquina. Com token guardado o exame
+ * pula o clique de proposito: ele viraria uma chamada autenticada a API do
+ * GitHub com a credencial de alguem, feita por um loop que roda sem ninguem
+ * olhando.
+ */
+async function checkGithub(window: BrowserWindow): Promise<string> {
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const {
+    GITHUB_CREDENTIAL_REF,
+    GITHUB_TOKEN_ENV,
+    GithubService,
+    githubToken,
+  } = await import("../src/services/github-service.js");
+
+  if (!secretService.available) throw new Error("keychain indisponivel para o cofre do GitHub");
+
+  const ref = `source/locum-smoke-${randomUUID().slice(0, 8)}`;
+  const token = `token-de-mentira-${randomUUID()}`;
+  let recebido: string | null = null;
+
+  const servico = new GithubService(
+    secretService,
+    settingsService,
+    async (visto) => {
+      recebido = visto;
+      return { login: "locum-smoke", scopes: ["repo", "read:org"] };
+    },
+    ref,
+  );
+
+  try {
+    const vazio = await servico.status();
+    if (vazio.stored) throw new Error(`a referencia sorteada ${ref} ja tinha valor`);
+    if (vazio.identity !== null) throw new Error("uma referencia nova nasceu com identidade");
+
+    // Sem token, a conferencia responde de dentro da maquina: a sonda nao e
+    // chamada, e e por isso que `recebido` continua nulo logo abaixo.
+    const semToken = await servico.check();
+    if (semToken.ok || semToken.reason !== "missing") {
+      throw new Error(`sem token a conferencia respondeu ${JSON.stringify(semToken)}`);
+    }
+    if (recebido !== null) throw new Error("a conferencia saiu perguntando sem ter token");
+
+    await servico.setToken(token);
+    if (readFileSync(secretService.pathFor(ref)).includes(token)) {
+      throw new Error("o token do GitHub foi para o disco em claro");
+    }
+
+    const conferida = await servico.check();
+    if (!conferida.ok) throw new Error(`a conferencia recusou: ${JSON.stringify(conferida)}`);
+    if (recebido !== token) throw new Error("a sonda recebeu um token diferente do guardado");
+    if (conferida.login !== "locum-smoke") {
+      throw new Error(`a conferencia devolveu a conta ${conferida.login}`);
+    }
+
+    const depois = await servico.status();
+    if (!depois.stored) throw new Error("o token nao ficou guardado");
+    if (depois.identity?.login !== "locum-smoke" || depois.checkedAt === null) {
+      throw new Error("a identidade conferida nao sobreviveu ao status");
+    }
+
+    // Trocar o token joga fora a conta que era dele. Sem isso a tela mostraria
+    // o login antigo ao lado de um token novo, com cara de dado conferido.
+    await servico.setToken(`${token}-outro`);
+    const trocado = await servico.status();
+    if (trocado.identity !== null || trocado.checkedAt !== null) {
+      throw new Error("a identidade do token anterior sobreviveu a troca");
+    }
+
+    if (!(await servico.clearToken())) throw new Error("esquecer nao achou o que apagar");
+    if ((await servico.status()).stored) throw new Error("o token sobreviveu ao esquecer");
+  } finally {
+    secretService.remove(ref);
+    await new GithubService(secretService, settingsService, undefined, ref).clearToken();
+  }
+
+  // O caminho que o source usa, com a variavel de ambiente fora do ar: e esse
+  // "sem variavel de ambiente" que a story cobra.
+  const doAmbiente = process.env[GITHUB_TOKEN_ENV];
+  delete process.env[GITHUB_TOKEN_ENV];
+  const jaGuardado = secretService.has(GITHUB_CREDENTIAL_REF);
+  try {
+    if (jaGuardado) {
+      // Quem desenvolve ja guardou o token dele. Sobrescrever para provar o
+      // caminho seria destruir o que esta em uso, entao o que se confere e que
+      // o cofre responde sem o ambiente, que e a mesma afirmacao.
+      const lido = githubToken();
+      if (lido === undefined) throw new Error("o cofre tinha token e o source nao o enxergou");
+    } else {
+      secretService.set(GITHUB_CREDENTIAL_REF, token);
+      try {
+        if (githubToken() !== token) {
+          throw new Error("o source nao leu do cofre o token que a interface guardaria");
+        }
+      } finally {
+        secretService.remove(GITHUB_CREDENTIAL_REF);
+      }
+      if (githubToken() !== undefined) throw new Error("o token sobreviveu ao remove");
+    }
+  } finally {
+    if (doAmbiente !== undefined) process.env[GITHUB_TOKEN_ENV] = doAmbiente;
+  }
+
+  // Agora a interface, que e o que a story entrega. A tela ja esta montada; o
+  // marcador espera a leitura de `github.status` responder.
+  const naTela = await esperarProbe<{ guardado: string; cofre: string; ambiente: string }>(
+    window,
+    "github",
+    `(() => {
+      const probe = document.querySelector("[data-locum-probe=github]");
+      if (probe === null || probe.dataset.locumGithubGuardado === "") return null;
+      return {
+        guardado: probe.dataset.locumGithubGuardado,
+        cofre: probe.dataset.locumGithubCofre,
+        ambiente: probe.dataset.locumGithubAmbiente,
+      };
+    })()`,
+  );
+
+  if (naTela.cofre !== "aberto") throw new Error("a tela diz que o cofre esta fechado");
+  const esperado = secretService.has(GITHUB_CREDENTIAL_REF) ? "sim" : "nao";
+  if (naTela.guardado !== esperado) {
+    throw new Error(`a tela diz "${naTela.guardado}" e o cofre diz "${esperado}"`);
+  }
+
+  if (esperado === "sim") {
+    // Com token guardado nao ha o que exercitar sem sair da maquina, e o que a
+    // linha final do smoke diz e exatamente isso, sem fingir que conferiu.
+    return t("smoke.github", { path: t("smoke.githubStored") });
+  }
+
+  const clicouConferir = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector("[data-locum-github-conferir]");
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (clicouConferir !== true) throw new Error("a tela nao ofereceu botao de conferir");
+
+  const semTokenNaTela = await esperarProbe<string>(
+    window,
+    "conferencia do github",
+    `document.querySelector("[data-locum-github-resultado]")?.dataset.locumGithubResultado ?? null`,
+  );
+  if (semTokenNaTela !== "missing") {
+    throw new Error(`a tela respondeu "${semTokenNaTela}" para conferir sem token`);
+  }
+
+  // Digitar e guardar, que e o caminho que a story pede. O valor e de mentira e
+  // sai logo abaixo; o que esta sendo provado e que ele chega ao cofre e que a
+  // tela nao o mostra de volta.
+  const guardou = await window.webContents.executeJavaScript(
+    `(() => {
+      const campo = document.querySelector("[data-locum-github-token]");
+      const botao = document.querySelector("[data-locum-github-salvar]");
+      if (campo === null || botao === null) return false;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      ).set;
+      setter.call(campo, ${JSON.stringify(token)});
+      campo.dispatchEvent(new Event("input", { bubbles: true }));
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (guardou !== true) throw new Error("a tela nao ofereceu campo e botao de guardar");
+
+  try {
+    await esperarProbe<true>(
+      window,
+      "token guardado pela tela",
+      `document.querySelector("[data-locum-probe=github]")?.dataset.locumGithubGuardado === "sim"
+        ? true
+        : null`,
+    );
+
+    if (githubToken() !== token) {
+      throw new Error("o que a tela guardou nao foi o que o source leu do cofre");
+    }
+
+    // O campo volta vazio e o valor nao aparece em lugar nenhum da pagina. E o
+    // ponto da story: a tela grava segredo e nao o mostra, nem por acidente.
+    const naPagina = await window.webContents.executeJavaScript(
+      `(() => ({
+        campo: document.querySelector("[data-locum-github-token]").value,
+        html: document.documentElement.outerHTML.includes(${JSON.stringify(token)}),
+      }))()`,
+    );
+    const visto = naPagina as { campo: string; html: boolean };
+    if (visto.campo !== "") throw new Error("o campo ficou com o token depois de guardar");
+    if (visto.html) throw new Error("o token apareceu no HTML da pagina");
+  } finally {
+    secretService.remove(GITHUB_CREDENTIAL_REF);
+  }
+
+  const esqueceu = await window.webContents.executeJavaScript(
+    `(() => {
+      const botao = document.querySelector("[data-locum-github-esquecer]");
+      if (botao === null) return false;
+      botao.click();
+      return true;
+    })()`,
+  );
+  if (esqueceu !== true) throw new Error("a tela nao ofereceu botao de esquecer");
+
+  await esperarProbe<true>(
+    window,
+    "token esquecido pela tela",
+    `document.querySelector("[data-locum-probe=github]")?.dataset.locumGithubGuardado === "nao"
+      ? true
+      : null`,
+  );
+
+  return t("smoke.github", { path: t("smoke.githubRoundTrip") });
 }
 
 /**
@@ -2297,6 +2950,7 @@ async function main(): Promise<void> {
     const updates = await checkUpdates();
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
+    const conferencia = await checkReconcile();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
     const renderer = await checkRenderer();
@@ -2311,6 +2965,7 @@ async function main(): Promise<void> {
         updates,
         secrets,
         notifications: avisos,
+        reconcile: conferencia,
         deepLink,
         bridge: ponte,
         renderer,

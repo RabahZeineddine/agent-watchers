@@ -483,7 +483,7 @@
       "description": "Seção na configuração para guardar o token do GitHub no keychain, pelo caminho do CredentialService, e um botão que testa a conexão e mostra quem é o usuário autenticado e quais escopos o token tem. Nunca mostrar o valor do token, só se há valor guardado e quando foi conferido pela última vez. Sem token, a seção explica onde criar e quais permissões pedir.",
       "done_when": "Um token gravado pela interface é lido pelo source do GitHub sem variável de ambiente, e o teste de conexão responde.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -494,7 +494,7 @@
       "description": "Seção para escolher o que observar: dono da organização e padrão de repositório, com o gatilho de varredura e a cadência em minutos. Criar, habilitar, desabilitar e remover, tudo pelo TriggerService. O gatilho nasce desabilitado, conforme a regra que já existe. Mostrar quando foi a última batida e quando será a próxima.",
       "done_when": "Um gatilho criado pela interface aparece no agendador e a próxima batida é calculada.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -505,7 +505,7 @@
       "description": "O reconciliador existe mas nunca roda sozinho. Ligar no agendador: a cada batida, para cada execução cujo pull request fechou desde a última conferência, cruzar review humano com os achados e gravar os desfechos. Guardar cursor próprio para não reprocessar. Comando manual continua existindo.",
       "done_when": "Duas batidas seguidas não reprocessam a mesma execução, e uma execução com pull request fechado ganha desfecho.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -516,7 +516,7 @@
       "description": "O pacote leva 421 MB de aplicativo e 138 MB de imagem, porque vai node_modules inteiro, incluindo provedores de modelo que só o processo principal usa e ferramentas de desenvolvimento que ele não usa nunca. Configurar files e asar para levar só o necessário, medir antes e depois, e registrar os dois números no documento de empacotamento.",
       "done_when": "O .app encolhe de forma mensurável e o smoke contra o pacote continua passando.",
       "verify": "npx tsc --noEmit && npm run build && npm run dist:dir && npm run smoke:dist",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -527,7 +527,7 @@
       "description": "Escrever docs/primeira-execucao.md: criar o token com as permissões mínimas, guardar pela interface, escolher o repositório, habilitar o gatilho, o que esperar na primeira varredura, e como ler o primeiro review na fila. Deixar claro que o passo de comentar nasce em aprovação e que nada sai sem clique.",
       "done_when": "O arquivo existe e cobre os seis pontos, na ordem em que alguém faria.",
       "verify": "test -f ../docs/primeira-execucao.md",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

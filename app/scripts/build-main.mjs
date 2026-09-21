@@ -75,9 +75,17 @@ await build({
   format: "cjs",
   target: "node22",
   sourcemap: true,
-  // Dependencia de node_modules fica de fora do pacote: modulo nativo nao se
-  // deixa empacotar, e o resto o Electron resolve por node_modules mesmo.
-  packages: "external",
+  /**
+   * So fica de fora o que nao se deixa empacotar.
+   *
+   * `electron` vem do proprio runtime, e `better-sqlite3` carrega binario
+   * nativo por `require` de caminho, que o esbuild nao tem como embutir. Todo
+   * o resto entra no arquivo, e e isso que permite ao pacote sair sem
+   * `node_modules`: antes o `.app` levava a arvore inteira de producao, com o
+   * React e o Shiki que o Vite ja tinha embutido na janela viajando de novo em
+   * codigo-fonte, e o Octokit sozinho passando de cem megabytes.
+   */
+  external: ["electron", "better-sqlite3"],
 });
 
 /**
