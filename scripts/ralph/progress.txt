@@ -53,3 +53,4 @@
 2026-09-21  M7.5  feito      filtro de autoria no gatilho de varredura, conta do token vinda da conferência guardada, tela cadastrando e smoke com dois gatilhos no mesmo tick
 2026-09-21  M7.6  feito      guia com passo de provedor pela interface e seção de tracker, numeração corrigida e campo de autoria no gatilho
 2026-09-21  M8.1  feito      fonte por consulta a servidor MCP, cursor por servidor e ferramenta, dedupe por id do item, verificada no smoke contra o feed do servidor de brinquedo
+2026-09-21  M8.2  feito      fonte de menções do Slack pelo servidor MCP, cursor por canal, evento com autor, canal, texto e thread, seção na configuração sem campo de token

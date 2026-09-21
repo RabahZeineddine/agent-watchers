@@ -43,10 +43,42 @@ export interface McpPollInput {
   args: Record<string, unknown>;
 }
 
+/**
+ * Como ler o feed de um servidor concreto.
+ *
+ * A varredura genérica trata todo item como opaco: guarda o corpo inteiro e
+ * deduplica pelo `id` que ele porventura tenha. Isso serve a um feed qualquer
+ * e não serve a um que se conhece: quem sabe que do outro lado vem mensagem de
+ * Slack sabe onde estão autor, canal e vínculo da thread, e um evento que
+ * escondesse isso dentro de `item` obrigaria cada agent a reaprender o formato.
+ *
+ * O que fica de fora desta interface é de propósito o que não pode variar: a
+ * ordem entre gravar e mover o cursor, e a recusa de resposta com `isError`.
+ * As duas são a razão de a varredura morar num lugar só.
+ */
+export interface McpPollShape {
+  /** Fonte gravada no evento e no cursor. */
+  source: string;
+  /** Chave do cursor, dentro da fonte. */
+  key: string;
+  /** Cursor de quem nunca varreu. Ausente é o epoch em ISO. */
+  initialCursor?: string;
+  /** Onde estão os itens na resposta. Ausente é lista no topo ou em `items`. */
+  items?: (payload: unknown) => unknown[];
+  /** Chave de deduplicação do item. */
+  externalId: (item: unknown) => string;
+  /** Corpo do evento. O `at` entra por fora, com o carimbo já resolvido. */
+  payload: (item: unknown) => Record<string, unknown>;
+  /** Carimbo do item, no mesmo formato em que o cursor volta para a ferramenta. */
+  stamp?: (item: unknown) => string | undefined;
+}
+
 export interface McpPollOptions {
   db?: Db;
   mcp?: McpService;
   call?: McpCaller;
+  /** Como ler o feed. Ausente é o formato opaco, que serve a servidor desconhecido. */
+  shape?: McpPollShape;
   /** Relógio da varredura. Existe para teste e para reproduzir uma batida antiga. */
   now?: () => number;
 }
@@ -79,14 +111,15 @@ export async function pollMcpServer(
 ): Promise<McpPollOutcome> {
   const db = options.db ?? defaultDb;
   const call = options.call ?? throughRegistry(options.mcp ?? mcpService);
-  const source = sourceName(input.server);
-  const key = cursorKey(input);
+  const shape = options.shape ?? opaqueShape(input);
+  const source = shape.source;
+  const key = shape.key;
 
   const [row] = await db
     .select({ value: schema.cursors.value })
     .from(schema.cursors)
     .where(and(eq(schema.cursors.source, source), eq(schema.cursors.key, key)));
-  const cursor = row?.value ?? CURSOR_INICIAL;
+  const cursor = row?.value ?? shape.initialCursor ?? CURSOR_INICIAL;
 
   // Lido antes da chamada, e não depois: item que nascer enquanto a ferramenta
   // responde precisa cair na próxima varredura. Só serve de marca d'água para
@@ -94,32 +127,24 @@ export async function pollMcpServer(
   // porque a chave externa mata o repetido.
   const antesDaChamada = new Date(options.now?.() ?? Date.now()).toISOString();
 
-  const items = itemsOf(unwrap(await call(input.server, input.tool, render(input.args, cursor))));
+  const lerItens = shape.items ?? itemsOf;
+  const lerCarimbo = shape.stamp ?? stampOf;
+  const items = lerItens(unwrap(await call(input.server, input.tool, render(input.args, cursor))));
 
   const eventIds: string[] = [];
   let carimbado = false;
   let newest = cursor;
 
   for (const item of items) {
-    const at = stampOf(item);
+    const at = lerCarimbo(item);
     const id = randomUUID();
     const inserted = await db
       .insert(schema.events)
       .values({
         id,
         source,
-        externalId: externalId(input.tool, item),
-        payload: {
-          // O executor lê `repo` e `changedFiles` de todo evento. Aqui não há
-          // repositório nenhum, e o par servidor e ferramenta é o que responde
-          // "de onde veio isto" na lista de execuções.
-          repo: `${input.server}/${input.tool}`,
-          changedFiles: [],
-          server: input.server,
-          tool: input.tool,
-          at: at ?? null,
-          item,
-        },
+        externalId: shape.externalId(item),
+        payload: { ...shape.payload(item), at: at ?? null },
       })
       .onConflictDoNothing()
       .returning({ id: schema.events.id });
@@ -127,7 +152,7 @@ export async function pollMcpServer(
     if (inserted.length > 0) eventIds.push(id);
     if (at !== undefined) {
       carimbado = true;
-      if (at > newest) newest = at;
+      newest = newer(newest, at);
     }
   }
 
@@ -146,6 +171,45 @@ export async function pollMcpServer(
     });
 
   return { eventIds, seen: items.length, cursor: next };
+}
+
+/**
+ * Como ler um servidor de quem não se sabe nada.
+ *
+ * O item inteiro fica em `item`, sem tradução: adivinhar qual campo é o autor
+ * e qual é o texto acertaria num feed e inventaria conteúdo no seguinte.
+ */
+function opaqueShape(input: McpPollInput): McpPollShape {
+  return {
+    source: sourceName(input.server),
+    key: cursorKey(input),
+    externalId: (item) => externalId(input.tool, item),
+    payload: (item) => ({
+      // O executor lê `repo` e `changedFiles` de todo evento. Aqui não há
+      // repositório nenhum, e o par servidor e ferramenta é o que responde
+      // "de onde veio isto" na lista de execuções.
+      repo: `${input.server}/${input.tool}`,
+      changedFiles: [],
+      server: input.server,
+      tool: input.tool,
+      item,
+    }),
+  };
+}
+
+/**
+ * O mais novo entre dois carimbos.
+ *
+ * Numérico quando os dois são número, e alfabético no resto. Carimbo ISO
+ * ordena alfabeticamente por construção, mas o epoch em segundos que o Slack
+ * usa não: `"999999999.9"` viria depois de `"1737400000.1"` na comparação de
+ * texto, e o cursor voltaria para 2001 na primeira mensagem carimbada assim.
+ */
+function newer(a: string, b: string): string {
+  const x = Number(a);
+  const y = Number(b);
+  if (Number.isFinite(x) && Number.isFinite(y)) return y > x ? b : a;
+  return b > a ? b : a;
 }
 
 /** Fonte gravada no evento e no cursor. Um servidor, uma fonte. */

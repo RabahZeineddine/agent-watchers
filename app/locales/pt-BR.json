@@ -371,6 +371,26 @@
       "howTo": "O padrão do repositório é uma expressão regular aplicada ao nome, então \"^api-\" pega todos os que começam assim e \"^meu-servico$\" pega um só. A varredura precisa do token do GitHub guardado acima, e filtrar por autoria precisa dele conferido: é a conta dele que diz quais pull requests são seus. Achado nenhum vira comentário sozinho: ele para na fila e espera o seu clique.",
       "refused": "a ponte recusou: {{message}}"
     },
+    "slack": {
+      "title": "Slack observado",
+      "description": "Quais canais o Locum lê, e por qual servidor MCP. Não há token do Slack aqui: quem fala com o Slack é o servidor MCP que você já autorizou.",
+      "empty": "Nenhum canal observado. Enquanto não houver um, a varredura do Slack não tem o que ler.",
+      "server": "servidor MCP que responde pelo Slack",
+      "serverNone": "nenhum servidor escolhido",
+      "tool": "ferramenta que lista mensagem de canal",
+      "toolHint": "conversations_history",
+      "channelArg": "nome do argumento do canal",
+      "channelArgHint": "channel_id",
+      "sinceArg": "nome do argumento da janela",
+      "sinceArgHint": "oldest",
+      "save": "guardar origem",
+      "channel": "canal a observar",
+      "channelHint": "C01AB2CD3EF",
+      "add": "observar canal",
+      "remove": "remover",
+      "howTo": "O canal entra pelo identificador que o Slack usa, e cada um anda com o próprio cursor: um canal cadastrado hoje não reprocessa o que os outros já leram. Os nomes de argumento variam de um servidor de Slack para outro, e vêm preenchidos com os mais comuns. Ler não responde nada: resposta em thread é passo de ação, e ele para na fila e espera o seu clique.",
+      "refused": "a ponte recusou: {{message}}"
+    },
     "trackers": {
       "title": "Trackers de tarefa",
       "description": "Onde a tarefa vai parar quando um achado virar trabalho: um Jira ou um repositório de issues do GitHub. A credencial fica no keychain, e a tela mostra se existe e o que o último teste alcançou, nunca o valor.",
@@ -434,7 +454,7 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, varredura por MCP com {{mcpPoll}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, varredura por MCP com {{mcpPoll}}, Slack com {{slack}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
@@ -454,7 +474,7 @@
     "routes": "destinos: {{count}}",
     "palette": "paleta abrindo e fechando pelo atalho",
     "agents": "lista com agents: {{agents}}, histórico de versões: {{versions}} de {{agent}}, comparação apontando o passo de ação de \"{{from}}\" para \"{{to}}\"",
-    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, {{providerKeys}}, {{registered}}, GitHub: {{github}}, observados: {{watched}}, {{trackers}}",
+    "config": "provedores: {{providers}}, substituições: {{fallbacks}}, servidores: {{servers}} com {{fixture}} respondendo ferramentas: {{tools}} na interface, orçamentos: {{budgets}}, {{providerKeys}}, {{registered}}, GitHub: {{github}}, observados: {{watched}}, {{trackers}}, {{slackWindow}}",
     "providerKeys": "chaves de provedor: {{path}}",
     "providerKeysStored": "todo provedor com chave já tem credencial, cadastro conferido sem sair da máquina",
     "providerKeysRoundTrip": "guardou, ficou disponível na hora, contou o catálogo e esqueceu; {{provider}} conferido sem chave pela tela",
@@ -472,7 +492,9 @@
     "watched": "gatilho de {{target}} cadastrado parado, ligado com a próxima batida em {{next}}, e removido",
     "trackers": "trackers: {{service}} no Jira pelo serviço e {{window}} no GitHub pela tela, credencial do cofre, {{projects}} destinos visíveis, tarefa existente reencontrada pelo pull request, nenhum canal que abra tarefa",
     "authorship": "gatilho de {{mine}} acordou só com o pull request de {{viewer}}, e o de {{others}} só com o de outra pessoa",
-    "mcpPoll": "consulta ao {{fixture}} pela ferramenta {{tool}} virou {{events}} evento(s) normalizado(s), a segunda varredura não reprocessou nenhum, e o cursor não andou com a chamada falhando"
+    "mcpPoll": "consulta ao {{fixture}} pela ferramenta {{tool}} virou {{events}} evento(s) normalizado(s), a segunda varredura não reprocessou nenhum, e o cursor não andou com a chamada falhando",
+    "slack": "canal observado virou {{events}} mensagem(ns) normalizada(s) com autor, canal, texto e thread, um cursor por canal, e a segunda varredura não reprocessou nenhuma",
+    "slackWindow": "Slack: {{server}} guardado pela tela e o canal {{channel}} observado, sem canal de ponte que publique"
   },
   "status": {
     "done": "concluído",

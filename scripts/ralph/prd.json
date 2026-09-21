@@ -615,7 +615,7 @@
       "description": "Uma fonte concreta em cima da M8.1: menções e mensagens em canal observado, com cursor por canal. Cadastro na configuração escolhendo o servidor MCP de Slack e os canais. Nada de token de Slack próprio: quem fala com o Slack é o servidor MCP, que já tem a credencial dele.",
       "done_when": "Um canal cadastrado vira evento normalizado, com autor, canal, texto e vínculo da thread.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke && git diff --quiet HEAD -- src/executor src/approval/gate.ts src/config/types.ts || (echo 'ALTEROU O NUCLEO' && exit 1)",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

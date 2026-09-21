@@ -7,7 +7,10 @@
  * depende de servidor externo trava na primeira máquina que não tem o servidor.
  *
  * O `feed` entrou depois, para a varredura por consulta a servidor MCP ter um
- * alvo que devolve lista carimbada no tempo em vez de valor solto.
+ * alvo que devolve lista carimbada no tempo em vez de valor solto. O
+ * `slack_history` veio junto da fonte de menções, e responde no formato do
+ * Slack: sem ele a normalização de autor, canal e thread não teria contra o
+ * que ser verificada sem um workspace de verdade.
  *
  * Não é parte do produto. Serve de alvo de teste e de exemplo mínimo de como
  * um servidor stdio se parece.
@@ -96,6 +99,60 @@ server.registerTool(
       : items.filter((item) => Date.parse(item.at) >= corte);
 
     return { content: [{ type: "text", text: JSON.stringify({ items: janela }) }] };
+  },
+);
+
+/**
+ * Âncora do canal de brinquedo, em epoch de segundos.
+ *
+ * Fixa pelo mesmo motivo da do `feed`, e no formato do Slack: o `ts` de uma
+ * mensagem é o carimbo e a identidade ao mesmo tempo, então um relógio de
+ * verdade geraria chave nova a cada subida e a deduplicação passaria sem nunca
+ * ter sido exercitada.
+ */
+const SLACK_INICIO = Math.floor(Date.parse("2026-01-01T00:00:00.000Z") / 1000);
+
+server.registerTool(
+  "slack_history",
+  {
+    description: "Devolve mensagem de canal no formato do Slack, para exercitar a fonte de menções.",
+    inputSchema: {
+      channel_id: z.string().describe("canal observado"),
+      oldest: z
+        .string()
+        .default("0")
+        .describe("epoch em segundos; devolve mensagem a partir dele, inclusive"),
+      limit: z.number().int().min(1).max(200).default(50).describe("teto de mensagens"),
+      count: z.number().int().min(0).max(50).default(3).describe("quantas o canal tem"),
+    },
+  },
+  async ({ channel_id, oldest, limit, count }) => {
+    const messages = Array.from({ length: count }, (_, i) => {
+      const ts = `${SLACK_INICIO + i * 60}.000100`;
+      return {
+        type: "message",
+        channel: channel_id,
+        user: `U${i}`,
+        user_name: `pessoa-${i}`,
+        text: `mensagem ${i} em ${channel_id}`,
+        ts,
+        // A do meio responde à primeira, para que o vínculo da thread tenha o
+        // que provar: sem uma resposta, `thread_ts` seria sempre o próprio `ts`
+        // e a distinção entre abrir e responder passaria despercebida.
+        ...(i === 1 ? { thread_ts: `${SLACK_INICIO}.000100` } : {}),
+        permalink: `https://exemplo.invalid/archives/${channel_id}/p${ts.replace(".", "")}`,
+      };
+    });
+
+    // Inclusive, como no `feed` e como o `oldest` do Slack: a última mensagem
+    // da passada anterior volta na seguinte, e é a chave externa que precisa
+    // recusá-la.
+    const corte = Number(oldest);
+    const janela = messages
+      .filter((m) => !Number.isFinite(corte) || Number(m.ts) >= corte)
+      .slice(0, limit);
+
+    return { content: [{ type: "text", text: JSON.stringify({ messages: janela }) }] };
   },
 );
 

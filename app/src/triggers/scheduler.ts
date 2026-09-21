@@ -5,6 +5,8 @@ import { executionService, type ExecutionService } from "../services/execution-s
 import { matchesAuthorship } from "../services/github-service.js";
 import { mcpService, type McpService } from "../services/mcp-service.js";
 import { pollMcpServer } from "../sources/mcp-poll.js";
+import { pollSlack, slackWatchFor, type SlackPollOutcome } from "../sources/slack.js";
+import { slackService, type SlackService } from "../services/slack-service.js";
 import { triggerService, type TriggerEntry, type TriggerService } from "../services/trigger-service.js";
 // So tipo: o servico de reconciliacao puxa o octokit pelo topo do modulo, e
 // quem carrega este agendador nem sempre quer isso junto. O valor entra por
@@ -170,6 +172,7 @@ export class Scheduler {
     private readonly triggers: TriggerService = triggerService,
     private readonly executions: ExecutionService = executionService,
     private readonly mcp: McpService = mcpService,
+    private readonly slack: SlackService = slackService,
     private readonly poll: PollFn = varrerNoGithub,
     private readonly sweep: SweepFn = conferirFechados,
     private readonly viewer: ViewerFn = contaConferida,
@@ -370,6 +373,21 @@ export class Scheduler {
       }
 
       case "mcp-poll": {
+        // Um gatilho apontado para o servidor que alguem cadastrou como o
+        // Slack desta maquina nao esta pedindo varredura opaca: esta pedindo as
+        // mensagens dos canais observados, um cursor por canal. O `tool` do
+        // cadastro continua sendo o do gatilho, e a lista de canais e do
+        // cadastro do Slack, porque ela muda sem que o gatilho mude.
+        const watch = await slackWatchFor(config.server, { slack: this.slack });
+        if (watch !== null) {
+          const varredura = await pollSlack(
+            { ...watch, tool: config.tool },
+            { db: this.db, mcp: this.mcp },
+          );
+          const runs = await this.runsFor(trigger, varredura.eventIds, wait);
+          return { events: varredura.eventIds.length, runs, detail: slackDetail(varredura) };
+        }
+
         // A varredura mora na fonte, e nao aqui, pelo mesmo motivo da do
         // GitHub: cursor, normalizacao e deduplicacao sao a mesma decisao para
         // as tres formas de fonte do ADR 0001, e so o agendador sabe quando
@@ -512,6 +530,26 @@ export class Scheduler {
         set: { value: new Date(at).toISOString(), updatedAt: Math.floor(at / 1000) },
       });
   }
+}
+
+/**
+ * O que uma batida do Slack tem a dizer alem da contagem de eventos.
+ *
+ * Mensagem ja conhecida e canal que falhou aparecem juntos porque as duas
+ * respondem a mesma pergunta de quem le uma batida sem evento novo: a consulta
+ * voltou vazia, ela so trouxe o que ja estava gravado, ou ninguem chegou a
+ * perguntar.
+ */
+function slackDetail(varredura: SlackPollOutcome): string | undefined {
+  const partes: string[] = [];
+  const repetidos = varredura.seen - varredura.eventIds.length;
+  if (repetidos > 0) partes.push(`${repetidos} mensagem(ns) ja conhecida(s)`);
+
+  for (const canal of varredura.byChannel) {
+    if (canal.error !== undefined) partes.push(`${canal.channel}: ${canal.error}`);
+  }
+
+  return partes.length === 0 ? undefined : partes.join("; ");
 }
 
 /** Cadencia em milissegundos. Nulo e gatilho que nao anda pelo relogio. */

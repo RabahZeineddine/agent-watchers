@@ -11,6 +11,7 @@ import { join, sep } from "node:path";
 // apontar o binario do Electron.
 import type { RunService } from "../src/services/run-service.js";
 import type { AftermathFetcher } from "../src/services/reconcile-service.js";
+import type { SlackService } from "../src/services/slack-service.js";
 
 const smoke = process.argv.includes("--smoke");
 const capturas = process.argv.includes("--capturas");
@@ -368,8 +369,14 @@ async function checkReconcile(): Promise<string> {
       return [];
     }
   })(db);
-  const agendador = new Scheduler(db, semGatilho, executionService, mcpService, proibirVarredura, (o) =>
-    conferencia.sweep(o),
+  const agendador = new Scheduler(
+    db,
+    semGatilho,
+    executionService,
+    mcpService,
+    await semSlack(),
+    proibirVarredura,
+    (o) => conferencia.sweep(o),
   );
 
   try {
@@ -1460,6 +1467,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   const registered = await checkRegisteredProviders(window);
   const github = await checkGithub(window);
   const watched = await checkWatched(window);
+  const slackWindow = await checkSlackWindow(window);
   const trackers = await checkTrackers(window);
 
   return t("smoke.config", {
@@ -1473,6 +1481,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     registered,
     github,
     watched,
+    slackWindow,
     trackers,
   });
 }
@@ -2567,6 +2576,7 @@ async function checkAuthorship(): Promise<string> {
     soOsPlantados,
     semExecutor,
     mcpService,
+    await semSlack(),
     varrer,
     naoConferir,
     async () => eu,
@@ -2614,6 +2624,7 @@ async function checkAuthorship(): Promise<string> {
       soOsPlantados,
       semExecutor,
       mcpService,
+      await semSlack(),
       varrer,
       naoConferir,
       async () => null,
@@ -2640,6 +2651,195 @@ async function checkAuthorship(): Promise<string> {
     await db
       .delete(schema.events)
       .where(inArray(schema.events.id, [meu.eventId, alheio.eventId]));
+  }
+}
+
+/**
+ * Um cadastro de Slack que nao observa nada.
+ *
+ * Toda batida de exame passa por aqui em vez de pelo cadastro de verdade: o
+ * smoke roda no banco de quem desenvolve, e se ele tiver um Slack cadastrado a
+ * batida sairia perguntando mensagem a um workspace real por causa de um exame.
+ * Nao varreria mais que leitura, mas nao e disto que o exame trata.
+ */
+async function semSlack(): Promise<SlackService> {
+  const { SlackService, SLACK_SEM_CADASTRO } = await import("../src/services/slack-service.js");
+  return new (class extends SlackService {
+    async get() {
+      return SLACK_SEM_CADASTRO;
+    }
+  })();
+}
+
+/**
+ * Confere a fonte de mensagem de canal do Slack, contra o servidor de brinquedo.
+ *
+ * Nenhum Slack de verdade e alcancado, e nao ha token de Slack em lugar nenhum
+ * do caminho: quem responde e o `slack_history` do fixture, um processo stdio
+ * que sobe do proprio pacote e devolve mensagem no formato do Slack.
+ *
+ * O que esta sendo provado e o que a story pede. Primeiro que um canal
+ * cadastrado vira evento normalizado, com autor, canal, texto e vinculo da
+ * thread no topo do corpo, e nao enterrado num `item` cru. Depois que o cursor
+ * e por canal: dois canais observados andam cada um com o seu, e o segundo nao
+ * herda a janela que o primeiro ja consumiu. Por fim que a segunda varredura
+ * nao reprocessa o que a primeira gravou, que e o que a chave externa existe
+ * para garantir, porque o `oldest` do Slack e inclusive e devolve a ultima
+ * mensagem de novo.
+ *
+ * Execucao nenhuma chega a existir: quem varre aqui e a fonte, e nao o
+ * agendador, entao nenhum run e criado e nenhuma assinatura e gasta.
+ */
+async function checkSlack(): Promise<string> {
+  const { db, schema } = await import("../src/db/index.js");
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { SlackService } = await import("../src/services/slack-service.js");
+  const { ensureFixtureServer, FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
+  const { pollSlack, slackCursorKey, slackSource } = await import("../src/sources/slack.js");
+
+  /**
+   * Onde o canal de brinquedo comeca, em epoch de segundos.
+   *
+   * Repetido do fixture de proposito: o exame precisa saber o carimbo exato
+   * para conferir onde cada cursor parou, e importar a constante do servidor
+   * traria o processo inteiro para dentro deste, que e o que o `foraDoAsar`
+   * logo acima existe para evitar.
+   */
+  const PRIMEIRO_TS = Math.floor(Date.parse("2026-01-01T00:00:00.000Z") / 1000);
+
+  await ensureFixtureServer({
+    command: [process.execPath, foraDoAsar(join(__dirname, "mcp-fixture-server.mjs"))],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  });
+
+  // Canais sorteados de proposito, pelo mesmo motivo do `checkWatched`: o
+  // cadastro que ficasse para tras se a limpeza falhasse nao pode apontar para
+  // canal de verdade.
+  const canais = [
+    `C-smoke-${randomUUID().slice(0, 8)}`,
+    `C-smoke-${randomUUID().slice(0, 8)}`,
+  ];
+  const mensagens = 3;
+  const source = slackSource(FIXTURE_SERVER);
+
+  // O cadastro do exame vive so nesta funcao: gravar no servico de verdade
+  // sobrescreveria o Slack de quem desenvolve.
+  const watch = {
+    server: FIXTURE_SERVER,
+    tool: "slack_history",
+    channelArg: "channel_id",
+    sinceArg: "oldest",
+    limit: 50,
+    channels: canais,
+  };
+
+  const externos = canais.flatMap((canal) =>
+    Array.from({ length: mensagens }, (_, i) => `slack:${canal}:${PRIMEIRO_TS + i * 60}.000100`),
+  );
+
+  const limpar = async (): Promise<void> => {
+    await db
+      .delete(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, externos)));
+    await db
+      .delete(schema.cursors)
+      .where(
+        and(
+          eq(schema.cursors.source, source),
+          inArray(schema.cursors.key, canais.map(slackCursorKey)),
+        ),
+      );
+  };
+
+  // Antes de comecar tambem: uma iteracao morta no meio deixaria os eventos
+  // gravados, e a primeira varredura passaria sem provar nada.
+  await limpar();
+
+  try {
+    const primeira = await pollSlack(watch, { db, slack: new SlackService() });
+    for (const canal of primeira.byChannel) {
+      if (canal.error !== undefined) throw new Error(`${canal.channel}: ${canal.error}`);
+    }
+    if (primeira.eventIds.length !== canais.length * mensagens) {
+      throw new Error(
+        `a primeira varredura do Slack gravou ${primeira.eventIds.length} evento(s), e nao ${canais.length * mensagens}`,
+      );
+    }
+
+    const gravados = await db
+      .select({ externalId: schema.events.externalId, payload: schema.events.payload })
+      .from(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, externos)));
+    if (gravados.length !== externos.length) {
+      throw new Error(`o banco ficou com ${gravados.length} mensagem(ns) de ${externos.length}`);
+    }
+
+    let respostas = 0;
+    for (const evento of gravados) {
+      const corpo = evento.payload as {
+        author?: unknown;
+        channel?: unknown;
+        text?: unknown;
+        threadTs?: unknown;
+        reply?: unknown;
+        permalink?: unknown;
+        changedFiles?: unknown;
+        repo?: unknown;
+      };
+      if (typeof corpo.author !== "string" || corpo.author === "") {
+        throw new Error(`a mensagem ${evento.externalId} veio sem autor`);
+      }
+      if (typeof corpo.channel !== "string" || !canais.includes(corpo.channel)) {
+        throw new Error(`a mensagem ${evento.externalId} veio sem canal`);
+      }
+      if (typeof corpo.text !== "string" || corpo.text === "") {
+        throw new Error(`a mensagem ${evento.externalId} veio sem texto`);
+      }
+      if (typeof corpo.threadTs !== "string" || corpo.threadTs === "") {
+        throw new Error(`a mensagem ${evento.externalId} veio sem vinculo de thread`);
+      }
+      if (typeof corpo.permalink !== "string") {
+        throw new Error(`a mensagem ${evento.externalId} veio sem endereco`);
+      }
+      // Normalizada como a de qualquer outra fonte: o executor le `repo` e
+      // `changedFiles` sem saber que o trabalho veio de uma conversa.
+      if (!Array.isArray(corpo.changedFiles) || typeof corpo.repo !== "string") {
+        throw new Error(`a mensagem ${evento.externalId} nao saiu normalizada`);
+      }
+      if (corpo.reply === true) respostas += 1;
+    }
+    // Uma resposta por canal, que e o que o fixture planta: sem isso o vinculo
+    // da thread estaria sendo conferido so onde ele e o proprio `ts`.
+    if (respostas !== canais.length) {
+      throw new Error(`${respostas} mensagem(ns) em thread, e esperava ${canais.length}`);
+    }
+
+    // Um cursor por canal, que e o que a story pede: os dois existem, e cada um
+    // parou no carimbo da ultima mensagem daquele canal.
+    const ultimo = `${PRIMEIRO_TS + (mensagens - 1) * 60}.000100`;
+    for (const canal of canais) {
+      const [linha] = await db
+        .select({ value: schema.cursors.value })
+        .from(schema.cursors)
+        .where(
+          and(eq(schema.cursors.source, source), eq(schema.cursors.key, slackCursorKey(canal))),
+        );
+      if (linha?.value !== ultimo) {
+        throw new Error(`o cursor de ${canal} parou em ${linha?.value ?? "nada"}, e nao em ${ultimo}`);
+      }
+    }
+
+    const segunda = await pollSlack(watch, { db, slack: new SlackService() });
+    if (segunda.eventIds.length !== 0) {
+      throw new Error(`a segunda varredura do Slack gravou ${segunda.eventIds.length} evento(s)`);
+    }
+    if (segunda.seen === 0) {
+      throw new Error("a segunda varredura do Slack nao chegou a ler nada");
+    }
+
+    return t("smoke.slack", { events: primeira.eventIds.length });
+  } finally {
+    await limpar();
   }
 }
 
@@ -2746,6 +2946,7 @@ async function checkMcpPoll(): Promise<string> {
     soOPlantado,
     semExecutor,
     mcpService,
+    await semSlack(),
     naoVarrer,
     naoConferir,
     async () => null,
@@ -2846,6 +3047,146 @@ async function checkMcpPoll(): Promise<string> {
       .delete(schema.cursors)
       .where(and(eq(schema.cursors.source, "scheduler"), eq(schema.cursors.key, gatilho.id)));
     await limpar();
+  }
+}
+
+/**
+ * Confere a secao do Slack observado, sem falar com o Slack.
+ *
+ * O caminho inteiro da story cabe dentro da maquina: escolher pela tela qual
+ * servidor MCP responde pelo Slack, guardar, cadastrar um canal e ve-lo
+ * aparecer na lista. Nenhum desses passos sai da maquina, porque quem sairia e
+ * a varredura, e varredura nenhuma acontece aqui.
+ *
+ * O servidor escolhido e o de brinquedo e o canal e sorteado pelo mesmo motivo
+ * do `checkWatched`: um canal de verdade que ficasse para tras se a limpeza
+ * falhasse viraria leitura de conversa real na primeira batida.
+ *
+ * O cadastro anterior e devolvido no fim. O smoke roda no banco de quem
+ * desenvolve, e sair de um exame tendo apagado o Slack dele seria estrago.
+ */
+async function checkSlackWindow(window: BrowserWindow): Promise<string> {
+  const { slackService } = await import("../src/services/slack-service.js");
+  const { FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
+
+  const antes = await slackService.get();
+  const canal = `C-smoke-${randomUUID().slice(0, 8)}`;
+
+  try {
+    const guardou = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const digitar = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          setter.call(campo, valor);
+          campo.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        const escolher = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          campo.value = valor;
+          campo.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        };
+        if (!escolher("[data-locum-slack-escolha]", ${JSON.stringify(FIXTURE_SERVER)})) return false;
+        if (!digitar("[data-locum-slack-ferramenta]", "slack_history")) return false;
+        const botao = document.querySelector("[data-locum-slack-salvar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (guardou !== true) throw new Error("a tela nao ofereceu o formulario do Slack");
+
+    const guardado = await esperarDoServico("origem do Slack guardada pela tela", async () => {
+      const atual = await slackService.get();
+      return atual.server === FIXTURE_SERVER ? atual : undefined;
+    });
+    if (guardado.tool !== "slack_history") {
+      throw new Error(`a tela gravou a ferramenta ${guardado.tool}`);
+    }
+
+    // A tela so aceita canal depois de saber a quem perguntar, e o botao fica
+    // desabilitado enquanto a gravacao anterior nao volta. Esperar o marcador da
+    // origem e esperar as duas coisas: sem isso o clique cai num botao surdo e o
+    // exame acusa formulario ausente onde o que faltou foi um quadro.
+    await esperarProbe<string>(
+      window,
+      "origem do Slack na tela",
+      `(() => {
+        const secao = document.querySelector('[data-locum-probe="slack"]');
+        if (secao === null || secao.dataset.locumSlackServidor !== ${JSON.stringify(FIXTURE_SERVER)}) {
+          return null;
+        }
+        // Pelo botao de guardar, e nao pelo de observar: o de observar fica
+        // desabilitado tambem enquanto ninguem digitou canal, e esperar por ele
+        // seria esperar para sempre.
+        const botao = document.querySelector("[data-locum-slack-salvar]");
+        return botao === null || botao.disabled ? null : secao.dataset.locumSlackServidor;
+      })()`,
+    );
+
+    const cadastrou = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const campo = document.querySelector("[data-locum-slack-novo-canal]");
+        if (campo === null) return false;
+        setter.call(campo, ${JSON.stringify(canal)});
+        campo.dispatchEvent(new Event("input", { bubbles: true }));
+        const botao = document.querySelector("[data-locum-slack-adicionar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (cadastrou !== true) throw new Error("a tela nao ofereceu o campo de canal");
+
+    await esperarDoServico("canal observado pela tela", async () => {
+      const atual = await slackService.get();
+      return atual.channels.includes(canal) ? atual : undefined;
+    });
+
+    // A recusa da ponte vira mensagem daqui antes de virar espera estourada.
+    const recusa = (await window.webContents.executeJavaScript(
+      `document.querySelector("[data-locum-slack-erro]")?.dataset.locumSlackErro ?? null`,
+    )) as string | null;
+    if (recusa !== null) throw new Error(`a secao do Slack recusou: ${recusa}`);
+
+    const naTela = await esperarProbe<string>(
+      window,
+      "canal do Slack na tela",
+      `document.querySelector('[data-locum-slack-canal="${canal}"]')
+        ?.dataset.locumSlackCanal ?? null`,
+    );
+    if (naTela !== canal) throw new Error(`a tela mostrou o canal ${naTela}`);
+
+    // A outra metade da regra, e a que nao da para ver na tela: nenhum canal da
+    // ponte publica no Slack. A guarda de compilacao no contrato ja impede que
+    // um apareca, e esta conferencia e o que sobra para quem le o smoke.
+    const { BRIDGE_CHANNELS } = await import("./bridge-contract.js");
+    const publica = BRIDGE_CHANNELS.filter((canal) =>
+      /^slack\.(post|send|reply)/.test(canal),
+    );
+    if (publica.length > 0) {
+      throw new Error(`a ponte expoe canal que publica no Slack: ${publica.join(", ")}`);
+    }
+
+    return t("smoke.slackWindow", { server: FIXTURE_SERVER, channel: canal });
+  } finally {
+    await slackService.removeChannel(canal);
+    if (antes.server === null) {
+      await slackService.clear();
+    } else {
+      await slackService.setSource(antes);
+    }
   }
 }
 
@@ -4350,6 +4691,7 @@ async function main(): Promise<void> {
     const conferencia = await checkReconcile();
     const autoria = await checkAuthorship();
     const varreduraMcp = await checkMcpPoll();
+    const slack = await checkSlack();
     const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
@@ -4368,6 +4710,7 @@ async function main(): Promise<void> {
         reconcile: conferencia,
         authorship: autoria,
         mcpPoll: varreduraMcp,
+        slack,
         trackerIssue: tarefa,
         deepLink,
         bridge: ponte,

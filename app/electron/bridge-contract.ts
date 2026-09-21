@@ -8,6 +8,7 @@ import type { McpService } from "../src/services/mcp-service.js";
 import type { MetricsService } from "../src/services/metrics-service.js";
 import type { ProviderService } from "../src/services/provider-service.js";
 import type { RunService } from "../src/services/run-service.js";
+import type { SlackService } from "../src/services/slack-service.js";
 import type { StartupService } from "../src/services/startup-service.js";
 import type { TrackerService } from "../src/services/tracker-service.js";
 import type { TriggerService } from "../src/services/trigger-service.js";
@@ -179,6 +180,21 @@ interface ServiceApi {
   "trackers.test": TrackerService["testConnection"];
   "trackers.projects": TrackerService["listProjects"];
 
+  /**
+   * O que esta máquina observa no Slack: qual servidor MCP responde por ele e
+   * quais canais entram na varredura.
+   *
+   * Não há credencial de Slack nestes canais, e não é esquecimento: quem fala
+   * com o Slack é o servidor MCP que alguém já autorizou. Não há canal de
+   * publicar tampouco, e a guarda lá embaixo impede que ganhe um por descuido:
+   * responder em thread é escrita externa, e escrita externa passa pela fila de
+   * aprovação, nunca por um canal que a janela alcança.
+   */
+  "slack.get": SlackService["get"];
+  "slack.setSource": SlackService["setSource"];
+  "slack.addChannel": SlackService["addChannel"];
+  "slack.removeChannel": SlackService["removeChannel"];
+
   "metrics.report": MetricsService["report"];
   "machine.profile": MachineService["profile"];
 
@@ -288,6 +304,10 @@ export const BRIDGE_CHANNELS = [
   "trackers.forgetSecret",
   "trackers.test",
   "trackers.projects",
+  "slack.get",
+  "slack.setSource",
+  "slack.addChannel",
+  "slack.removeChannel",
   "metrics.report",
   "machine.profile",
   "triggers.list",
@@ -325,6 +345,23 @@ type SemAberturaDeTarefa = [
   : never;
 const _semAberturaDeTarefa: SemAberturaDeTarefa = true;
 void _semAberturaDeTarefa;
+
+/**
+ * A mesma guarda, para o Slack.
+ *
+ * Responder em thread e a acao do M8.4, e ela nasce parando na fila de
+ * aprovacao. Um canal de janela que postasse seria um segundo caminho, sem fila
+ * no meio, e a emenda 6 do ADR 0002 nao admite isso: nada sai sem uma pessoa
+ * ter dito que sai. Se um canal desses entrar na lista acima, o `Extract` deixa
+ * de ser `never` e o `npm run build` para antes de a janela enxerga-lo.
+ */
+type SemPublicacaoNoSlack = [
+  Extract<BridgeChannel, `slack.post${string}` | `slack.send${string}` | `slack.reply${string}`>,
+] extends [never]
+  ? true
+  : never;
+const _semPublicacaoNoSlack: SemPublicacaoNoSlack = true;
+void _semPublicacaoNoSlack;
 
 type GroupOf<K extends string> = K extends `${infer G}.${string}` ? G : never;
 type MemberOf<G extends string, K extends string> = K extends `${G}.${infer M}` ? M : never;
