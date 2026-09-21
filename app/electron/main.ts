@@ -2286,6 +2286,191 @@ async function checkTrackers(window: BrowserWindow): Promise<string> {
 }
 
 /**
+ * Prova que o passo que abre tarefa propõe, para, e não nasce em outro modo.
+ *
+ * Nada sai da máquina, e desta vez nem para o loopback: montar a proposta é
+ * leitura de banco e concatenação de texto, então o exame não precisa de
+ * servidor de mentira nem de credencial no cofre. Criar a tarefa de verdade
+ * fica de fora de propósito: o que a story pede é que o passo pare na fila, e
+ * aprovar aqui seria justamente a coisa que o passo existe para impedir.
+ *
+ * Os dois passos de modelo entram plantados como `done`, do jeito que o
+ * executor retoma um run interrompido. É o que permite exercitar o passo de
+ * ação sem gastar um minuto de assinatura para ouvir do modelo um texto que o
+ * exame já conhece.
+ */
+async function checkTrackerIssue(): Promise<string> {
+  const { eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { buildExecutor, buildGate } = await import("../src/executor/build.js");
+  const { demoPr } = await import("../src/seed/demo-event.js");
+  const { trackerIssueSteps } = await import("../src/seed/tracker-issue.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { trackerService } = await import("../src/services/tracker-service.js");
+  const { TrackerIssueProposal } = await import("../src/trackers/proposal.js");
+  const { AgentSpec } = await import("../src/config/types.js");
+
+  const idDoTracker = `locum-smoke-issue-${randomUUID().slice(0, 6)}`;
+  const agentId = `locum-smoke-issue-${randomUUID().slice(0, 6)}`;
+  const eventId = `smoke-event-${randomUUID()}`;
+  const destino = "locum-smoke/exemplo";
+  // Fora do literal do cadastro porque o guarda de i18n olha a propriedade
+  // `label`, e este nome e cadastro de mentira, nao texto de produto.
+  const nomeDoTracker = `Issues ${idDoTracker}`;
+
+  // O que o passo de modelo teria escrito. Os três textos são conferidos dentro
+  // do corpo proposto: é o que separa "o corpo veio do passo anterior" de "o
+  // handler escreveu alguma coisa parecida".
+  const objetivo = "Corrigir a expiração de token, que hoje aceita token vencido em BRT.";
+  const mudou = "O TokenValidator trocou UtcNow por Now e o cache perdeu a segurança de concorrência.";
+  const testar = "Rodar a suíte de autenticação com a máquina em BRT e conferir a expiração no limite.";
+
+  const spec = AgentSpec.parse({
+    id: agentId,
+    name: `Smoke ${agentId}`,
+    defaultTools: [],
+    skills: [],
+    budget: {},
+    steps: [
+      {
+        type: "model",
+        key: "audit",
+        name: "Auditoria",
+        needs: [],
+        model: "claude-code/claude-sonnet-5",
+        requiresServers: [],
+        prompt: "{{event.diff}}",
+      },
+      ...trackerIssueSteps({ tracker: idDoTracker, needs: "audit" }),
+    ],
+  });
+
+  let runId: string | undefined;
+  try {
+    await trackerService.register({
+      id: idDoTracker,
+      kind: "github-issues",
+      label: nomeDoTracker,
+      // Endereço que existe como URL e não atende ninguém: o caminho exercitado
+      // aqui não abre conexão, e um endereço de verdade esconderia isso.
+      baseUrl: "http://127.0.0.1:9",
+      project: destino,
+    });
+
+    const versao = await agentService.upsert(spec, `smoke ${agentId}`, "human");
+    await db.insert(schema.events).values({
+      id: eventId,
+      source: "fixture",
+      externalId: `smoke:${eventId}`,
+      payload: demoPr,
+    });
+
+    const executor = await buildExecutor();
+    runId = await executor.createRun(versao.id, eventId);
+
+    for (const [idx, plantado] of [
+      { stepKey: "audit", name: "Auditoria", output: { findings: [] } },
+      { stepKey: "issue_body", name: "Texto da tarefa", output: { objective: objetivo, changes: mudou, testing: testar } },
+    ].entries()) {
+      await db.insert(schema.steps).values({
+        id: `${runId}-${plantado.stepKey}`,
+        runId,
+        idx,
+        stepKey: plantado.stepKey,
+        name: plantado.name,
+        status: "done",
+        output: plantado.output,
+      });
+    }
+
+    const estado = await executor.execute(runId);
+    if (estado !== "paused") throw new Error(`o run terminou como "${estado}", e nao parado na fila`);
+
+    const [run] = await db.select().from(schema.runs).where(eq(schema.runs.id, runId));
+    if (run?.status !== "paused") throw new Error(`o run ficou "${String(run?.status)}" no banco`);
+
+    const passos = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
+    const acao = passos.find((p) => p.stepKey === "open_issue");
+    if (acao?.status !== "awaiting_approval") {
+      throw new Error(`o passo de acao ficou "${String(acao?.status)}"`);
+    }
+
+    const pendencias = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (pendencias.length !== 1) throw new Error(`o passo criou ${pendencias.length} pendencia(s)`);
+    const pendencia = pendencias[0]!;
+    if (pendencia.kind !== "tracker.create_issue" || pendencia.status !== "pending") {
+      throw new Error(`a pendencia saiu como "${pendencia.kind}" em "${pendencia.status}"`);
+    }
+
+    const proposta = TrackerIssueProposal.parse(pendencia.payload);
+    const tituloEsperado = `${demoPr.repoName}#${demoPr.pull}: ${demoPr.title}`;
+    if (proposta.title !== tituloEsperado) {
+      throw new Error(`o titulo proposto foi "${proposta.title}"`);
+    }
+    if (proposta.tracker !== idDoTracker || proposta.project !== destino) {
+      throw new Error(`a proposta aponta para ${proposta.tracker} em ${proposta.project}`);
+    }
+    if (proposta.pullRequestUrl !== demoPr.url) {
+      throw new Error(`a proposta cita ${proposta.pullRequestUrl} como pull request`);
+    }
+    for (const trecho of [objetivo, mudou, testar, demoPr.url]) {
+      if (!proposta.body.includes(trecho)) {
+        throw new Error(`o corpo proposto nao traz "${trecho.slice(0, 40)}"`);
+      }
+    }
+
+    // A trava da story: o handler recusa nascer em rascunho ou em automatico, e
+    // a recusa acontece antes de qualquer gravacao, entao nem pendencia orfa
+    // fica para tras.
+    const gate = buildGate();
+    const carga = { ...demoPr, objective: objetivo, changes: mudou, testing: testar };
+    for (const modo of ["draft", "auto"] as const) {
+      const recusou = await gate
+        .submit(
+          { runId, stepId: acao.id, kind: "tracker.create_issue", payload: carga, target: idDoTracker },
+          modo,
+        )
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`a gate aceitou abrir tarefa em modo "${modo}"`);
+    }
+
+    // E o corpo nao e inventado aqui: sem o que o passo de modelo escreve, a
+    // proposta nao existe, em vez de sair um card com secao vazia.
+    const { testing: _semTestar, ...semUmaSecao } = carga;
+    const recusouVazio = await gate
+      .submit(
+        { runId, stepId: acao.id, kind: "tracker.create_issue", payload: semUmaSecao, target: idDoTracker },
+        "approve",
+      )
+      .then(
+        () => false,
+        () => true,
+      );
+    if (!recusouVazio) throw new Error("a gate propos tarefa sem o texto do passo de modelo");
+
+    const depois = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (depois.length !== 1) throw new Error(`as recusas deixaram ${depois.length} pendencia(s)`);
+  } finally {
+    // O smoke roda no banco de quem desenvolve: o que foi plantado sai daqui
+    // mesmo quando uma linha acima estourou.
+    if (runId !== undefined) {
+      await db.delete(schema.approvals).where(eq(schema.approvals.runId, runId));
+      await db.delete(schema.steps).where(eq(schema.steps.runId, runId));
+      await db.delete(schema.runs).where(eq(schema.runs.id, runId));
+    }
+    await db.delete(schema.events).where(eq(schema.events.id, eventId));
+    await db.delete(schema.agentVersions).where(eq(schema.agentVersions.agentId, agentId));
+    await db.delete(schema.agents).where(eq(schema.agents.id, agentId));
+    await trackerService.remove(idDoTracker);
+  }
+
+  return t("smoke.trackerIssue", { tracker: idDoTracker, project: destino });
+}
+
+/**
  * Confere a secao dos repositorios observados, sem varrer nada.
  *
  * O caminho inteiro da story cabe dentro da maquina: cadastrar pela tela,
@@ -3767,6 +3952,7 @@ async function main(): Promise<void> {
     const secrets = await checkSecrets();
     const avisos = await checkNotifications();
     const conferencia = await checkReconcile();
+    const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
     const renderer = await checkRenderer();
@@ -3782,6 +3968,7 @@ async function main(): Promise<void> {
         secrets,
         notifications: avisos,
         reconcile: conferencia,
+        trackerIssue: tarefa,
         deepLink,
         bridge: ponte,
         renderer,

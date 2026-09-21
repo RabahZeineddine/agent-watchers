@@ -49,3 +49,4 @@
 2026-09-21  M7.1  feito      chave de provedor pela interface, keychain e catalogo, verify limpo
 2026-09-21  M7.2  feito      provedor compatível cadastrável no banco, registro monta fixos mais cadastrados, dois catálogos no smoke e remoção avisando o uso
 2026-09-21  M7.3  feito      tracker de tarefa com Jira e GitHub Issues, credencial no keychain, teste de conexão e destinos pela tela, ponte sem canal que abra tarefa
+2026-09-21  M7.4  feito      passo tracker.create_issue propondo o item e parando na fila, modo travado em approve pelo handler, corpo vindo do passo de modelo

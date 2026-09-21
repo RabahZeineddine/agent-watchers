@@ -429,7 +429,7 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
@@ -439,6 +439,7 @@
     "secrets": "segredo cifrado no disco, referência no banco, valor só na conexão",
     "notifications": "aviso montado sem exibir, três críticos num run só, clique apontando para o run",
     "reconcile": "batida do agendador cruzando review humano com achados, {{settled}} execução(ões) com desfecho, pull request aberto volta na próxima e fechado não é reprocessado",
+    "trackerIssue": "passo de tarefa propondo o item a partir do texto do passo de modelo, run parado na fila do tracker {{tracker}} em {{project}}, e a gate recusando rascunho, automático e corpo ausente",
     "deepLink": "esquema locum {{scheme}}, retorno de OAuth roteado, token no cofre e referência no cadastro",
     "schemeRegistered": "registrado",
     "schemeRefused": "não aceito fora de app empacotado",

@@ -571,7 +571,7 @@
       "description": "Um passo de ação tracker.create_issue que monta o item a partir do pull request e da auditoria: título no padrão do time, objetivo, o que mudou, o que testar e os links. O corpo é gerado por um passo de modelo antes dele, não pelo handler.\n\nEste passo nasce e permanece em modo de aprovação, sem rascunho e sem automático, e o handler recusa qualquer outro modo. Card aberto em nome de uma pessoa é exatamente o que a regra do dono do repositório proíbe sair sem o sim dela, e aqui a trava é de código e não de configuração.",
       "done_when": "Com evento sintético, o passo produz o item proposto, para o run e cria a pendência, e o handler recusa modo diferente de aprovação.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

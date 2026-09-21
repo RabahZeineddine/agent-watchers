@@ -221,6 +221,16 @@ export class TrackerService {
     if (alteradas.length === 0) throw new Error(`tracker "${id}" nao existe`);
   }
 
+  /**
+   * O destino padrão do cadastro, ou nulo quando ninguém escolheu ainda.
+   *
+   * Existe para o passo de ação, que precisa do destino para montar a proposta
+   * e não pode carregar a lista inteira de trackers para achar uma string.
+   */
+  async defaultProject(id: string): Promise<string | null> {
+    return (await this.linha(id)).project;
+  }
+
   /** Qual destino padrão as tarefas deste tracker usam. */
   async setProject(id: string, project: string | null): Promise<void> {
     const limpo = project?.trim() ?? "";

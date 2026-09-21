@@ -57,10 +57,19 @@ export const ModelStep = StepBase.extend({
 
 export const ActionStep = StepBase.extend({
   type: z.literal("action"),
-  /** github.review_comment | slack.post | jira.create */
+  /** github.review_comment | slack.post | tracker.create_issue */
   action: z.string(),
   mode: ActionMode.default("approve"),
   input: z.string().optional(),
+  /**
+   * Para onde a ação aponta, quando o handler sozinho não sabe.
+   *
+   * Em `tracker.create_issue` é o identificador do tracker cadastrado. Fica no
+   * passo, e não na saída do modelo, porque destino é configuração de quem
+   * escreveu o agent: um modelo que escolhesse o projeto poderia abrir a
+   * tarefa no quadro de outro time a cada execução.
+   */
+  target: z.string().optional(),
 });
 
 export const Step = z.discriminatedUnion("type", [ModelStep, ActionStep]);

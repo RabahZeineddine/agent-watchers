@@ -8,6 +8,7 @@ import { machineId } from "../services/machine-service.js";
 import { mcpService } from "../services/mcp-service.js";
 import { providerService } from "../services/provider-service.js";
 import { githubReviewHandler } from "../sources/github.js";
+import { trackerIssueHandler } from "../trackers/issue-action.js";
 
 /**
  * Montagem do executor a partir do que esta cadastrado nesta maquina.
@@ -37,5 +38,10 @@ export async function buildExecutor(): Promise<Executor> {
  * notar, e a gate so vale como porta unica se ela for sempre a mesma porta.
  */
 export function buildGate(): ApprovalGate {
-  return new ApprovalGate(new Map([["github.review_comment", githubReviewHandler()]]));
+  return new ApprovalGate(
+    new Map([
+      ["github.review_comment", githubReviewHandler()],
+      ["tracker.create_issue", trackerIssueHandler()],
+    ]),
+  );
 }

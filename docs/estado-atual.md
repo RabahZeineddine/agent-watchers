@@ -27,6 +27,7 @@ que a interface vai usar.
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
+| passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
 | descoberta de skills e seleção por arquivo alterado | pronto |
 | servidor MCP próprio | 19 ferramentas de leitura, configuração e execução sobre a camada de serviço, registrado em `.mcp.json` |
 | cadastro de gatilho | serviço pronto, nasce desabilitado, cadastrado pela interface |
@@ -730,6 +731,21 @@ automático, então o `createIssue` do serviço só é alcançável pelo passo d
 que nasce em modo de aprovação e para na fila. A ponte não expõe canal que crie
 tarefa, e duas guardas sustentam isso: uma de tipo no contrato, que para o
 build, e uma no `--smoke`, que varre a lista de canais registrados.
+
+O passo é `tracker.create_issue`, e ele aponta para o tracker pelo `target` do
+próprio passo, não pela saída do modelo: destino é configuração de quem escreveu
+o agent, e um modelo que escolhesse o projeto abriria tarefa no quadro de outro
+time. O modo é travado no handler, em `modes`, e não no spec. A diferença
+importa: o rebaixamento do `agent_versions` já impede um agent de gravar `auto`,
+e `modes` impede também a pessoa que edita a spec à mão, porque o que sai
+assinado por alguém não pode depender de a linha certa estar escrita lá.
+
+O corpo da tarefa vem do passo de modelo anterior, em `objective`, `changes` e
+`testing`, e o passo de ação só monta título, seções e links em volta. É o que
+faz o texto ser legível antes de sair: prosa gerada dentro da publicação só
+apareceria depois de publicada. Os dois passos saem prontos em
+`app/src/seed/tracker-issue.ts`, como fragmento para concatenar num agent, e não
+como agent semente: o `pr-review` não tem tracker para apontar.
 
 Para exercitar cliente MCP sem depender de nada instalado na máquina, existe
 `app/src/fixtures/mcp-fixture-server.ts`, um servidor stdio de brinquedo com as
