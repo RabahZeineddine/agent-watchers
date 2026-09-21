@@ -626,7 +626,7 @@
       "description": "Um agent semente que junta o que chegou desde a última entrega e resume em um digest: o que pede resposta, o que é informação, e o que dá para ignorar. Ingestão determinística agrupa e filtra antes do modelo, porque mandar canal inteiro para o modelo é dinheiro queimado. O digest cai na fila como proposta de leitura, sem ação de saída.",
       "done_when": "Com eventos sintéticos, o agent produz um digest agrupado por canal e assunto, e ele aparece na inbox.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

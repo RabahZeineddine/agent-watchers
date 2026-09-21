@@ -2844,6 +2844,304 @@ async function checkSlack(): Promise<string> {
 }
 
 /**
+ * Prova que o digest junta a conversa, agrupa, e para na fila como leitura.
+ *
+ * Nenhum Slack e alcancado, e nem o servidor de brinquedo sobe: o que a story
+ * pede e o que acontece depois que a fonte ja gravou, entao as mensagens sao
+ * plantadas direto na tabela de eventos, com a mesma cara que a fonte do M8.2
+ * da a elas. Sinteticas de proposito: um exame que dependesse de conversa de
+ * verdade nao teria como afirmar quantas mensagens deviam sobrar.
+ *
+ * Quatro coisas estao sendo provadas. Que a ingestao agrupa por canal e por
+ * thread, e nao devolve uma lista corrida. Que ela filtra ruido antes do
+ * modelo, que e a razao de ela ser deterministica. Que a entrega anda: a
+ * segunda batida nao junta de novo o que ja saiu. E que o digest cai na fila
+ * como pendencia de leitura e aparece na inbox, sem publicar nada em lugar
+ * nenhum, porque este agent nao tem lado de fora.
+ *
+ * O passo de modelo entra plantado como `done`, do jeito que o executor retoma
+ * um run interrompido: o exame ja conhece o texto que ele devolveria, e ouvi-lo
+ * do modelo custaria um minuto de assinatura por iteracao do loop.
+ */
+async function checkDigest(): Promise<string> {
+  const { and, eq, inArray } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { AgentSpec } = await import("../src/config/types.js");
+  const { buildDigestEvent, collectSlackDigest, DIGEST_SOURCE, digestCursorKey } = await import(
+    "../src/digest/ingest.js"
+  );
+  const { DigestProposal } = await import("../src/digest/proposal.js");
+  const { buildExecutor, buildGate } = await import("../src/executor/build.js");
+  const { slackDigestSpec } = await import("../src/seed/slack-digest.js");
+  const { agentService } = await import("../src/services/agent-service.js");
+  const { approvalService } = await import("../src/services/approval-service.js");
+  const { slackSource } = await import("../src/sources/slack.js");
+
+  // Servidor, canais e agent sorteados pelo mesmo motivo do exame do Slack: o
+  // smoke roda no banco de quem desenvolve, e o que ficasse para tras se a
+  // limpeza falhasse nao pode se confundir com cadastro de verdade.
+  const server = `locum-smoke-digest-${randomUUID().slice(0, 8)}`;
+  const agentId = `locum-smoke-digest-${randomUUID().slice(0, 6)}`;
+  const source = slackSource(server);
+  const suporte = `C-smoke-a-${randomUUID().slice(0, 8)}`;
+  const avisos = `C-smoke-b-${randomUUID().slice(0, 8)}`;
+
+  const PRIMEIRO_TS = Math.floor(Date.parse("2026-02-01T00:00:00.000Z") / 1000);
+  const carimbo = (i: number): string => `${PRIMEIRO_TS + i * 60}.000100`;
+
+  const pergunta = "Alguem consegue olhar a fila da pedido 4471 hoje?";
+  const resposta = "Olhei agora, travou na emissao do nota.";
+  const aviso = "Deploy do orquestrador as 18h, janela de dez minutos.";
+  const conversa = "bom dia";
+
+  // O que a fonte do Slack grava, com dois pedacos de ruido no meio: o
+  // marcador de quem entrou no canal, que o Slack manda como mensagem, e uma
+  // mensagem sem texto, que e como chega anexo sem comentario.
+  const mensagens = [
+    { channel: suporte, ts: carimbo(0), threadTs: carimbo(0), author: "alice.exemplo", text: pergunta },
+    { channel: suporte, ts: carimbo(1), threadTs: carimbo(0), author: "bruno.exemplo", text: resposta },
+    { channel: suporte, ts: carimbo(2), threadTs: carimbo(2), author: "alice.exemplo", text: "alice entrou no canal", subtype: "channel_join" },
+    { channel: avisos, ts: carimbo(3), threadTs: carimbo(3), author: "esteira", text: aviso },
+    { channel: avisos, ts: carimbo(4), threadTs: carimbo(4), author: "esteira", text: "   " },
+  ];
+  const externos = mensagens.map((m) => `slack:${m.channel}:${m.ts}`);
+
+  let runId: string | undefined;
+  let eventId: string | null = null;
+
+  const limpar = async (): Promise<void> => {
+    if (runId !== undefined) {
+      await db.delete(schema.approvals).where(eq(schema.approvals.runId, runId));
+      await db.delete(schema.steps).where(eq(schema.steps.runId, runId));
+      await db.delete(schema.runs).where(eq(schema.runs.id, runId));
+    }
+    await db.delete(schema.agentVersions).where(eq(schema.agentVersions.agentId, agentId));
+    await db.delete(schema.agents).where(eq(schema.agents.id, agentId));
+    await db
+      .delete(schema.events)
+      .where(and(eq(schema.events.source, source), inArray(schema.events.externalId, externos)));
+    await db
+      .delete(schema.events)
+      .where(
+        and(
+          eq(schema.events.source, DIGEST_SOURCE),
+          eq(schema.events.externalId, `${digestCursorKey(server)}:${carimbo(4)}`),
+        ),
+      );
+    await db
+      .delete(schema.cursors)
+      .where(
+        and(eq(schema.cursors.source, DIGEST_SOURCE), eq(schema.cursors.key, digestCursorKey(server))),
+      );
+  };
+
+  await limpar();
+
+  try {
+    // Carimbo de chegada explicito e crescente: com o padrao, as cinco cairiam
+    // no mesmo segundo e a ordem de leitura ficaria por conta do sqlite.
+    const chegada = Math.floor(Date.now() / 1000);
+    for (const [i, m] of mensagens.entries()) {
+      await db.insert(schema.events).values({
+        id: randomUUID(),
+        source,
+        externalId: `slack:${m.channel}:${m.ts}`,
+        receivedAt: chegada + i,
+        payload: {
+          repo: `slack/${m.channel}`,
+          changedFiles: [],
+          server,
+          channel: m.channel,
+          author: m.author,
+          text: m.text,
+          ts: m.ts,
+          threadTs: m.threadTs,
+          reply: m.threadTs !== m.ts,
+          permalink: `https://exemplo.invalido/${m.channel}/${m.ts}`,
+          item: m.subtype === undefined ? { ts: m.ts } : { ts: m.ts, subtype: m.subtype },
+          at: m.ts,
+        },
+      });
+    }
+
+    const pacote = await collectSlackDigest(server);
+    if (pacote.channels.length !== 2) {
+      throw new Error(`a ingestao agrupou ${pacote.channels.length} canal(is), e nao 2`);
+    }
+    if (pacote.dropped !== 2) {
+      throw new Error(`a ingestao descartou ${pacote.dropped} mensagem(ns) de ruido, e nao 2`);
+    }
+    if (pacote.messages !== 3) {
+      throw new Error(`sobraram ${pacote.messages} mensagem(ns) para o modelo, e nao 3`);
+    }
+    if (pacote.until !== carimbo(4)) {
+      throw new Error(`a janela parou em ${pacote.until}, e nao em ${carimbo(4)}`);
+    }
+
+    const canalSuporte = pacote.channels.find((c) => c.channel === suporte);
+    if (canalSuporte?.threads.length !== 1) {
+      throw new Error(`o canal de suporte saiu com ${canalSuporte?.threads.length ?? 0} thread(s)`);
+    }
+    const thread = canalSuporte.threads[0]!;
+    if (thread.messages.length !== 2 || thread.threadTs !== carimbo(0)) {
+      throw new Error(`a thread saiu com ${thread.messages.length} mensagem(ns) em ${thread.threadTs}`);
+    }
+    // O assunto vem de quem abriu a thread, e nao da ultima resposta: e por ele
+    // que o digest e lido, e a resposta sozinha nao diz do que se trata.
+    if (thread.subject !== pergunta) throw new Error(`o assunto da thread saiu como "${thread.subject}"`);
+    const canalAvisos = pacote.channels.find((c) => c.channel === avisos);
+    if (canalAvisos?.threads.length !== 1 || canalAvisos.threads[0]!.messages.length !== 1) {
+      throw new Error("o canal de avisos nao saiu com um assunto de uma mensagem");
+    }
+
+    eventId = await buildDigestEvent(pacote);
+    if (eventId === null) throw new Error("a ingestao nao gravou o evento do digest");
+
+    const [cursor] = await db
+      .select({ value: schema.cursors.value })
+      .from(schema.cursors)
+      .where(
+        and(eq(schema.cursors.source, DIGEST_SOURCE), eq(schema.cursors.key, digestCursorKey(server))),
+      );
+    if (cursor?.value !== carimbo(4)) {
+      throw new Error(`o cursor da entrega parou em ${cursor?.value ?? "nada"}`);
+    }
+
+    // A entrega andou: a mesma conversa nao volta no proximo digest, que e o
+    // que "desde a ultima entrega" quer dizer.
+    const segundo = await collectSlackDigest(server);
+    if (segundo.channels.length !== 0 || segundo.messages !== 0) {
+      throw new Error(`a segunda batida juntou ${segundo.messages} mensagem(ns) de novo`);
+    }
+    if ((await buildDigestEvent(segundo)) !== null) {
+      throw new Error("a segunda batida gravou digest de conversa nenhuma");
+    }
+
+    const spec = AgentSpec.parse({ ...slackDigestSpec, id: agentId, name: `Smoke ${agentId}` });
+    const versao = await agentService.upsert(spec, `smoke ${agentId}`, "human");
+
+    const executor = await buildExecutor();
+    runId = await executor.createRun(versao.id, eventId);
+
+    // O que o passo de modelo teria devolvido. Os assuntos do mesmo canal
+    // entram fora de ordem de proposito: quem ordena e a proposta.
+    const leitura = {
+      headline: "Tres assuntos, um esperando voce.",
+      items: [
+        {
+          channel: suporte,
+          subject: conversa,
+          kind: "ignore",
+          summary: "Cumprimento de comeco de dia, sem nada pedido.",
+        },
+        {
+          channel: avisos,
+          subject: aviso,
+          kind: "info",
+          summary: "A esteira avisou a janela de deploy do orquestrador.",
+        },
+        {
+          channel: suporte,
+          subject: pergunta,
+          kind: "needs_reply",
+          summary: "Alice pergunta quem olha a fila da pedido, e Bruno achou o travamento no nota.",
+          threadTs: carimbo(0),
+        },
+      ],
+    };
+    await db.insert(schema.steps).values({
+      id: `${runId}-read`,
+      runId,
+      idx: 0,
+      stepKey: "read",
+      name: "Leitura",
+      status: "done",
+      output: leitura,
+    });
+
+    const estado = await executor.execute(runId);
+    if (estado !== "paused") throw new Error(`o run terminou como "${estado}", e nao parado na fila`);
+
+    const passos = await db.select().from(schema.steps).where(eq(schema.steps.runId, runId));
+    const acao = passos.find((p) => p.stepKey === "deliver");
+    if (acao?.status !== "awaiting_approval") {
+      throw new Error(`o passo de entrega ficou "${String(acao?.status)}"`);
+    }
+
+    const pendencias = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (pendencias.length !== 1) throw new Error(`o passo criou ${pendencias.length} pendencia(s)`);
+    const pendencia = pendencias[0]!;
+    if (pendencia.kind !== "digest.deliver" || pendencia.status !== "pending") {
+      throw new Error(`a pendencia saiu como "${pendencia.kind}" em "${pendencia.status}"`);
+    }
+
+    // Aparece na inbox, que e onde a story pede que ele apareca, e pela mesma
+    // consulta que a interface e a linha de comando usam.
+    const fila = await approvalService.listPending();
+    if (!fila.some((p) => p.id === pendencia.id)) {
+      throw new Error("o digest nao apareceu na inbox");
+    }
+
+    const proposta = DigestProposal.parse(pendencia.payload);
+    if (proposta.channels.length !== 2) {
+      throw new Error(`a proposta agrupou ${proposta.channels.length} canal(is)`);
+    }
+    if (proposta.channels[0]!.channel !== suporte || proposta.channels[1]!.channel !== avisos) {
+      throw new Error("a proposta nao ordenou os canais pelo nome");
+    }
+    if (proposta.channels[0]!.items[0]!.kind !== "needs_reply") {
+      throw new Error("a proposta nao pos o que pede resposta na frente do canal");
+    }
+    if (proposta.counts.needs_reply !== 1 || proposta.counts.info !== 1 || proposta.counts.ignore !== 1) {
+      throw new Error("a contagem por classe nao bate com o que o modelo classificou");
+    }
+    for (const trecho of [suporte, avisos, pergunta, aviso]) {
+      if (!proposta.body.includes(trecho)) {
+        throw new Error(`o digest proposto nao traz "${trecho.slice(0, 40)}"`);
+      }
+    }
+
+    // As travas do handler: um digest entregue sozinho sairia da fila sem
+    // ninguem ter lido, e rascunho de leitura nao quer dizer nada. A recusa
+    // acontece antes de gravar, entao nem pendencia orfa fica para tras.
+    const gate = buildGate();
+    for (const modo of ["draft", "auto"] as const) {
+      const recusou = await gate
+        .submit({ runId, stepId: acao.id, kind: "digest.deliver", payload: leitura }, modo)
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`a gate aceitou entregar o digest em modo "${modo}"`);
+    }
+
+    const recusouVazio = await gate
+      .submit(
+        { runId, stepId: acao.id, kind: "digest.deliver", payload: { headline: leitura.headline, items: [] } },
+        "approve",
+      )
+      .then(
+        () => false,
+        () => true,
+      );
+    if (!recusouVazio) throw new Error("a gate propos digest sem assunto nenhum");
+
+    const depois = await db.select().from(schema.approvals).where(eq(schema.approvals.runId, runId));
+    if (depois.length !== 1) throw new Error(`as recusas deixaram ${depois.length} pendencia(s)`);
+
+    return t("smoke.digest", {
+      channels: pacote.channels.length,
+      messages: pacote.messages,
+      dropped: pacote.dropped,
+    });
+  } finally {
+    // O smoke roda no banco de quem desenvolve: o que foi plantado sai daqui
+    // mesmo quando uma linha acima estourou.
+    await limpar();
+  }
+}
+
+/**
  * Confere a varredura por consulta a servidor MCP, contra o servidor de brinquedo.
  *
  * A terceira forma de fonte do ADR 0001 e a unica que nao tem como ser exposta
@@ -4692,6 +4990,7 @@ async function main(): Promise<void> {
     const autoria = await checkAuthorship();
     const varreduraMcp = await checkMcpPoll();
     const slack = await checkSlack();
+    const digest = await checkDigest();
     const tarefa = await checkTrackerIssue();
     const deepLink = await checkDeepLink();
     const ponte = await checkBridge();
@@ -4711,6 +5010,7 @@ async function main(): Promise<void> {
         authorship: autoria,
         mcpPoll: varreduraMcp,
         slack,
+        digest,
         trackerIssue: tarefa,
         deepLink,
         bridge: ponte,

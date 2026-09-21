@@ -204,8 +204,12 @@ function opaqueShape(input: McpPollInput): McpPollShape {
  * ordena alfabeticamente por construção, mas o epoch em segundos que o Slack
  * usa não: `"999999999.9"` viria depois de `"1737400000.1"` na comparação de
  * texto, e o cursor voltaria para 2001 na primeira mensagem carimbada assim.
+ *
+ * Exportado porque o digest compara os mesmos carimbos para saber o que já foi
+ * entregue, e duas comparações de carimbo do Slack em lugares diferentes é como
+ * uma delas acaba sem a parte numérica.
  */
-function newer(a: string, b: string): string {
+export function newer(a: string, b: string): string {
   const x = Number(a);
   const y = Number(b);
   if (Number.isFinite(x) && Number.isFinite(y)) return y > x ? b : a;

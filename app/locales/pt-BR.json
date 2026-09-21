@@ -454,7 +454,7 @@
     "low": "baixo"
   },
   "smoke": {
-    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, varredura por MCP com {{mcpPoll}}, Slack com {{slack}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
+    "ok": "smoke ok: banco abriu, agents: {{agents}}, {{schema}}, bandeja criada com pendências: {{pending}}, início no login com {{loginItem}}, energia com {{power}}, atualização com {{updates}}, keychain com {{secrets}}, notificação com {{notifications}}, conferência com {{reconcile}}, autoria com {{authorship}}, varredura por MCP com {{mcpPoll}}, Slack com {{slack}}, digest com {{digest}}, tarefa com {{trackerIssue}}, deep link com {{deepLink}}, ponte com {{bridge}}, interface com {{renderer}}, processo principal com {{mainText}}",
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
@@ -494,6 +494,7 @@
     "authorship": "gatilho de {{mine}} acordou só com o pull request de {{viewer}}, e o de {{others}} só com o de outra pessoa",
     "mcpPoll": "consulta ao {{fixture}} pela ferramenta {{tool}} virou {{events}} evento(s) normalizado(s), a segunda varredura não reprocessou nenhum, e o cursor não andou com a chamada falhando",
     "slack": "canal observado virou {{events}} mensagem(ns) normalizada(s) com autor, canal, texto e thread, um cursor por canal, e a segunda varredura não reprocessou nenhuma",
+    "digest": "conversa de {{channels}} canal(is) agrupada por assunto em {{messages}} mensagem(ns), {{dropped}} de ruído descartada(s) antes do modelo, a entrega seguinte sem repetir nada, e o digest parado na inbox como leitura, com a gate recusando rascunho, automático e digest vazio",
     "slackWindow": "Slack: {{server}} guardado pela tela e o canal {{channel}} observado, sem canal de ponte que publique"
   },
   "status": {

@@ -27,6 +27,7 @@ que a interface vai usar.
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
+| agent de digest do Slack | pronto e verificado com conversa sintética; a ingestão agrupa por canal e por thread e filtra ruído antes do modelo, e o digest para na inbox como proposta de leitura, sem ação de saída |
 | ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
@@ -98,6 +99,7 @@ npm run dev demo                      # não precisa de credencial
 npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
+npm run dev digest                    # junta o Slack desde a última entrega e roda o agent de digest
 npm run dev inbox
 npm run dev runs
 npm run dev reconcile <run-id>        # precisa de GITHUB_TOKEN, só leitura
@@ -778,3 +780,32 @@ para o maior `at` gravado, e só depois de gravar; quando nenhum item vem
 carimbado, ele anda para o instante lido antes da chamada, que é a marca d'água
 segura. Resposta com `isError` vira exceção, senão a mensagem de erro viraria
 evento e o cursor passaria por cima de uma janela que ninguém leu.
+
+## O digest
+
+`app/src/digest/ingest.ts` junta o que a fonte do Slack gravou desde a última
+entrega, agrupa por canal e por thread, e corta o que não vale mandar para o
+modelo: mensagem sem texto e marcador de canal, que o Slack manda como mensagem
+e ninguém lê. Tudo determinístico, e de propósito: agrupar é comparação de
+carimbo, e pagar um modelo para isso seria mandar o canal inteiro para ele antes
+de saber se há o que resumir. Há teto de leitura, de threads por canal, de
+mensagens por thread e de tamanho de cada mensagem.
+
+O cursor da entrega é por servidor de Slack e anda quando o evento do digest é
+gravado, nunca quando alguém clica. A ordem é a mesma das outras fontes, e pela
+mesma razão: se o processo morrer no meio, o evento existe e o run é retomado na
+próxima subida. Andar só depois do clique faria uma pendência esquecida na fila
+segurar toda a conversa seguinte fora do próximo digest.
+
+O agent semente é `slack-digest`, com dois passos. Um de modelo, que classifica
+cada assunto em `needs_reply`, `info` ou `ignore` e escreve o resumo, sem
+nenhuma ferramenta: o que ele lê já chegou agrupado no evento. E um de ação,
+`digest.deliver`, que monta a proposta e para na fila.
+
+Esse é o primeiro passo de ação que passa pela fila sem ter lado de fora. Um
+digest não publica nada: o clique quer dizer "li", e o `publish` do handler não
+chama ninguém. Mesmo assim o caminho é a gate, porque é ela que grava a
+proposta, mostra a pendência na inbox e registra quando ela foi resolvida, e um
+digest que aparecesse por fora disso seria uma segunda inbox com regra própria.
+O handler recusa `auto` e `draft`, por código: digest entregue sozinho sai da
+fila sem ninguém ter lido, que é o contrário do que ele existe para fazer.
