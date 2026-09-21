@@ -133,6 +133,13 @@ export function Configuracao() {
       </Secao>
 
       <Secao
+        descricao={t("settings.registered.description")}
+        titulo={t("settings.registered.title")}
+      >
+        <ProvedoresCadastrados recarregar={recarregarProvedores} />
+      </Secao>
+
+      <Secao
         descricao={t("settings.fallbacks.description", { machine: machineId ?? "..." })}
         titulo={t("settings.fallbacks.title")}
       >
@@ -526,6 +533,237 @@ function ChaveDoProvedor({
 
       <ResultadoDaChave exame={exame} provedor={provedor.name} />
     </div>
+  );
+}
+
+/* ---------------------------------------------- provedores cadastrados */
+
+type Cadastrado = ReadResult<"providers.registered">[number];
+type Remocao = ReadResult<"providers.remove">;
+
+/**
+ * Gateway compatível com OpenAI: cadastrar, ver e remover.
+ *
+ * A lista de provedores acima é fixa no código, e é por isso que esta seção
+ * existe: um segundo gateway da empresa, um Ollama em outra máquina ou um
+ * OpenRouter não têm onde entrar sem ela. O que se cadastra aqui aparece lá em
+ * cima como qualquer outro provedor, com campo de chave próprio, e um passo
+ * pode apontar para ele pelo identificador.
+ *
+ * Remover pede dois cliques quando o provedor está em uso. O primeiro volta
+ * com a lista de onde ele aparece, e é o serviço que a monta: a tela mostra o
+ * que recebeu e oferece o segundo clique, mas a decisão de não apagar em
+ * silêncio é do lado que apaga.
+ */
+function ProvedoresCadastrados({ recarregar }: { recarregar: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const inicial = useRead("providers.registered");
+  const [relido, setRelido] = useState<Cadastrado[] | null>(null);
+  const [id, setId] = useState("");
+  const [nome, setNome] = useState("");
+  const [url, setUrl] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  // Por provedor, e não um só para a seção: duas remoções avisadas ao mesmo
+  // tempo mostrariam a lista de uso de uma na linha da outra.
+  const [avisos, setAvisos] = useState<Record<string, Remocao>>({});
+
+  const lista = relido ?? inicial.data ?? [];
+  const recusa = erro ?? inicial.error?.message ?? null;
+
+  const reler = (): Promise<void> =>
+    Promise.all([read("providers.registered").then(setRelido), recarregar()]).then(
+      () => undefined,
+      (falha: unknown) => setErro(falha instanceof Error ? falha.message : String(falha)),
+    );
+
+  const agir = (acao: Promise<unknown>): Promise<unknown> => {
+    setOcupado(true);
+    return acao
+      .then(
+        (resultado) => {
+          setErro(null);
+          return resultado;
+        },
+        (falha: unknown) => {
+          setErro(falha instanceof Error ? falha.message : String(falha));
+          return undefined;
+        },
+      )
+      .then(async (resultado) => {
+        await reler();
+        return resultado;
+      })
+      .finally(() => setOcupado(false));
+  };
+
+  const cadastrar = (): void => {
+    void agir(
+      call("providers.register", { id: id.trim(), label: nome.trim(), baseUrl: url.trim() }).then(
+        () => {
+          setId("");
+          setNome("");
+          setUrl("");
+        },
+      ),
+    );
+  };
+
+  const remover = (alvo: string, force: boolean): void => {
+    void agir(call("providers.remove", alvo, force)).then((resultado) => {
+      const remocao = resultado as Remocao | undefined;
+      setAvisos((antes) => {
+        const proximos = { ...antes };
+        // Removido ou recusado pela ponte, o aviso anterior sai: ele descrevia
+        // um provedor que não está mais lá, ou uma tentativa que não chegou.
+        if (remocao === undefined || remocao.removed) delete proximos[alvo];
+        else proximos[alvo] = remocao;
+        return proximos;
+      });
+    });
+  };
+
+  const valido = id.trim() !== "" && nome.trim() !== "" && url.trim() !== "";
+
+  return (
+    <div
+      className="flex flex-col gap-3 px-4 py-3"
+      data-locum-cadastrados={lista.map((p) => p.id).join(",")}
+      data-locum-probe="provedores-cadastrados"
+    >
+      {lista.length === 0 ? (
+        <p className="text-muted-foreground text-sm">{t("settings.registered.empty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {lista.map((cadastrado) => (
+            <LinhaDoCadastrado
+              aoRemover={(force) => remover(cadastrado.id, force)}
+              aviso={avisos[cadastrado.id]}
+              cadastrado={cadastrado}
+              key={cadastrado.id}
+              ocupado={ocupado}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.registered.id")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-40 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-id=""
+          onChange={(evento) => setId(evento.target.value)}
+          placeholder={t("settings.registered.idHint")}
+          spellCheck={false}
+          value={id}
+        />
+        <input
+          aria-label={t("settings.registered.label")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring w-44 rounded-md border px-3 py-1.5 text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-nome=""
+          onChange={(evento) => setNome(evento.target.value)}
+          placeholder={t("settings.registered.labelHint")}
+          spellCheck={false}
+          value={nome}
+        />
+        <input
+          aria-label={t("settings.registered.baseUrl")}
+          autoComplete="off"
+          className="border-border bg-background focus-visible:ring-ring min-w-56 flex-1 rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1"
+          data-locum-cadastrar-url=""
+          onChange={(evento) => setUrl(evento.target.value)}
+          placeholder={t("settings.registered.baseUrlHint")}
+          spellCheck={false}
+          value={url}
+        />
+        <Button
+          data-locum-cadastrar-salvar=""
+          disabled={ocupado || !valido}
+          onClick={cadastrar}
+          size="sm"
+          variant="secondary"
+        >
+          {t("settings.registered.add")}
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground max-w-[68ch] text-xs">{t("settings.registered.howTo")}</p>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs" data-locum-cadastrados-erro={recusa}>
+          {t("settings.registered.refused", { message: recusa })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function LinhaDoCadastrado({
+  aoRemover,
+  aviso,
+  cadastrado,
+  ocupado,
+}: {
+  aoRemover: (force: boolean) => void;
+  aviso: Remocao | undefined;
+  cadastrado: Cadastrado;
+  ocupado: boolean;
+}) {
+  const { t } = useTranslation();
+  const usos = aviso === undefined || aviso.removed ? [] : aviso.usedBy;
+
+  return (
+    <li
+      className="border-border flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm"
+      data-locum-cadastrado={cadastrado.id}
+      data-locum-cadastrado-nome={cadastrado.label}
+      data-locum-cadastrado-url={cadastrado.baseUrl}
+      data-locum-cadastrado-usos={usos.length}
+    >
+      <span className="font-mono text-[13px]">{cadastrado.id}</span>
+      <span className="text-muted-foreground text-xs">{cadastrado.label}</span>
+      <span className="text-muted-foreground font-mono text-xs">{cadastrado.baseUrl}</span>
+
+      <div className="ml-auto flex items-center gap-1">
+        <Button
+          data-locum-cadastrado-remover={cadastrado.id}
+          disabled={ocupado}
+          onClick={() => aoRemover(false)}
+          size="sm"
+          variant="ghost"
+        >
+          {t("settings.registered.remove")}
+        </Button>
+        {usos.length === 0 ? null : (
+          <Button
+            data-locum-cadastrado-forcar={cadastrado.id}
+            disabled={ocupado}
+            onClick={() => aoRemover(true)}
+            size="sm"
+            variant="ghost"
+          >
+            {t("settings.registered.removeAnyway")}
+          </Button>
+        )}
+      </div>
+
+      {usos.length === 0 ? null : (
+        <p className="text-destructive w-full text-xs">
+          {t("settings.registered.inUse", {
+            count: usos.length,
+            where: usos
+              .map((uso) =>
+                uso.kind === "step"
+                  ? t("settings.registered.useStep", { agent: uso.agentId, step: uso.stepKey })
+                  : t("settings.registered.useFallback", { from: uso.from, to: uso.to }),
+              )
+              .join(", "),
+          })}
+        </p>
+      )}
+    </li>
   );
 }
 

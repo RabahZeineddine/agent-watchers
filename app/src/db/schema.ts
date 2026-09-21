@@ -226,6 +226,14 @@ export const providers = sqliteTable("providers", {
   id: text("id").primaryKey(),
   /** anthropic | openai | google | openai-compatible | claude-code */
   kind: text("kind").notNull(),
+  /**
+   * Como o provedor cadastrado se chama para quem administra.
+   *
+   * Nulo nas linhas que existem só para apontar credencial de provedor fixo:
+   * o nome delas está no código, e repeti-lo aqui criaria duas versões da
+   * mesma coisa.
+   */
+  label: text("label"),
   baseUrl: text("base_url"),
   /** Chave no keychain, nunca o segredo. */
   credentialRef: text("credential_ref"),

@@ -53,6 +53,9 @@ export const READ_CHANNELS = [
   // Mesma razão de `credentials.overview`: endereço, sim ou não, e o que a
   // última conferência contou. Valor de chave não volta por canal nenhum.
   "providers.credentials",
+  // O cadastro de gateway compatível: identificador, nome e endereço, que é
+  // o que alguém escreveu. A chave dele não está aqui, e nem em canal nenhum.
+  "providers.registered",
   // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
   // que a última conferência descobriu. O token não volta por canal nenhum.
   "github.status",
@@ -108,6 +111,11 @@ export const ACTION_CHANNELS = [
   "providers.checkSecret",
   "mcp.test",
   "mcp.tools",
+  // Cadastrar e remover gateway compatível. Escrita, e cada uma é um clique:
+  // remover ainda pede o segundo, porque sem `force` o serviço devolve onde o
+  // provedor aparece em vez de apagar.
+  "providers.register",
+  "providers.remove",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um
   // clique e não do carregamento da tela.
   "providers.models",

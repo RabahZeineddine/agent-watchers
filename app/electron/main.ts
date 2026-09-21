@@ -1379,7 +1379,9 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   const esperadas = fallbacks.map((f) => `${f.fromModel}>${f.toModel}`);
   if (tela.fallbacks !== fallbacks.length || linhasDeFallback.join("|") !== esperadas.join("|")) {
     throw new Error(
-      `a tabela de substituicao desenhou ${linhasDeFallback.join("|")} e o servico tem ${esperadas.join("|")}`,
+      `a tabela de substituicao desenhou ${linhasDeFallback.length} linha(s) ` +
+        `(${linhasDeFallback.join("|")}, contador ${tela.fallbacks}) e o servico tem ` +
+        `${fallbacks.length} (${esperadas.join("|")})`,
     );
   }
 
@@ -1455,6 +1457,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   }
 
   const providerKeys = await checkProviderKeys(window);
+  const registered = await checkRegisteredProviders(window);
   const github = await checkGithub(window);
   const watched = await checkWatched(window);
 
@@ -1466,6 +1469,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     tools: resultado.ferramentas,
     budgets: orcamentos.length,
     providerKeys,
+    registered,
     github,
     watched,
   });
@@ -1673,6 +1677,259 @@ async function checkProviderKeys(window: BrowserWindow): Promise<string> {
   return t("smoke.providerKeys", {
     path: t("smoke.providerKeysRoundTrip", { provider: semCredencial.provider }),
   });
+}
+
+/**
+ * Confere o cadastro de provedor compatível, sem provedor de verdade.
+ *
+ * O caminho inteiro da story cabe dentro da máquina, como no exame da chave:
+ * os dois gateways cadastrados apontam para servidores de três linhas
+ * escutando em 127.0.0.1, e as chaves são sorteadas. Nada sai da placa de
+ * loopback, e nenhum provedor de verdade é tocado.
+ *
+ * Os dois catálogos respondem números diferentes de propósito. É o que separa
+ * "dois cadastros aparecem" de "cada um tem o próprio catálogo": com listas
+ * iguais, um registro que apontasse os dois para o mesmo endereço passaria.
+ *
+ * Um entra pelo serviço e o outro pela tela, e a remoção também vai pelos dois
+ * caminhos, porque são dois códigos diferentes: o formulário da janela e o
+ * método que o resto do app chama. O que é exercitado só de um lado é o aviso
+ * de uso, que precisa de uma substituição apontando para o provedor, e essa
+ * linha é plantada e apagada aqui.
+ */
+async function checkRegisteredProviders(window: BrowserWindow): Promise<string> {
+  const { createServer } = await import("node:http");
+  const { and, eq } = await import("drizzle-orm");
+  const { db, schema } = await import("../src/db/index.js");
+  const { machineId } = await import("../src/services/machine-service.js");
+  const { secretService } = await import("../src/services/secret-service.js");
+  const { settingsService } = await import("../src/services/settings-service.js");
+  const { providerCredentialRef, providerService } = await import(
+    "../src/services/provider-service.js"
+  );
+
+  if (!secretService.available) throw new Error("keychain indisponivel para provedor cadastrado");
+
+  /** Um catálogo de mentira, que conta quantas chaves diferentes o procuraram. */
+  const catalogo = async (modelos: string[]) => {
+    const chamadas: (string | undefined)[] = [];
+    const servidor = createServer((requisicao, resposta) => {
+      chamadas.push(requisicao.headers.authorization);
+      resposta.setHeader("content-type", "application/json");
+      resposta.end(JSON.stringify({ data: modelos.map((id) => ({ id })) }));
+    });
+    await new Promise<void>((resolve) => {
+      servidor.listen(0, "127.0.0.1", resolve);
+    });
+    const porta = (servidor.address() as { port: number }).port;
+    return { chamadas, servidor, baseUrl: `http://127.0.0.1:${porta}/v1` };
+  };
+
+  const pelo = await catalogo(["um", "dois"]);
+  const pela = await catalogo(["um", "dois", "tres", "quatro", "cinco"]);
+
+  const idDoServico = `locum-smoke-svc-${randomUUID().slice(0, 8)}`;
+  const idDaTela = `locum-smoke-ui-${randomUUID().slice(0, 8)}`;
+  const chaveDoServico = `chave-de-mentira-${randomUUID()}`;
+  const chaveDaTela = `chave-de-mentira-${randomUUID()}`;
+  const substituicao = `${idDoServico}/um`;
+  // O nome sai de variável e não de literal no objeto: `label` é propriedade
+  // que o Electron pinta em menu, e a guarda de i18n acusa texto cravado nela.
+  const nomeDoServico = `Gateway ${idDoServico}`;
+
+  try {
+    await providerService.register({
+      id: idDoServico,
+      label: nomeDoServico,
+      baseUrl: pelo.baseUrl,
+    });
+
+    // Nome de provedor de fábrica é recusa, e não substituição: um cadastro
+    // chamado `anthropic` mandaria a chave de quem tem uma para outro lugar.
+    for (const proibido of ["anthropic", idDoServico]) {
+      const recusou = await providerService
+        .register({ id: proibido, label: nomeDoServico, baseUrl: pelo.baseUrl })
+        .then(
+          () => false,
+          () => true,
+        );
+      if (!recusou) throw new Error(`o cadastro aceitou o identificador "${proibido}"`);
+    }
+
+    // O segundo pela tela, que é o que a story entrega. A seção relê depois de
+    // gravar, então é por ela que os dois passam a aparecer na janela.
+    const preencheu = await window.webContents.executeJavaScript(
+      `(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value",
+        ).set;
+        const digitar = (seletor, valor) => {
+          const campo = document.querySelector(seletor);
+          if (campo === null) return false;
+          setter.call(campo, valor);
+          campo.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        };
+        if (!digitar("[data-locum-cadastrar-id]", ${JSON.stringify(idDaTela)})) return false;
+        if (!digitar("[data-locum-cadastrar-nome]", "Gateway da tela")) return false;
+        if (!digitar("[data-locum-cadastrar-url]", ${JSON.stringify(pela.baseUrl)})) return false;
+        const botao = document.querySelector("[data-locum-cadastrar-salvar]");
+        if (botao === null || botao.disabled) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (preencheu !== true) throw new Error("a tela nao ofereceu o formulario de cadastro");
+
+    const naTela = await esperarProbe<Record<string, string>>(
+      window,
+      "provedores cadastrados na tela",
+      `(() => {
+        const linhas = Array.from(document.querySelectorAll("[data-locum-cadastrado]"));
+        const achados = Object.fromEntries(
+          linhas.map((e) => [e.dataset.locumCadastrado, e.dataset.locumCadastradoUrl]),
+        );
+        return ${JSON.stringify(idDaTela)} in achados ? achados : null;
+      })()`,
+    );
+    if (naTela[idDoServico] !== pelo.baseUrl || naTela[idDaTela] !== pela.baseUrl) {
+      throw new Error(
+        `a tela listou ${JSON.stringify(naTela)} e os cadastros sao ${pelo.baseUrl} e ${pela.baseUrl}`,
+      );
+    }
+
+    // Os dois no registro, ao lado dos de fábrica, e reconhecíveis como
+    // cadastrados: sem isso a tela não teria como saber quais pode remover.
+    const registro = new Map(providerService.listProviders().map((p) => [p.name, p]));
+    const cadastros: [string, string][] = [
+      [idDoServico, pelo.baseUrl],
+      [idDaTela, pela.baseUrl],
+    ];
+    for (const [id, baseUrl] of cadastros) {
+      const entrada = registro.get(id);
+      if (entrada === undefined) throw new Error(`o provedor ${id} nao entrou no registro`);
+      if (entrada.registered === null) throw new Error(`o provedor ${id} apareceu como de fabrica`);
+      if (entrada.registered.baseUrl !== baseUrl) {
+        throw new Error(`o provedor ${id} aponta para ${entrada.registered.baseUrl}`);
+      }
+      if (entrada.available) throw new Error(`o provedor ${id} nasceu disponivel sem chave`);
+    }
+
+    await providerService.setSecret(idDoServico, chaveDoServico);
+    await providerService.setSecret(idDaTela, chaveDaTela);
+    for (const id of [idDoServico, idDaTela]) {
+      if (!providerService.isAvailable(id)) {
+        throw new Error(`o provedor ${id} continuou apagado depois de guardar a chave`);
+      }
+    }
+
+    // Cada um com o próprio catálogo, e cada catálogo procurado com a chave
+    // dele. Contagens diferentes porque dois cadastros apontados para o mesmo
+    // endereço passariam num exame que só contasse linhas.
+    const doServico = await providerService.listModels(idDoServico);
+    const daTela = await providerService.listModels(idDaTela);
+    if (doServico.erro !== undefined) throw new Error(`o catalogo recusou: ${doServico.erro}`);
+    if (daTela.erro !== undefined) throw new Error(`o catalogo recusou: ${daTela.erro}`);
+    if (doServico.modelos.length !== 2 || daTela.modelos.length !== 5) {
+      throw new Error(
+        `os catalogos responderam ${doServico.modelos.length} e ${daTela.modelos.length} modelos`,
+      );
+    }
+    if (pelo.chamadas.at(-1) !== `Bearer ${chaveDoServico}`) {
+      throw new Error("o primeiro catalogo foi procurado com a chave errada");
+    }
+    if (pela.chamadas.at(-1) !== `Bearer ${chaveDaTela}`) {
+      throw new Error("o segundo catalogo foi procurado com a chave errada");
+    }
+
+    // Um passo pode apontar para qualquer um dos dois: a prévia resolve sem
+    // substituição, que é o que o executor faria antes de montar o runtime.
+    const previas = await providerService.resolvePreviews(
+      [`${idDoServico}/um`, `${idDaTela}/cinco`],
+      machineId,
+    );
+    for (const [i, id] of [idDoServico, idDaTela].entries()) {
+      const previa = previas[i];
+      if (previa === undefined || !previa.ok) {
+        throw new Error(`a previa de ${id} recusou: ${JSON.stringify(previa)}`);
+      }
+      if (previa.resolution.provider !== id) {
+        throw new Error(`a previa de ${id} caiu em ${previa.resolution.provider}`);
+      }
+      if (previa.resolution.substitutionReason !== undefined) {
+        throw new Error(`a previa de ${id} precisou substituir sem motivo`);
+      }
+    }
+
+    // O aviso antes de remover. A substituição plantada é o uso, e sem `force`
+    // a remoção devolve onde ele aparece em vez de apagar.
+    await providerService.setFallback(machineId, substituicao, "claude-code/claude-sonnet-5");
+    const avisou = await providerService.remove(idDoServico);
+    if (avisou.removed) throw new Error("o provedor em uso foi removido sem aviso");
+    if (!avisou.usedBy.some((uso) => uso.kind === "fallback" && uso.from === substituicao)) {
+      throw new Error(`o aviso nao citou a substituicao: ${JSON.stringify(avisou.usedBy)}`);
+    }
+    if (!providerService.isAvailable(idDoServico)) {
+      throw new Error("o provedor avisado saiu do registro sem ter sido removido");
+    }
+
+    const forcado = await providerService.remove(idDoServico, true);
+    if (!forcado.removed) throw new Error("o provedor nao saiu nem com a decisao tomada");
+    if (providerService.isAvailable(idDoServico)) {
+      throw new Error("o provedor removido continuou no registro");
+    }
+    if (secretService.has(providerCredentialRef(idDoServico))) {
+      throw new Error("a chave do provedor removido ficou no cofre");
+    }
+
+    // A remoção pela tela, no que não está em uso: um clique só, porque não há
+    // o que avisar.
+    const clicou = await window.webContents.executeJavaScript(
+      `(() => {
+        const botao = document.querySelector('[data-locum-cadastrado-remover="${idDaTela}"]');
+        if (botao === null) return false;
+        botao.click();
+        return true;
+      })()`,
+    );
+    if (clicou !== true) throw new Error(`a tela nao ofereceu botao de remover ${idDaTela}`);
+
+    await esperarProbe<true>(
+      window,
+      `remocao de ${idDaTela}`,
+      `document.querySelector('[data-locum-cadastrado="${idDaTela}"]') === null ? true : null`,
+    );
+    if (providerService.isAvailable(idDaTela)) {
+      throw new Error("o provedor removido pela tela continuou no registro");
+    }
+    if ((await providerService.listRegistered()).some((p) => p.id === idDaTela)) {
+      throw new Error("o provedor removido pela tela continuou no cadastro");
+    }
+  } finally {
+    // A limpeza não confia em o exame ter chegado ao fim: o que ele planta no
+    // banco de quem desenvolve sai daqui mesmo quando uma linha acima estourou.
+    for (const id of [idDoServico, idDaTela]) {
+      const ref = providerCredentialRef(id);
+      secretService.remove(ref);
+      await settingsService.remove(`provider:${ref}:checkedAt`);
+      await settingsService.remove(`provider:${ref}:models`);
+      await db.delete(schema.providers).where(eq(schema.providers.id, id));
+    }
+    await db
+      .delete(schema.modelFallbacks)
+      .where(
+        and(
+          eq(schema.modelFallbacks.machineId, machineId),
+          eq(schema.modelFallbacks.fromModel, substituicao),
+        ),
+      );
+    await providerService.loadSecrets();
+    await new Promise<void>((resolve) => pelo.servidor.close(() => resolve()));
+    await new Promise<void>((resolve) => pela.servidor.close(() => resolve()));
+  }
+
+  return t("smoke.registeredProviders", { service: idDoServico, window: idDaTela });
 }
 
 /**

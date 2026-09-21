@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
+import { AgentSpec } from "../config/types.js";
 import {
   buildProviders,
+  fixedProviderIds,
   resolveModel,
   splitModelId,
   type FallbackRow,
   type ModelResolution,
   type ProviderEntry,
+  type RegisteredProvider,
 } from "../providers/registry.js";
 import { secretService, type SecretService } from "./secret-service.js";
 import { settingsService, type SettingsService } from "./settings-service.js";
@@ -31,6 +34,17 @@ export function providerCredentialRef(name: string): string {
 const CONFERIDO_EM = "checkedAt";
 const MODELOS = "models";
 
+/**
+ * O `kind` que marca provedor cadastrado, e não fixo no código.
+ *
+ * A tabela `providers` guarda dois tipos de linha: a que existe só para
+ * apontar a credencial de um provedor de fábrica, cujo `kind` é o nome dele, e
+ * a de um gateway compatível com OpenAI que alguém registrou. O `kind` é o que
+ * separa as duas, e por isso a leitura filtra por ele em vez de deduzir pela
+ * presença do endereço base.
+ */
+export const REGISTERED_KIND = "openai-compatible";
+
 /** Um provider como ele aparece para quem administra esta maquina. */
 export interface ProviderInfo {
   name: string;
@@ -39,7 +53,26 @@ export interface ProviderInfo {
   subscription: boolean;
   /** Variaveis de ambiente que faltam quando o provider esta indisponivel. */
   requires: string[];
+  /** O que alguém cadastrou, ou nulo quando o provedor é de fábrica. */
+  registered: { label: string; baseUrl: string } | null;
 }
+
+/** Um provedor cadastrado como ele está no banco. */
+export interface RegisteredProviderInfo extends RegisteredProvider {
+  enabled: boolean;
+  credentialRef: string | null;
+}
+
+/**
+ * Onde um provedor cadastrado aparece, para o aviso antes de remover.
+ *
+ * Remover é apagar o endereço e a chave de algo que pode estar no caminho de
+ * uma execução. O aviso não impede: ele mostra o que vai quebrar e deixa a
+ * decisão com quem está olhando.
+ */
+export type ProviderUse =
+  | { kind: "step"; agentId: string; stepKey: string; model: string }
+  | { kind: "fallback"; machineId: string; from: string; to: string };
 
 /**
  * Previa de resolucao. A falha vem como dado porque a pergunta "este modelo
@@ -104,6 +137,7 @@ export class ProviderService {
      */
     private readonly build: (
       secrets: Record<string, string>,
+      registered: RegisteredProvider[],
     ) => Record<string, ProviderEntry> = buildProviders,
   ) {}
 
@@ -117,12 +151,21 @@ export class ProviderService {
    */
   async loadSecrets(): Promise<string[]> {
     const rows = await this.db.select().from(schema.providers);
+    const cadastrados = linhasCadastradas(rows);
+
+    // Os cadastrados entram num registro sem segredo antes de qualquer chave
+    // ser lida. A ordem não é enfeite: a variável de um provedor cadastrado só
+    // existe depois que ele está no registro, e perguntá-la ao registro
+    // anterior devolveria indefinido na primeira subida depois do cadastro,
+    // deixando a chave guardada sem valer até alguém reabrir o app.
+    const semSegredo = this.build({}, cadastrados);
+
     const secrets: Record<string, string> = {};
     const carregados: string[] = [];
 
     for (const row of rows) {
       if (!row.enabled || !row.credentialRef) continue;
-      const variavel = this.providers[row.id]?.secretVar;
+      const variavel = semSegredo[row.id]?.secretVar;
       if (!variavel) continue;
 
       const secret = this.secrets.get(row.credentialRef);
@@ -131,7 +174,7 @@ export class ProviderService {
       carregados.push(row.id);
     }
 
-    this.providers = this.build(secrets);
+    this.providers = this.build(secrets, cadastrados);
     return carregados;
   }
 
@@ -305,7 +348,147 @@ export class ProviderService {
       available: entry.available(),
       subscription: entry.model === undefined,
       requires: entry.requires,
+      registered: entry.registered ?? null,
     }));
+  }
+
+  /* --------------------------------------------------- provedor cadastrado */
+
+  /** Os provedores compatíveis com OpenAI que alguém registrou aqui. */
+  async listRegistered(): Promise<RegisteredProviderInfo[]> {
+    const rows = await this.db
+      .select()
+      .from(schema.providers)
+      .where(eq(schema.providers.kind, REGISTERED_KIND));
+    return linhasCadastradas(rows).map((cadastrado) => {
+      const row = rows.find((r) => r.id === cadastrado.id)!;
+      return { ...cadastrado, enabled: row.enabled, credentialRef: row.credentialRef };
+    });
+  }
+
+  /**
+   * Cadastra um gateway compatível com OpenAI e o deixa no registro na hora.
+   *
+   * O identificador vira o prefixo do modelo em todo passo que apontar para
+   * ele, então ele não pode ter barra nem discordar de si mesmo por causa de
+   * maiúscula: `Meu-Gateway/x` e `meu-gateway/x` seriam dois provedores para
+   * quem lê e um só para quem escreveu. Por isso ele é normalizado na entrada
+   * e recusado se sobrar qualquer outra coisa.
+   *
+   * Colidir com provedor de fábrica é recusa e não substituição. Um cadastro
+   * chamado `anthropic` mandaria a chave de quem já tem uma para o endereço
+   * que o cadastro escolheu, o que é exatamente o que ninguém quer descobrir
+   * depois.
+   */
+  async register(input: { id: string; label: string; baseUrl: string }): Promise<void> {
+    const id = input.id.trim().toLowerCase();
+    const label = input.label.trim();
+    const baseUrl = input.baseUrl.trim();
+
+    if (!/^[a-z0-9][a-z0-9-]{1,31}$/.test(id)) {
+      throw new Error(
+        `identificador "${input.id}" invalido: use de 2 a 32 caracteres entre minuscula, numero e hifen`,
+      );
+    }
+    if (label.length === 0) throw new Error("provedor sem nome nao se cadastra");
+
+    let endereco: URL;
+    try {
+      endereco = new URL(baseUrl);
+    } catch {
+      throw new Error(`endereco "${baseUrl}" nao e uma URL`);
+    }
+    if (endereco.protocol !== "http:" && endereco.protocol !== "https:") {
+      throw new Error(`endereco "${baseUrl}" precisa ser http ou https`);
+    }
+
+    if (fixedProviderIds().includes(id)) {
+      throw new Error(`"${id}" ja e um provedor de fabrica, escolha outro identificador`);
+    }
+    const ocupado = await this.db
+      .select()
+      .from(schema.providers)
+      .where(eq(schema.providers.id, id));
+    if (ocupado.length > 0) throw new Error(`o identificador "${id}" ja esta cadastrado`);
+
+    await this.db.insert(schema.providers).values({
+      id,
+      kind: REGISTERED_KIND,
+      label,
+      baseUrl,
+      enabled: true,
+    });
+    await this.loadSecrets();
+  }
+
+  /**
+   * Onde um provedor aparece hoje: passo de agent e tabela de substituição.
+   *
+   * Só a versão mais nova de cada agent entra. Versão antiga que apontasse
+   * para o provedor ficaria avisando para sempre, e não é ela que a remoção
+   * quebra: ela já rodou, e o que ela gastou está no histórico.
+   */
+  async usedBy(id: string): Promise<ProviderUse[]> {
+    const prefixo = `${id}/`;
+    const usos: ProviderUse[] = [];
+
+    const versoes = await this.db.select().from(schema.agentVersions);
+    const maisNova = new Map<string, (typeof versoes)[number]>();
+    for (const versao of versoes) {
+      const atual = maisNova.get(versao.agentId);
+      if (atual === undefined || versao.version > atual.version) maisNova.set(versao.agentId, versao);
+    }
+
+    for (const versao of maisNova.values()) {
+      // Spec que não passa no zod não é usada por execução nenhuma, então ela
+      // também não é motivo para segurar uma remoção.
+      const spec = AgentSpec.safeParse(versao.spec);
+      if (!spec.success) continue;
+      for (const passo of spec.data.steps) {
+        if (passo.type !== "model" || !passo.model.startsWith(prefixo)) continue;
+        usos.push({ kind: "step", agentId: versao.agentId, stepKey: passo.key, model: passo.model });
+      }
+    }
+
+    for (const linha of await this.db.select().from(schema.modelFallbacks)) {
+      if (!linha.fromModel.startsWith(prefixo) && !linha.toModel.startsWith(prefixo)) continue;
+      usos.push({
+        kind: "fallback",
+        machineId: linha.machineId,
+        from: linha.fromModel,
+        to: linha.toModel,
+      });
+    }
+
+    return usos;
+  }
+
+  /**
+   * Remove um provedor cadastrado, avisando antes quando ele está em uso.
+   *
+   * Sem `force`, uso encontrado é recusa com a lista: quem clicou em remover
+   * não sabia que um passo apontava para lá, e descobrir isso no meio de uma
+   * execução seria tarde. Com `force`, a decisão já foi tomada e a remoção
+   * acontece.
+   *
+   * A chave sai junto. Deixá-la no cofre guardaria um segredo que nada mais
+   * lê, sob um endereço que ninguém mais sabe de quem era.
+   */
+  async remove(id: string, force = false): Promise<{ removed: boolean; usedBy: ProviderUse[] }> {
+    const cadastrado = (await this.listRegistered()).find((p) => p.id === id);
+    if (cadastrado === undefined) {
+      throw new Error(`provedor "${id}" nao foi cadastrado aqui, nao ha o que remover`);
+    }
+
+    const usos = await this.usedBy(id);
+    if (usos.length > 0 && !force) return { removed: false, usedBy: usos };
+
+    const ref = cadastrado.credentialRef ?? providerCredentialRef(id);
+    this.secrets.remove(ref);
+    await this.esquecerConferencia(ref);
+    await this.db.delete(schema.providers).where(eq(schema.providers.id, id));
+    await this.loadSecrets();
+    return { removed: true, usedBy: usos };
   }
 
   /**
@@ -437,6 +620,22 @@ export class ProviderService {
       }
     });
   }
+}
+
+/**
+ * As linhas de provedor cadastrado, prontas para o registro.
+ *
+ * Linha sem endereço base é descartada em silêncio. Ela não deveria existir,
+ * porque o cadastro exige a URL, mas um registro montado com `baseUrl` vazio
+ * viraria uma chamada para `/models` na raiz do sistema de arquivos no dia em
+ * que alguém editasse o banco à mão.
+ */
+function linhasCadastradas(
+  rows: (typeof schema.providers.$inferSelect)[],
+): RegisteredProvider[] {
+  return rows
+    .filter((row) => row.kind === REGISTERED_KIND && row.baseUrl !== null)
+    .map((row) => ({ id: row.id, label: row.label ?? row.id, baseUrl: row.baseUrl! }));
 }
 
 /** Existe caminho de `from` ate `target` seguindo as substituicoes ja gravadas. */

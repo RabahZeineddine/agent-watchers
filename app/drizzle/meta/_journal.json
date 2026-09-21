@@ -8,6 +8,13 @@
       "when": 1789944511967,
       "tag": "0000_esquema-inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789996578810,
+      "tag": "0001_rotulo-do-provedor",
+      "breakpoints": true
     }
   ]
 }

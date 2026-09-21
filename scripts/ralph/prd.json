@@ -549,7 +549,7 @@
       "description": "A lista de provedores é fixa no código, então um segundo gateway, um Ollama em outra máquina ou um OpenRouter não têm onde entrar. Permitir cadastrar provedores do tipo openai-compatible no banco: identificador, nome, endereço base e credencial. O registro passa a montar a lista a partir dos fixos mais os cadastrados. Identificador precisa ser único e não pode colidir com os fixos. Remover provedor cadastrado que esteja em uso por algum passo avisa antes.",
       "done_when": "Dois provedores compatíveis cadastrados aparecem no registro, cada um com o próprio catálogo, e um passo pode apontar para qualquer um dos dois.",
       "verify": "npx tsc --noEmit && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

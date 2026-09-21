@@ -102,6 +102,18 @@ interface ServiceApi {
   "providers.allModels": ProviderService["listAllModels"];
 
   /**
+   * O cadastro de gateway compatível com OpenAI.
+   *
+   * `remove` responde em vez de perguntar: sem `force` ela devolve onde o
+   * provedor aparece e não apaga nada, e a tela mostra a lista antes de
+   * oferecer o segundo clique. A confirmação mora na janela porque é lá que
+   * está quem decide, e a trava mora no serviço porque é ele que apaga.
+   */
+  "providers.registered": ProviderService["listRegistered"];
+  "providers.register": ProviderService["register"];
+  "providers.remove": ProviderService["remove"];
+
+  /**
    * A chave de cada provedor, no mesmo desenho da do GitHub.
    *
    * O segredo atravessa numa direção só: `saveSecret` leva o que alguém
@@ -229,6 +241,9 @@ export const BRIDGE_CHANNELS = [
   "providers.preview",
   "providers.models",
   "providers.allModels",
+  "providers.registered",
+  "providers.register",
+  "providers.remove",
   "providers.credentials",
   "providers.saveSecret",
   "providers.forgetSecret",

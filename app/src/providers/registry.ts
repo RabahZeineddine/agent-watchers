@@ -43,7 +43,46 @@ export type ProviderEntry = {
    * ambiente.
    */
   secretVar?: string;
+  /**
+   * O que quem cadastrou escreveu, quando o provedor veio do banco.
+   *
+   * Ausente quer dizer provedor de fábrica. Quem administra precisa da
+   * diferença: só o cadastrado tem endereço escolhido por alguém, e só ele
+   * pode ser removido.
+   */
+  registered?: { label: string; baseUrl: string };
 };
+
+/**
+ * Provedor compatível com OpenAI cadastrado nesta máquina.
+ *
+ * O endereço base vem do cadastro, e não do ambiente como nos fixos: quem
+ * registra um gateway próprio já disse onde ele fica, e pedir de novo numa
+ * variável guardaria a mesma informação em dois lugares que podem discordar.
+ * A chave continua fora daqui, no cofre, como em todo provedor.
+ */
+export type RegisteredProvider = {
+  id: string;
+  label: string;
+  baseUrl: string;
+};
+
+/**
+ * A variável de ambiente que a chave de um provedor cadastrado preenche.
+ *
+ * Derivada do identificador, e não escolhida por quem cadastra. Nos fixos a
+ * variável é a que o provedor documenta e por isso está escrita no código;
+ * aqui não há documento nenhum a respeitar, e deixar alguém inventar o nome
+ * só criaria uma segunda coisa para errar na hora de cair para o ambiente.
+ */
+export function registeredSecretVar(id: string): string {
+  return `LOCUM_PROVIDER_${id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_KEY`;
+}
+
+/** Os nomes que o registro traz de fábrica. Cadastro nenhum pode tomar um. */
+export function fixedProviderIds(): string[] {
+  return Object.keys(buildProviders());
+}
 
 let claudeBinaryChecked: boolean | undefined;
 
@@ -63,8 +102,15 @@ export function claudeCodeAvailable(): boolean {
  * `secrets` vem do keychain, indexado por variavel de ambiente, e vence o
  * ambiente do processo: quem cadastrou a chave pelo app nao deveria precisar
  * exportar nada no shell. Sem nada guardado, tudo se comporta como antes.
+ *
+ * `registered` são os provedores compatíveis com OpenAI que alguém cadastrou,
+ * e entram depois dos fixos. A lista chega de fora porque este módulo não
+ * abre banco: é o `ProviderService` que lê a tabela e remonta o registro.
  */
-export function buildProviders(secrets: Record<string, string> = {}): Record<string, ProviderEntry> {
+export function buildProviders(
+  secrets: Record<string, string> = {},
+  registered: RegisteredProvider[] = [],
+): Record<string, ProviderEntry> {
   const env = (name: string): string | undefined => {
     const v = secrets[name] ?? process.env[name];
     return v && v.length > 0 ? v : undefined;
@@ -86,7 +132,7 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
     } satisfies ProviderEntry;
   };
 
-  return {
+  const fixos: Record<string, ProviderEntry> = {
     "claude-code": { available: claudeCodeAvailable, requires: [] },
 
     anthropic: {
@@ -133,6 +179,33 @@ export function buildProviders(secrets: Record<string, string> = {}): Record<str
       }),
     },
   };
+
+  for (const cadastrado of registered) {
+    // O fixo vence, e esta é a segunda tranca: o serviço já recusa cadastro
+    // com nome de provedor de fábrica, e aqui um cadastro que passasse ainda
+    // assim não conseguiria apontar o `anthropic` de alguém para outro
+    // endereço, levando a chave junto.
+    if (cadastrado.id in fixos) continue;
+
+    const keyVar = registeredSecretVar(cadastrado.id);
+    const apiKey = env(keyVar);
+    const baseURL = cadastrado.baseUrl.replace(/\/$/, "");
+
+    fixos[cadastrado.id] = {
+      available: () => Boolean(apiKey),
+      requires: [keyVar],
+      secretVar: keyVar,
+      registered: { label: cadastrado.label, baseUrl: baseURL },
+      model: (id) =>
+        createOpenAICompatible({ name: cadastrado.id, apiKey: apiKey!, baseURL }).chatModel(id),
+      catalog: () => ({
+        url: `${baseURL}/models`,
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }),
+    };
+  }
+
+  return fixos;
 }
 
 export type ModelResolution = {
