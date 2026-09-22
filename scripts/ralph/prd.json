@@ -759,7 +759,7 @@
       "description": "A versão Python terminava em APPROVE, COMMENT ou REQUEST_CHANGES, com critério para cada um. A atual publica sempre como comentário. Acrescentar o veredito na saída da auditoria, com o critério no prompt, e fazer a ação de review do GitHub usar o veredito como evento. A tela de revisão mostra o veredito e deixa a pessoa trocar antes de aprovar. Aprovar ou pedir mudança no pull request de outra pessoa continua passando pela fila, sem exceção.",
       "done_when": "O veredito aparece na revisão, é trocável, e chega ao GitHub como o evento da review.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

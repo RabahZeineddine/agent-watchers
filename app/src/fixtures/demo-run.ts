@@ -41,6 +41,7 @@ const TRIAGEM = {
 };
 
 const ACHADOS = {
+  verdict: "REQUEST_CHANGES",
   findings: [
     {
       file: "src/Auth/TokenValidator.cs",
@@ -263,3 +264,4 @@ export async function ensureDemoRun(): Promise<string> {
 /** Quantos passos o fixture tem, para quem confere sem abrir o banco. */
 export const DEMO_RUN_STEPS = PASSOS.length;
 export const DEMO_RUN_ID = RUN_ID;
+export const DEMO_APPROVAL_ID = APPROVAL_ID;

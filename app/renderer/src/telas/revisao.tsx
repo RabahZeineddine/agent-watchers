@@ -5,8 +5,10 @@ import {
   CONFIANCAS,
   rotuloDeSeveridade,
   SEVERIDADES,
+  VEREDITOS,
   type Confianca,
   type Severidade,
+  type Veredito,
 } from "@/lib/rotulos";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, ExternalLink } from "lucide-react";
@@ -47,6 +49,7 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
   const { t } = useTranslation();
   const pendentes = useRead("approvals.listPending");
   const [achados, setAchados] = useState<AchadoEditavel[] | null>(null);
+  const [veredito, setVeredito] = useState<Veredito>("COMMENT");
   const [gravando, setGravando] = useState(false);
   const [resolvendo, setResolvendo] = useState(false);
   const primeiroRender = useRef(true);
@@ -61,7 +64,10 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
 
   useEffect(() => {
     if (!pendencia || achados !== null) return;
-    const carga = pendencia.payload as { findings?: unknown[] } | null;
+    const carga = pendencia.payload as { findings?: unknown[]; verdict?: unknown } | null;
+    if ((VEREDITOS as readonly unknown[]).includes(carga?.verdict)) {
+      setVeredito(carga!.verdict as Veredito);
+    }
     setAchados(
       (carga?.findings ?? []).map((bruto) => {
         const f = bruto as Record<string, unknown>;
@@ -96,10 +102,11 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
       void gravarRevisao(
         pendencia.id,
         achados.filter((a) => a.incluido).map(({ incluido: _, ...resto }) => resto),
+        veredito,
       ).finally(() => setGravando(false));
     }, 700);
     return () => clearTimeout(id);
-  }, [achados, pendencia]);
+  }, [achados, veredito, pendencia]);
 
   if (pendentes.status === "ready" && !pendencia) {
     return (
@@ -120,6 +127,9 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
     url?: string;
   } | null;
   const marcados = achados.filter((a) => a.incluido).length;
+  // Aprovar sem achado é uma review que diz alguma coisa; comentar sem achado
+  // não diz nada.
+  const vazia = marcados === 0 && veredito === "COMMENT";
 
   async function resolver(decisao: "approved" | "rejected") {
     if (!pendencia) return;
@@ -156,6 +166,22 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
       </div>
 
       {carga?.title && <h1 className="text-lg font-semibold tracking-tight">{carga.title}</h1>}
+
+      <label className="text-muted-foreground flex items-center gap-2 text-xs">
+        {t("review.verdict.label")}
+        <select
+          className="border-border bg-background text-foreground cursor-pointer rounded border px-1.5 py-0.5 text-xs"
+          data-locum-veredito=""
+          onChange={(e) => setVeredito(e.target.value as Veredito)}
+          value={veredito}
+        >
+          {VEREDITOS.map((v) => (
+            <option key={v} value={v}>
+              {t(`review.verdict.${v}`)}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-lg border">
         {achados.map((achado, i) => (
@@ -232,7 +258,7 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
       <div className="flex items-center gap-3">
         <Button
           className="cursor-pointer"
-          disabled={resolvendo || marcados === 0}
+          disabled={resolvendo || vazia}
           onClick={() => void resolver("approved")}
         >
           {t("review.approve")}
@@ -249,9 +275,11 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
         <span className="text-muted-foreground ml-auto text-xs">
           {gravando
             ? t("review.saving")
-            : marcados === 0
+            : vazia
               ? t("review.none_selected")
-              : t("review.will_post", { count: marcados })}
+              : marcados === 0
+                ? t("review.verdict_only")
+                : t("review.will_post", { count: marcados })}
         </span>
 
         <button

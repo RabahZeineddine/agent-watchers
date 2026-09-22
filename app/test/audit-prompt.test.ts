@@ -24,12 +24,16 @@ const achado = {
 test("todo achado da auditoria traz confiança, validada pelo esquema de saída", () => {
   const esquema = fromJSONSchema(auditoria().outputSchema as never);
 
-  assert.equal(esquema.safeParse({ findings: [achado] }).success, true);
-  assert.equal(esquema.safeParse({ findings: [] }).success, true, "lista vazia é resposta válida");
+  const verdict = "COMMENT";
+  assert.equal(esquema.safeParse({ findings: [achado], verdict }).success, true);
+  assert.equal(esquema.safeParse({ findings: [], verdict }).success, true, "lista vazia é resposta válida");
 
   const { confidence: _c, ...semConfianca } = achado;
-  assert.equal(esquema.safeParse({ findings: [semConfianca] }).success, false, "sem confiança");
-  assert.equal(esquema.safeParse({ findings: [{ ...achado, confidence: "certeza" }] }).success, false);
+  assert.equal(esquema.safeParse({ findings: [semConfianca], verdict }).success, false, "sem confiança");
+  assert.equal(
+    esquema.safeParse({ findings: [{ ...achado, confidence: "certeza" }], verdict }).success,
+    false,
+  );
 });
 
 test("a confiança atravessa a edição pela janela, que é estrita", () => {

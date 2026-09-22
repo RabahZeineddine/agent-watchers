@@ -127,6 +127,15 @@ export const prReviewSpec: AgentSpec = {
         "Diff correto devolve a lista vazia. Achado inventado custa mais do que",
         "achado perdido: quem lê para de confiar na revisão.",
         "",
+        "Veredito, no campo verdict, decidido pelos achados que você devolveu:",
+        "- REQUEST_CHANGES: algum achado critical, ou high com confiança high.",
+        "  O pull request não deve entrar como está.",
+        "- COMMENT: há achado, mas nenhum que impeça a entrada, ou os graves",
+        "  dependem de algo que você não confirmou.",
+        "- APPROVE: nenhum achado, ou só low. O diff faz o que diz e você leu",
+        "  o suficiente para afirmar isso. Com arquivo relevante fora do diff,",
+        "  prefira COMMENT.",
+        "",
         "Categoria da mudança: {{steps.triage.category}}",
         "A categoria decide onde está o risco:",
         "- fix: confira se a correção ataca a causa e se não quebra o caminho vizinho.",
@@ -154,8 +163,9 @@ export const prReviewSpec: AgentSpec = {
       outputSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["findings"],
+        required: ["findings", "verdict"],
         properties: {
+          verdict: { enum: ["APPROVE", "COMMENT", "REQUEST_CHANGES"] },
           findings: {
             type: "array",
             items: {

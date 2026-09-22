@@ -93,6 +93,10 @@ export const ReviewFinding = z
   .strict();
 export type ReviewFinding = z.infer<typeof ReviewFinding>;
 
+/** O evento da review no GitHub. Os mesmos três nomes que a API recebe. */
+export const ReviewVerdict = z.enum(["APPROVE", "COMMENT", "REQUEST_CHANGES"]);
+export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
+
 export const Step = z.discriminatedUnion("type", [ModelStep, ActionStep]);
 export type Step = z.infer<typeof Step>;
 export type ModelStep = z.infer<typeof ModelStep>;

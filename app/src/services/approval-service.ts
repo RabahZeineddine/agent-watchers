@@ -1,6 +1,6 @@
 import { desc, eq, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { ReviewFinding } from "../config/types.js";
+import { ReviewFinding, ReviewVerdict } from "../config/types.js";
 import { db as defaultDb, schema } from "../db/index.js";
 
 type Db = typeof defaultDb;
@@ -44,7 +44,7 @@ export class ApprovalService {
    * Editar não é publicar: o texto revisado fica na pendência e continua
    * esperando. Só a ApprovalGate publica, e só depois do clique.
    *
-   * Só a lista de achados é editável. Dono, repositório e pull request são os
+   * Só a lista de achados e o veredito são editáveis. Dono, repositório e pull request são os
    * que o executor gravou, e o payload que a janela mandasse inteiro poderia
    * redirecionar a publicação para outro pull request enquanto a tela mostra o
    * de sempre: a pessoa aprovaria achando que é o que está vendo.
@@ -52,8 +52,14 @@ export class ApprovalService {
    * Pendência já resolvida não aceita edição. Sem essa trava, alterar o payload
    * depois do envio mudaria o registro do que foi publicado, e o histórico
    * passaria a mentir sobre o que saiu.
+   *
+   * Veredito ausente fica o que estava gravado.
    */
-  async updateFindings(approvalId: string, findings: unknown): Promise<ApprovalSummary> {
+  async updateFindings(
+    approvalId: string,
+    findings: unknown,
+    verdict?: unknown,
+  ): Promise<ApprovalSummary> {
     const [atual] = await this.query(eq(schema.approvals.id, approvalId));
     if (!atual) throw new Error(`aprovação ${approvalId} não encontrada`);
     if (atual.status !== "pending") {
@@ -67,10 +73,20 @@ export class ApprovalService {
     if (!lidos.success) {
       throw new Error(`achado fora do formato: ${z.prettifyError(lidos.error)}`);
     }
+    const veredito = ReviewVerdict.optional().safeParse(verdict);
+    if (!veredito.success) {
+      throw new Error(`veredito fora do formato: ${String(verdict)}`);
+    }
 
     await this.db
       .update(schema.approvals)
-      .set({ payload: { ...(atual.payload as object), findings: lidos.data } })
+      .set({
+        payload: {
+          ...(atual.payload as object),
+          findings: lidos.data,
+          ...(veredito.data !== undefined && { verdict: veredito.data }),
+        },
+      })
       .where(eq(schema.approvals.id, approvalId));
 
     const [novo] = await this.query(eq(schema.approvals.id, approvalId));

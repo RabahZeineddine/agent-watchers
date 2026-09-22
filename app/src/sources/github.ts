@@ -3,14 +3,21 @@ import { Octokit } from "octokit";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import type { ActionHandler } from "../approval/gate.js";
-import type { ReviewFinding } from "../config/types.js";
+import type { ReviewFinding, ReviewVerdict } from "../config/types.js";
 import type { EventPayload } from "../executor/executor.js";
 import { GITHUB_TOKEN_ENV, githubService, githubToken } from "../services/github-service.js";
 import { limitDiff, type OmittedFile } from "./diff-limit.js";
 
 export type Finding = ReviewFinding;
 
-export type ReviewPayload = { owner: string; repo: string; pull: number; findings: Finding[] };
+export type ReviewPayload = {
+  owner: string;
+  repo: string;
+  pull: number;
+  findings: Finding[];
+  // Opcional porque pendência gravada antes do veredito existir continua na fila.
+  verdict?: ReviewVerdict;
+};
 
 /**
  * O cliente autenticado, com o token vindo do cofre ou do ambiente.
@@ -29,6 +36,9 @@ export function octokit(): Octokit {
   }
   return new Octokit({ auth });
 }
+
+/** O pedaço do cliente que a ação de review usa. Existe para o teste trocar. */
+export type ReviewClient = { rest: { pulls: Pick<Octokit["rest"]["pulls"], "createReview"> } };
 
 export type PrContext = EventPayload & {
   owner: string;
@@ -188,7 +198,7 @@ function renderBody(findings: Finding[]): string {
  * fica em estado pendente, visivel so para quem criou. Voce abre o PR, le e
  * envia. Nada publico antes disso.
  */
-export function githubReviewHandler(): ActionHandler {
+export function githubReviewHandler(client: () => ReviewClient = octokit): ActionHandler {
   const comments = (findings: Finding[]) =>
     findings
       .filter((f): f is Finding & { file: string; line: number } => Boolean(f.file && f.line))
@@ -199,20 +209,26 @@ export function githubReviewHandler(): ActionHandler {
       }));
 
   return {
+    // Aprovar ou pedir mudança no pull request de outra pessoa é decisão
+    // assinada por quem revisa, e por isso nunca sai sem clique, nem com o
+    // passo em modo automático. Só o comentário pode pular a fila.
+    holdForApproval(payload) {
+      return ((payload as ReviewPayload).verdict ?? "COMMENT") !== "COMMENT";
+    },
     async publish(payload) {
       const p = payload as ReviewPayload;
-      await octokit().rest.pulls.createReview({
+      await client().rest.pulls.createReview({
         owner: p.owner,
         repo: p.repo,
         pull_number: p.pull,
-        event: "COMMENT",
+        event: p.verdict ?? "COMMENT",
         body: renderBody(p.findings),
         comments: comments(p.findings),
       });
     },
     async draft(payload) {
       const p = payload as ReviewPayload;
-      await octokit().rest.pulls.createReview({
+      await client().rest.pulls.createReview({
         owner: p.owner,
         repo: p.repo,
         pull_number: p.pull,
