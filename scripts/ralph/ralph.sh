@@ -63,7 +63,7 @@ estado() {
     | "\(if .passes then "[x]" elif .blocked then "[!]" else "[ ]" end)  \(.milestone)  \(.id)  \(.title)\(if .blocked then "  <- " + (.blocked_reason // "bloqueada") else "" end)"' \
     "$PRD_FILE"
   echo ""
-  for m in M1 M2 N M3 M4a M4c M5 M6 M7 M8; do
+  for m in M1 M2 N M3 M4a M4c M5 M6 M7 M8 M9; do
     echo "  $m: $(pendentes "$m") pendente(s), $(bloqueadas "$m") bloqueada(s)"
   done
   echo ""

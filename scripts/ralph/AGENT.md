@@ -99,6 +99,10 @@ card em sistema de tarefa está nomeado nela. O passo que cria tarefa nasce e
 permanece em modo de aprovação, e o handler recusa qualquer outro modo. A trava
 é de código, não de configuração.
 
+**Todo conserto de correção vem com teste.** A partir do M9 o projeto tem teste
+unitário. Defeito corrigido sem teste que o teria pego volta. Escreva o teste
+primeiro, confira que ele falha pelo motivo certo, e só então corrija.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
