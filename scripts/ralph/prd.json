@@ -715,7 +715,7 @@
       "description": "Defeitos A4 e A5. O serviço de edição aceita só a lista de achados, valida cada um pelo formato, e preserva o alvo gravado pelo executor: owner, repo e pull não mudam por edição. E o teste de fumaça passa a usar pasta de dados de rascunho quando rodado da árvore principal, em vez do banco real.",
       "done_when": "Tentar trocar o repositório pela edição mantém o original, e rodar a fumaça não cria pendência no banco real.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

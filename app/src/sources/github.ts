@@ -3,18 +3,12 @@ import { Octokit } from "octokit";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import type { ActionHandler } from "../approval/gate.js";
+import type { ReviewFinding } from "../config/types.js";
 import type { EventPayload } from "../executor/executor.js";
 import { GITHUB_TOKEN_ENV, githubService, githubToken } from "../services/github-service.js";
 import { limitDiff, type OmittedFile } from "./diff-limit.js";
 
-export type Finding = {
-  file?: string;
-  line?: number;
-  severity: "critical" | "high" | "medium" | "low";
-  category?: string;
-  problem: string;
-  fix?: string;
-};
+export type Finding = ReviewFinding;
 
 export type ReviewPayload = { owner: string; repo: string; pull: number; findings: Finding[] };
 

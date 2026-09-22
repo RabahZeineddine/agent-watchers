@@ -12,6 +12,8 @@ import { join, sep } from "node:path";
 import type { RunService } from "../src/services/run-service.js";
 import type { AftermathFetcher } from "../src/services/reconcile-service.js";
 import type { SlackService } from "../src/services/slack-service.js";
+// Valor, e não só tipo, mas sem efeito no import: `path.ts` não abre banco.
+import { smokeHome } from "../src/db/path.js";
 
 const smoke = process.argv.includes("--smoke");
 const capturas = process.argv.includes("--capturas");
@@ -43,6 +45,15 @@ function foraDoAsar(caminho: string): string {
 process.env.LOCUM_SQLITE_BINDING = foraDoAsar(
   join(__dirname, "..", "native", `better_sqlite3-electron-${process.arch}.node`),
 );
+
+// Pelo mesmo motivo do binding: o banco abre no import do núcleo, e a fumaça
+// precisa trocar de pasta antes disso para não plantar dado no banco real.
+const pastaDaFumaca = smoke ? smokeHome() : undefined;
+if (pastaDaFumaca?.temporary) {
+  console.log(`fumaça em pasta de rascunho: ${pastaDaFumaca.dir}`);
+  // `app.exit` não passa pelo `will-quit`, mas o `exit` do processo sai sempre.
+  process.on("exit", () => pastaDaFumaca.cleanup());
+}
 
 // Antes de qualquer espera: com o app fechado, o macOS sobe o processo para
 // entregar a URL, e o `open-url` sai logo no lancamento. Ouvinte registrado
@@ -5174,6 +5185,11 @@ async function main(): Promise<void> {
     // uma janela aberta travaria a iteracao esperando um clique. A bandeja
     // continua valendo, porque ela nao pede clique de ninguem para existir.
     app.dock?.hide();
+    // A pasta de rascunho nasce vazia, e boa parte da bateria parte do agent
+    // semente. Numa pasta que já o tem, `upsert` com o mesmo spec não grava nada.
+    const { agentService } = await import("../src/services/agent-service.js");
+    const { prReviewSpec } = await import("../src/seed/pr-review.js");
+    await agentService.upsert(prReviewSpec, "seed", "human");
     const agents = await checkCore();
     const schema = t("smoke.schema", { count: esquema.disponiveis });
 

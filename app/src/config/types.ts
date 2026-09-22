@@ -72,6 +72,25 @@ export const ActionStep = StepBase.extend({
   target: z.string().optional(),
 });
 
+/**
+ * Um achado de review como ele sai para o GitHub.
+ *
+ * Estrito de propósito: a edição pela janela passa por aqui, e campo a mais
+ * dentro de um achado é o primeiro sinal de uma janela mandando o que não
+ * devia, como o alvo da publicação.
+ */
+export const ReviewFinding = z
+  .object({
+    file: z.string().min(1).optional(),
+    line: z.number().int().positive().optional(),
+    severity: z.enum(["critical", "high", "medium", "low"]),
+    category: z.string().optional(),
+    problem: z.string().trim().min(1),
+    fix: z.string().optional(),
+  })
+  .strict();
+export type ReviewFinding = z.infer<typeof ReviewFinding>;
+
 export const Step = z.discriminatedUnion("type", [ModelStep, ActionStep]);
 export type Step = z.infer<typeof Step>;
 export type ModelStep = z.infer<typeof ModelStep>;

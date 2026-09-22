@@ -82,7 +82,7 @@ interface ServiceApi {
    * alterar o que vai sair e depois pedir aprovação é o mesmo caminho por dois
    * passos.
    */
-  "approvals.update": ApprovalService["updatePayload"];
+  "approvals.update": ApprovalService["updateFindings"];
 
   "approvals.decide": (
     approvalId: string,

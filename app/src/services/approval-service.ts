@@ -1,7 +1,11 @@
 import { desc, eq, type SQL } from "drizzle-orm";
+import { z } from "zod";
+import { ReviewFinding } from "../config/types.js";
 import { db as defaultDb, schema } from "../db/index.js";
 
 type Db = typeof defaultDb;
+
+const REVIEW_KIND = "github.review_comment";
 
 export type ApprovalRow = typeof schema.approvals.$inferSelect;
 
@@ -40,20 +44,33 @@ export class ApprovalService {
    * Editar não é publicar: o texto revisado fica na pendência e continua
    * esperando. Só a ApprovalGate publica, e só depois do clique.
    *
+   * Só a lista de achados é editável. Dono, repositório e pull request são os
+   * que o executor gravou, e o payload que a janela mandasse inteiro poderia
+   * redirecionar a publicação para outro pull request enquanto a tela mostra o
+   * de sempre: a pessoa aprovaria achando que é o que está vendo.
+   *
    * Pendência já resolvida não aceita edição. Sem essa trava, alterar o payload
    * depois do envio mudaria o registro do que foi publicado, e o histórico
    * passaria a mentir sobre o que saiu.
    */
-  async updatePayload(approvalId: string, payload: unknown): Promise<ApprovalSummary> {
+  async updateFindings(approvalId: string, findings: unknown): Promise<ApprovalSummary> {
     const [atual] = await this.query(eq(schema.approvals.id, approvalId));
-    if (!atual) throw new Error(`aprovacao ${approvalId} nao encontrada`);
+    if (!atual) throw new Error(`aprovação ${approvalId} não encontrada`);
     if (atual.status !== "pending") {
-      throw new Error(`aprovacao ${approvalId} ja resolvida: ${atual.status}`);
+      throw new Error(`aprovação ${approvalId} já resolvida: ${atual.status}`);
+    }
+    if (atual.kind !== REVIEW_KIND) {
+      throw new Error(`aprovação ${approvalId} é ${atual.kind}, e só pendência de review tem achados`);
+    }
+
+    const lidos = z.array(ReviewFinding).safeParse(findings);
+    if (!lidos.success) {
+      throw new Error(`achado fora do formato: ${z.prettifyError(lidos.error)}`);
     }
 
     await this.db
       .update(schema.approvals)
-      .set({ payload: payload as object })
+      .set({ payload: { ...(atual.payload as object), findings: lidos.data } })
       .where(eq(schema.approvals.id, approvalId));
 
     const [novo] = await this.query(eq(schema.approvals.id, approvalId));
