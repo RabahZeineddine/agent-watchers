@@ -14,12 +14,13 @@ que a interface vai usar.
 | área | estado |
 |---|---|
 | esquema SQLite com 20 tabelas | pronto |
-| migração de esquema no aplicativo | quatro migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
+| migração de esquema no aplicativo | cinco migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
 | provedor compatível com OpenAI cadastrável | identificador, nome e endereço base no banco, o registro monta os fixos mais os cadastrados, chave própria no keychain e remoção avisando onde o provedor aparece |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco; um pool só por processo, que vive entre execuções, reaproveita o servidor que continua com o mesmo cadastro, troca o que mudou e fecha no tempo ocioso, no fim do comando da linha de comando ou na saída do aplicativo |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real; custo calculado pelos tokens do laço inteiro vezes o preço cadastrado em `model_prices`, e zero com aviso quando o modelo não tem preço |
+| cache de prompt | o executor separa o começo literal do template, antes do primeiro marcador, e o runtime nativo manda sistema e skills, esse trecho estável e o resto nessa ordem, com a marca de cache da Anthropic no fim do estável; OpenAI e Gemini guardam prefixo sozinhos e só precisam da ordem. Triagem e auditoria do `pr-review` trazem as instruções antes dos dados do evento e o diff por último. O passo grava em `cache_read_tokens` o que o provedor informou ter lido de cache, nulo quando ele não informa, pelo runtime nativo e pelo `claude -p` |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
 | executor durável com retomada | pronto e verificado |
 | orçamento por execução e por dia | teto em dólar e teto em tokens, por run e por dia; o gasto vai para `usage_daily` em toda saída do trecho executado, `done`, `paused` ou `failed`, uma vez por trecho, e a retomada não conta execução nova; o teto do dia soma o que o trecho em curso ainda não gravou |
@@ -76,7 +77,7 @@ que a interface vai usar.
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 | canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
-| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação, o run que termina depois da decisão, aprovada ou rejeitada, e o orçamento: custo pelo preço cadastrado, gasto gravado ao pausar e ao falhar, e teto em dólar e em tokens interrompendo o runtime nativo, o corte do diff: descarte por tipo de arquivo, teto por arquivo inteiro e a lista chegando ao prompt, a edição da revisão que não troca o alvo, o esquema da triagem com categoria e a categoria chegando à auditoria, o prompt da auditoria com focos, rubrica e intenção do pull request, a confiança obrigatória na saída e aceita na edição, o veredito no esquema da auditoria, como evento da review, trocável na edição e segurando a fila em modo automático, o status de CI: estado por conclusão do check, leitura pelo commit de cabeça, falha de leitura sem derrubar a ingestão, resumo gravado no evento e chegando à auditoria, e o pool MCP: duas execuções no mesmo processo do servidor, fechamento depois do ócio e troca de cadastro |
+| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação, o run que termina depois da decisão, aprovada ou rejeitada, e o orçamento: custo pelo preço cadastrado, gasto gravado ao pausar e ao falhar, e teto em dólar e em tokens interrompendo o runtime nativo, o corte do diff: descarte por tipo de arquivo, teto por arquivo inteiro e a lista chegando ao prompt, a edição da revisão que não troca o alvo, o esquema da triagem com categoria e a categoria chegando à auditoria, o prompt da auditoria com focos, rubrica e intenção do pull request, a confiança obrigatória na saída e aceita na edição, o veredito no esquema da auditoria, como evento da review, trocável na edição e segurando a fila em modo automático, o status de CI: estado por conclusão do check, leitura pelo commit de cabeça, falha de leitura sem derrubar a ingestão, resumo gravado no evento e chegando à auditoria, o pool MCP: duas execuções no mesmo processo do servidor, fechamento depois do ócio e troca de cadastro, e o cache de prompt: ordem do estável antes do variável, marca no fim do estável e tokens de cache gravados no passo |
 
 ## Execução verificada
 
@@ -156,6 +157,13 @@ npm start                             # sobe o Electron com janela
 **`drizzle-kit push` com dados.** Alteração que exige recriar tabela falha com
 `SQLITE_CONSTRAINT_FOREIGNKEY` quando já existem linhas. Coluna nova se resolve
 com `alter table add column` manual.
+
+**Linha de comando não migra o banco.** Só o processo principal do Electron
+aplica as migrações na subida. Depois de migração nova, a linha de comando
+estoura em `no such column` até alguém rodar `migrateDb()` no banco dela. Não
+usar `db:push` para isso num banco que já foi adotado pelas migrações: o
+`push` cria a coluna sem registro, e a próxima subida do aplicativo tenta o
+`alter table` de novo e falha com coluna duplicada.
 
 **Autoria da review automática.** O token é pessoal, então o que o Locum
 publica sai assinado pela mesma conta que revisa a mão. Sem marca no corpo, o

@@ -273,6 +273,7 @@ export class Executor {
         model: resolution.model,
         system: system.length > 0 ? system : undefined,
         prompt: renderPrompt(step.prompt, payload, outputs),
+        stablePrefix: stablePrefix(step.prompt),
         tools,
         mcpServers: [...new Set(toolRefs.map((t) => t.server))],
         maxSteps: step.maxSteps,
@@ -289,6 +290,7 @@ export class Executor {
           output: output as object,
           promptTokens: result.promptTokens,
           completionTokens: result.completionTokens,
+          cacheReadTokens: result.cacheReadTokens ?? null,
           costUsd: result.costUsd,
           billable: result.billable,
           toolsUsed: result.toolsUsed,
@@ -411,4 +413,16 @@ export function renderPrompt(
     if (root === "event") return texto(descer(payload, rest));
     return "";
   });
+}
+
+/**
+ * O começo do template que vem antes do primeiro marcador.
+ *
+ * É literal, então sai igual em todo evento da mesma versão do agent, e é o
+ * trecho que o provedor consegue guardar em cache. Tudo depois do primeiro
+ * marcador já depende do evento.
+ */
+export function stablePrefix(template: string): string {
+  const primeiro = template.search(/\{\{/);
+  return primeiro < 0 ? template : template.slice(0, primeiro);
 }

@@ -781,7 +781,7 @@
       "description": "O runtime nativo não marca nada para cache. Ordenar o que vai ao modelo com o estável primeiro, prompt de sistema e skills, e o variável depois, o diff, e marcar o fim do trecho estável para cache no provedor que suporta, pela opção de provedor do AI SDK. Registrar os tokens lidos de cache no passo, para a medição mostrar se o cache está pegando.",
       "done_when": "Um teste confere a ordem estável antes do variável, e o passo registra tokens de cache quando o provedor devolve.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
