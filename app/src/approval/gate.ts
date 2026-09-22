@@ -30,6 +30,15 @@ export type ActionHandler = {
    * saida do passo como ela veio.
    */
   propose?(payload: unknown, target: string | null): Promise<unknown>;
+  /**
+   * Diz se esta proposta em particular precisa do clique, qualquer que seja o
+   * modo do passo. Verdadeiro transforma `auto` em `approve`.
+   *
+   * Complementa `modes`, que trava a ação inteira: aqui a trava depende do que
+   * vai sair, como a review que aprova um pull request, que não pode sair
+   * sozinha mesmo quando o comentário da mesma ação pode.
+   */
+  holdForApproval?(payload: unknown): boolean;
   /** Publica de verdade. Recebe o externalId ja gravado, para ser idempotente. */
   publish(payload: unknown, externalId: string): Promise<void>;
   /** Prepara sem publicar. No GitHub, review em estado pendente. */
@@ -64,6 +73,7 @@ export class ApprovalGate {
     const payload = handler?.propose
       ? await handler.propose(req.payload, req.target ?? null)
       : req.payload;
+    if (mode === "auto" && handler?.holdForApproval?.(payload)) mode = "approve";
 
     await db.insert(schema.approvals).values({
       id,

@@ -126,6 +126,8 @@ export const steps = sqliteTable(
     output: text("output", { mode: "json" }),
     promptTokens: integer("prompt_tokens").notNull().default(0),
     completionTokens: integer("completion_tokens").notNull().default(0),
+    /** Nulo quando o provedor não informa, que é diferente de cache nenhum. */
+    cacheReadTokens: integer("cache_read_tokens"),
     costUsd: real("cost_usd").notNull().default(0),
     /** false quando rodou na assinatura: consome cota, nao dinheiro. */
     billable: integer("billable", { mode: "boolean" }).notNull().default(true),

@@ -26,21 +26,28 @@ const APPROVAL_ID = "fixture-approval-post";
 const CRIADO_EM = 1_789_870_000;
 
 const TRIAGEM = {
+  category: "fix",
   scope: "Autenticacao: validacao de expiracao de token e cache de sessao.",
   risk_areas: [
     "fuso horario na comparacao de expiracao",
     "bloqueio de thread em caminho assincrono",
     "dicionario sem seguranca de concorrencia",
   ],
+  sensitive_files: [
+    { file: "src/Auth/TokenValidator.cs", area: "auth" },
+    { file: "src/Auth/SessionCache.cs", area: "concurrency" },
+  ],
   files_to_read: ["src/Auth/TokenValidator.cs", "src/Auth/SessionCache.cs"],
 };
 
 const ACHADOS = {
+  verdict: "REQUEST_CHANGES",
   findings: [
     {
       file: "src/Auth/TokenValidator.cs",
       line: 41,
       severity: "critical",
+      confidence: "high",
       category: "correcao",
       problem:
         "`DateTime.Now` devolve hora local e `ExpiresAt` vem em UTC. Em BRT o token so expira tres horas depois do que deveria.",
@@ -50,6 +57,7 @@ const ACHADOS = {
       file: "src/Auth/TokenValidator.cs",
       line: 46,
       severity: "critical",
+      confidence: "high",
       category: "correcao",
       problem:
         "`.Result` numa chamada assincrona trava a thread e trava de vez sob contexto de sincronizacao.",
@@ -59,6 +67,7 @@ const ACHADOS = {
       file: "src/Auth/SessionCache.cs",
       line: 23,
       severity: "high",
+      confidence: "high",
       category: "concorrencia",
       problem:
         "Trocar `ConcurrentDictionary` por `Dictionary` deixa escrita simultanea corromper o balde interno.",
@@ -68,6 +77,7 @@ const ACHADOS = {
       file: "src/Auth/SessionCache.cs",
       line: 27,
       severity: "medium",
+      confidence: "high",
       category: "correcao",
       problem: "`Put` sobrescreve sessao existente sem invalidar o token anterior.",
       fix: "Invalidar a sessao antiga antes de gravar a nova.",
@@ -254,3 +264,4 @@ export async function ensureDemoRun(): Promise<string> {
 /** Quantos passos o fixture tem, para quem confere sem abrir o banco. */
 export const DEMO_RUN_STEPS = PASSOS.length;
 export const DEMO_RUN_ID = RUN_ID;
+export const DEMO_APPROVAL_ID = APPROVAL_ID;

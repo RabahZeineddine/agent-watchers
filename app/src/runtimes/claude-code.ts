@@ -65,7 +65,7 @@ export class ClaudeCodeRuntime implements Runtime {
       result?: string;
       structured_output?: unknown;
       total_cost_usd?: number;
-      usage?: { input_tokens?: number; output_tokens?: number };
+      usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
       is_error?: boolean;
     };
 
@@ -76,6 +76,7 @@ export class ClaudeCodeRuntime implements Runtime {
       structured: payload.structured_output,
       promptTokens: payload.usage?.input_tokens ?? 0,
       completionTokens: payload.usage?.output_tokens ?? 0,
+      cacheReadTokens: payload.usage?.cache_read_input_tokens,
       // total_cost_usd e o equivalente em API. Na assinatura o gasto marginal
       // e cota, nao dinheiro, entao nao entra no orcamento em dolar.
       costUsd: payload.total_cost_usd ?? 0,

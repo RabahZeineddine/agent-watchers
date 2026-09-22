@@ -404,7 +404,8 @@ async function main(): Promise<void> {
       console.log(`versao ${await seed()}`);
       break;
     case "demo":
-      await start("sintetico");
+      // "demo limpo" roda o diff correto, que tem que voltar sem achado.
+      await start(arg === "limpo" ? "sintetico-limpo" : "sintetico");
       break;
     case "fixture:run": {
       // Execucao plantada, sem chamar modelo. Ela existe para a interface e
@@ -552,6 +553,7 @@ async function main(): Promise<void> {
           "",
           "  seed                     grava a versao do agent semente",
           "  demo                     roda o pipeline num PR sintetico, sem credencial",
+          "  demo limpo               o mesmo, num PR correto que deve voltar sem achado",
           "  fixture:run              planta uma execucao pronta no banco, sem chamar modelo",
           "  review owner/repo#123    roda o pipeline num PR especifico",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",

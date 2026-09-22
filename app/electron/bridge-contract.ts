@@ -62,6 +62,8 @@ interface ServiceApi {
   "runs.list": RunService["list"];
   "runs.get": RunService["get"];
   "runs.findings": RunService["findings"];
+  /** Os achados de várias execuções numa ida só, que é o que a inbox precisa. */
+  "runs.findingsByRun": RunService["findingsByRun"];
   "runs.rerunStep": RunService["rerunStep"];
 
   "approvals.listPending": ApprovalService["listPending"];
@@ -279,6 +281,7 @@ export const BRIDGE_CHANNELS = [
   "runs.list",
   "runs.get",
   "runs.findings",
+  "runs.findingsByRun",
   "runs.rerunStep",
   "approvals.listPending",
   "approvals.get",

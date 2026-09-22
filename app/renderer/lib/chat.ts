@@ -6,6 +6,7 @@ export type ChatEvent =
   | { tipo: "ferramenta"; nome: string; entrada: unknown }
   | { tipo: "resultado"; nome: string }
   | { tipo: "fim"; motivo: string }
+  | { tipo: "resumido" }
   | { tipo: "erro"; mensagem: string };
 
 interface PonteDeChat {

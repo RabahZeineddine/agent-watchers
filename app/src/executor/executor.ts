@@ -273,6 +273,7 @@ export class Executor {
         model: resolution.model,
         system: system.length > 0 ? system : undefined,
         prompt: renderPrompt(step.prompt, payload, outputs),
+        stablePrefix: stablePrefix(step.prompt),
         tools,
         mcpServers: [...new Set(toolRefs.map((t) => t.server))],
         maxSteps: step.maxSteps,
@@ -289,6 +290,7 @@ export class Executor {
           output: output as object,
           promptTokens: result.promptTokens,
           completionTokens: result.completionTokens,
+          cacheReadTokens: result.cacheReadTokens ?? null,
           costUsd: result.costUsd,
           billable: result.billable,
           toolsUsed: result.toolsUsed,
@@ -389,25 +391,38 @@ function alvoDoEvento(payload: EventPayload): Record<string, unknown> {
   return alvo;
 }
 
-/** Interpolacao simples: {{event.x}} e {{steps.chave}}. */
+/** Interpolação simples: {{event.x}}, {{steps.chave}} e {{steps.chave.campo}}. */
 export function renderPrompt(
   template: string,
   payload: EventPayload,
   outputs: Map<string, unknown>,
 ): string {
+  const descer = (inicio: unknown, caminho: string[]) =>
+    caminho.reduce<unknown>(
+      (acc, key) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
+      inicio,
+    );
+  const texto = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2));
+
   return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path: string) => {
     const [root, ...rest] = path.split(".");
     if (root === "steps") {
-      const value = outputs.get(rest.join("."));
-      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
+      const [chave, ...campo] = rest;
+      return texto(descer(outputs.get(chave!), campo));
     }
-    if (root === "event") {
-      const value = rest.reduce<unknown>(
-        (acc, key) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
-        payload,
-      );
-      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
-    }
+    if (root === "event") return texto(descer(payload, rest));
     return "";
   });
+}
+
+/**
+ * O começo do template que vem antes do primeiro marcador.
+ *
+ * É literal, então sai igual em todo evento da mesma versão do agent, e é o
+ * trecho que o provedor consegue guardar em cache. Tudo depois do primeiro
+ * marcador já depende do evento.
+ */
+export function stablePrefix(template: string): string {
+  const primeiro = template.search(/\{\{/);
+  return primeiro < 0 ? template : template.slice(0, primeiro);
 }

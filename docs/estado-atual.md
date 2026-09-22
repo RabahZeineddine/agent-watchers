@@ -14,23 +14,28 @@ que a interface vai usar.
 | área | estado |
 |---|---|
 | esquema SQLite com 20 tabelas | pronto |
-| migração de esquema no aplicativo | quatro migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
+| migração de esquema no aplicativo | cinco migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
 | provedor compatível com OpenAI cadastrável | identificador, nome e endereço base no banco, o registro monta os fixos mais os cadastrados, chave própria no keychain e remoção avisando onde o provedor aparece |
 | registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco; um pool só por processo, que vive entre execuções, reaproveita o servidor que continua com o mesmo cadastro, troca o que mudou e fecha no tempo ocioso, no fim do comando da linha de comando ou na saída do aplicativo |
 | runtime nativo sobre o AI SDK | pronto, sem teste com chave real; custo calculado pelos tokens do laço inteiro vezes o preço cadastrado em `model_prices`, e zero com aviso quando o modelo não tem preço |
+| cache de prompt | o executor separa o começo literal do template, antes do primeiro marcador, e o runtime nativo manda sistema e skills, esse trecho estável e o resto nessa ordem, com a marca de cache da Anthropic no fim do estável; OpenAI e Gemini guardam prefixo sozinhos e só precisam da ordem. Triagem e auditoria do `pr-review` trazem as instruções antes dos dados do evento e o diff por último. O passo grava em `cache_read_tokens` o que o provedor informou ter lido de cache, nulo quando ele não informa, pelo runtime nativo e pelo `claude -p` |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
 | executor durável com retomada | pronto e verificado |
 | orçamento por execução e por dia | teto em dólar e teto em tokens, por run e por dia; o gasto vai para `usage_daily` em toda saída do trecho executado, `done`, `paused` ou `failed`, uma vez por trecho, e a retomada não conta execução nova; o teto do dia soma o que o trecho em curso ainda não gravou |
 | fila de aprovação com identificador externo antes da publicação | pronto; a decisão fecha o passo de ação, em `done` aprovado e em `skipped` rejeitado, e o executor retoma o run até o fim; na retomada, passo parado em aguardando com a pendência já fechada é reconciliado pela decisão gravada; a edição pela janela troca só a lista de achados, validada um a um, e dono, repositório e pull request ficam os que o executor gravou |
-| fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
+| fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás; cursor com hora completa e um por escopo de consulta, busca paginada, repositório exato vai na consulta, rascunho fora por padrão (`includeDrafts` no gatilho), e o commit de cabeça já gravado pula arquivos e checks |
 | corte do diff | lockfile, arquivo minificado, pasta de build e código gerado saem antes do modelo; depois vale um teto de caracteres, 200 mil por padrão e trocável pelo `GithubService`, cortando por arquivo inteiro; o evento guarda o que ficou fora e por quê, e triagem e auditoria recebem a lista para não afirmar o que não leram |
+| status de CI na auditoria | a ingestão lê os check runs do commit de cabeça, sem modelo, e o evento guarda o estado, verde, vermelho, pendente, sem check ou ilegível, com a lista e um resumo em texto; a auditoria recebe o resumo por `{{event.ci.summary}}` e não gasta achado repetindo o que um check vermelho já aponta; falha de leitura, como token sem permissão de Checks, vira aviso no resumo em vez de derrubar a ingestão |
+| triagem com categoria | a triagem do `pr-review` devolve a categoria da mudança, entre fix, feature, refactor, config e dependency, e os arquivos sensíveis com a área, banco, concorrência, autenticação, pagamento ou rota pública, presos no esquema de saída; a auditoria recebe a categoria por `{{steps.triage.category}}` e ajusta o que lê, e atualização de dependência pede changelog e uso em vez de lógica |
+| prompt de auditoria | seis focos trazidos da versão Python, regressão funcional, idempotência e concorrência, segurança e autorização, erro engolido, quebra de contrato e lacuna de teste; rubrica do que é crítico, alto, médio e baixo; título e descrição do pull request para pegar a intenção que o código contradiz; e `confidence` obrigatório por achado, alto, médio ou baixo, que atravessa a edição da revisão e aparece na tela. Verificado com os dois eventos sintéticos: o de defeito plantado acha todos, e o `demo limpo`, com diff correto, volta com zero achado |
 | fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
 | agent de digest do Slack | pronto e verificado com conversa sintética; a ingestão agrupa por canal e por thread e filtra ruído antes do modelo, e o digest para na inbox como proposta de leitura, sem ação de saída |
 | ação de resposta no Slack | pronta e verificada com evento sintético; o texto vem do passo de modelo, o canal do evento e a thread é conferida contra o que já foi lido, e a pendência guarda o texto exato que sairia; publicar só depois do clique |
-| ação de review com modo rascunho e modo aprovação | escrita, sem teste com token |
+| ação de review com modo rascunho e modo aprovação | escrita, sem teste com token; publica com o veredito da auditoria como evento da review, APPROVE, COMMENT ou REQUEST_CHANGES, e pendência sem veredito sai como comentário; aprovar ou pedir mudança nunca sai sozinho, porque o handler segura a proposta na fila mesmo com o passo em modo automático |
+| veredito da review | a auditoria devolve `verdict` preso no esquema de saída, com o critério de cada um no prompt; a tela de revisão mostra o veredito e deixa trocar antes de aprovar, gravando na pendência junto com os achados; aprovar sem achado é publicável, comentar sem achado não |
 | tracker de tarefa, Jira e GitHub Issues | adaptador, cadastro no banco e credencial no keychain; teste de conexão e lista de destinos pela interface, verificado contra um tracker de mentira em 127.0.0.1 |
 | passo de ação que abre tarefa | `tracker.create_issue` monta o item e para na fila; corpo escrito por um passo de modelo antes dele, modo travado em `approve` pelo handler |
 | descoberta de skills e seleção por arquivo alterado | pronto |
@@ -72,7 +77,7 @@ que a interface vai usar.
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 | canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
-| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação, o run que termina depois da decisão, aprovada ou rejeitada, e o orçamento: custo pelo preço cadastrado, gasto gravado ao pausar e ao falhar, e teto em dólar e em tokens interrompendo o runtime nativo, o corte do diff: descarte por tipo de arquivo, teto por arquivo inteiro e a lista chegando ao prompt, a edição da revisão que não troca o alvo, e o pool MCP: duas execuções no mesmo processo do servidor, fechamento depois do ócio e troca de cadastro |
+| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação, o run que termina depois da decisão, aprovada ou rejeitada, e o orçamento: custo pelo preço cadastrado, gasto gravado ao pausar e ao falhar, e teto em dólar e em tokens interrompendo o runtime nativo, o corte do diff: descarte por tipo de arquivo, teto por arquivo inteiro e a lista chegando ao prompt, a edição da revisão que não troca o alvo, o esquema da triagem com categoria e a categoria chegando à auditoria, o prompt da auditoria com focos, rubrica e intenção do pull request, a confiança obrigatória na saída e aceita na edição, o veredito no esquema da auditoria, como evento da review, trocável na edição e segurando a fila em modo automático, o status de CI: estado por conclusão do check, leitura pelo commit de cabeça, falha de leitura sem derrubar a ingestão, resumo gravado no evento e chegando à auditoria, o pool MCP: duas execuções no mesmo processo do servidor, fechamento depois do ócio e troca de cadastro, e o cache de prompt: ordem do estável antes do variável, marca no fim do estável e tokens de cache gravados no passo |
 
 ## Execução verificada
 
@@ -100,6 +105,7 @@ npm run db:push                       # desenvolvimento: empurra o esquema diret
 npm run db:generate                   # gera a migração depois de mexer no schema.ts
 npm run dev seed
 npm run dev demo                      # não precisa de credencial
+npm run dev demo limpo                # diff correto, tem que voltar sem achado
 npm run dev fixture:run               # execução plantada no banco, sem chamar modelo
 npm run dev review owner/repo#123     # precisa de GITHUB_TOKEN
 npm run dev poll 'time/.*'
@@ -151,6 +157,13 @@ npm start                             # sobe o Electron com janela
 **`drizzle-kit push` com dados.** Alteração que exige recriar tabela falha com
 `SQLITE_CONSTRAINT_FOREIGNKEY` quando já existem linhas. Coluna nova se resolve
 com `alter table add column` manual.
+
+**Linha de comando não migra o banco.** Só o processo principal do Electron
+aplica as migrações na subida. Depois de migração nova, a linha de comando
+estoura em `no such column` até alguém rodar `migrateDb()` no banco dela. Não
+usar `db:push` para isso num banco que já foi adotado pelas migrações: o
+`push` cria a coluna sem registro, e a próxima subida do aplicativo tenta o
+`alter table` de novo e falha com coluna duplicada.
 
 **Autoria da review automática.** O token é pessoal, então o que o Locum
 publica sai assinado pela mesma conta que revisa a mão. Sem marca no corpo, o

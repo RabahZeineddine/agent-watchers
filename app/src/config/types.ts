@@ -84,12 +84,18 @@ export const ReviewFinding = z
     file: z.string().min(1).optional(),
     line: z.number().int().positive().optional(),
     severity: z.enum(["critical", "high", "medium", "low"]),
+    // Opcional porque pendência gravada antes do campo existir continua na fila.
+    confidence: z.enum(["high", "medium", "low"]).optional(),
     category: z.string().optional(),
     problem: z.string().trim().min(1),
     fix: z.string().optional(),
   })
   .strict();
 export type ReviewFinding = z.infer<typeof ReviewFinding>;
+
+/** O evento da review no GitHub. Os mesmos três nomes que a API recebe. */
+export const ReviewVerdict = z.enum(["APPROVE", "COMMENT", "REQUEST_CHANGES"]);
+export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 
 export const Step = z.discriminatedUnion("type", [ModelStep, ActionStep]);
 export type Step = z.infer<typeof Step>;
@@ -259,6 +265,12 @@ export const PollTrigger = z.object({
    * outro lado da comparação é a conta do token conferida na configuração.
    */
   authorship: Authorship.default("any"),
+  /**
+   * Rascunho entra na varredura. Falso por padrão: quem abre rascunho ainda
+   * não pediu revisão, e a batida gastaria diff e modelo num trabalho que vai
+   * mudar.
+   */
+  includeDrafts: z.boolean().default(false),
   everyMinutes: z.number().int().min(1).default(15),
 });
 

@@ -43,6 +43,7 @@ export const READ_CHANNELS = [
   "runs.list",
   "runs.get",
   "runs.findings",
+  "runs.findingsByRun",
   "approvals.listPending",
   "approvals.get",
   "mcp.list",

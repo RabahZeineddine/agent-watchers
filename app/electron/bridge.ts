@@ -92,11 +92,13 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "runs.list": (filter) => runService.list(filter),
     "runs.get": (runId) => runService.get(runId),
     "runs.findings": (runId) => runService.findings(runId),
+    "runs.findingsByRun": (runIds) => runService.findingsByRun(runIds),
     "runs.rerunStep": (runId, stepKey, options) => runService.rerunStep(runId, stepKey, options),
 
     "approvals.listPending": () => approvalService.listPending(),
     "approvals.get": (approvalId) => approvalService.get(approvalId),
-    "approvals.update": (approvalId, findings) => approvalService.updateFindings(approvalId, findings),
+    "approvals.update": (approvalId, findings, verdict) =>
+      approvalService.updateFindings(approvalId, findings, verdict),
 
     "approvals.decide": async (approvalId, decision) => {
       if (decision !== "approved" && decision !== "rejected") {

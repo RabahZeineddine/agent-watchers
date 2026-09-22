@@ -923,6 +923,7 @@ async function checkRenderer(): Promise<string> {
     // de um run, que e onde a verificacao do destaque procura o bloco de codigo.
     const agents = await checkAgents(window);
     const configuracao = await checkConfig(window);
+    const revisao = await checkReviewVerdict(window);
 
     const execucoes = await checkRuns(window, fixture);
     // O bloco de codigo mora no detalhe de uma execucao, que e quem vai usa-lo
@@ -955,6 +956,7 @@ async function checkRenderer(): Promise<string> {
       palette: paleta,
       agents,
       config: configuracao,
+      review: revisao,
       runs: execucoes,
       spans: destacado,
       windowRuns: ponte.runs,
@@ -4207,6 +4209,66 @@ async function checkGithub(window: BrowserWindow): Promise<string> {
  * Ao sair, a janela fica no detalhe, porque e la que vive o bloco de codigo
  * que a verificacao do destaque procura.
  */
+/**
+ * Confere que a revisão mostra o veredito gravado e que trocá-lo pela tela
+ * chega à pendência.
+ *
+ * A troca passa pelo mesmo evento de mudança que o clique dispara, e a espera
+ * é pelo banco, não pela tela: o que importa é o que a gate vai publicar. No
+ * fim o veredito volta ao que era, porque a pendência plantada sobrevive entre
+ * fumaças com `LOCUM_HOME` fixo.
+ */
+async function checkReviewVerdict(window: BrowserWindow): Promise<string> {
+  const { approvalService } = await import("../src/services/approval-service.js");
+  const { DEMO_APPROVAL_ID } = await import("../src/fixtures/demo-run.js");
+
+  const gravado = async () =>
+    ((await approvalService.get(DEMO_APPROVAL_ID))?.payload as { verdict?: string } | null)?.verdict ??
+    "COMMENT";
+
+  await irPara(window, "inbox", DEMO_APPROVAL_ID);
+  const visto = await esperarProbe<{ valor: string; opcoes: string }>(
+    window,
+    "veredito",
+    `(() => {
+      const campo = document.querySelector("[data-locum-veredito]");
+      if (campo === null) return null;
+      return { valor: campo.value, opcoes: [...campo.options].map((o) => o.value).join(",") };
+    })()`,
+  );
+
+  const original = await gravado();
+  if (visto.valor !== original) {
+    throw new Error(`a revisão mostrou o veredito ${visto.valor} e a pendência tem ${original}`);
+  }
+  if (visto.opcoes !== "APPROVE,COMMENT,REQUEST_CHANGES") {
+    throw new Error(`a revisão ofereceu os vereditos ${visto.opcoes}`);
+  }
+
+  const trocar = async (valor: string) => {
+    await window.webContents.executeJavaScript(
+      `(() => {
+        const campo = document.querySelector("[data-locum-veredito]");
+        const definir = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+        definir.call(campo, ${JSON.stringify(valor)});
+        campo.dispatchEvent(new Event("change", { bubbles: true }));
+      })()`,
+    );
+    const limite = Date.now() + 10_000;
+    while (Date.now() < limite) {
+      if ((await gravado()) === valor) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`o veredito ${valor} escolhido na revisão não chegou à pendência`);
+  };
+
+  const outro = original === "APPROVE" ? "COMMENT" : "APPROVE";
+  await trocar(outro);
+  await trocar(original);
+
+  return `${original} -> ${outro} -> ${original}`;
+}
+
 async function checkRuns(window: BrowserWindow, runId: string): Promise<string> {
   const { runService } = await import("../src/services/run-service.js");
 

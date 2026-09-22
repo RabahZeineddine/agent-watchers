@@ -737,7 +737,7 @@
       "description": "A triagem da versão Python classificava a mudança em correção, funcionalidade, refatoração, configuração ou dependência, e apontava os arquivos sensíveis (banco, concorrência, autenticação, pagamento, rota pública). A atual perdeu a categoria. Trazer de volta, no esquema de saída, e usar a categoria para ajustar a profundidade da auditoria: atualização de dependência pede leitura de changelog e de uso, não de lógica. Escrever o prompt em português com acento.",
       "done_when": "A saída da triagem traz categoria e arquivos sensíveis, validados pelo esquema, e um teste confere que a categoria chega à auditoria.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -748,7 +748,7 @@
       "description": "O prompt de auditoria atual tem quatro linhas. Trazer da versão Python, em watchers/pr_reviewer/prompts.py, os seis focos: regressão funcional, idempotência e concorrência, segurança e autorização, erro engolido sem registro, quebra de contrato de API ou esquema, e lacuna de teste em caminho crítico. Acrescentar uma rubrica curta do que é crítico, alto, médio e baixo; o título e a descrição do pull request, para pegar a intenção que o código contradiz; a lista do que ficou fora do diff; e um campo de confiança por achado.\n\nVerificação com dois eventos sintéticos. O de sempre, com defeitos plantados, tem que continuar achando todos. Um novo, com diff limpo e correto, tem que devolver zero achado: é o que testa a regra de não inventar. Nesta story podem rodar duas execuções de demo.",
       "done_when": "O evento com defeito plantado acha todos, o evento limpo devolve zero achado, e o esquema de saída traz confiança.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -759,7 +759,7 @@
       "description": "A versão Python terminava em APPROVE, COMMENT ou REQUEST_CHANGES, com critério para cada um. A atual publica sempre como comentário. Acrescentar o veredito na saída da auditoria, com o critério no prompt, e fazer a ação de review do GitHub usar o veredito como evento. A tela de revisão mostra o veredito e deixa a pessoa trocar antes de aprovar. Aprovar ou pedir mudança no pull request de outra pessoa continua passando pela fila, sem exceção.",
       "done_when": "O veredito aparece na revisão, é trocável, e chega ao GitHub como o evento da review.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -770,7 +770,7 @@
       "description": "O deploy_inspector da versão Python lia os checks do pull request antes de revisar. Buscar os check runs do commit de cabeça pela API do GitHub, na ingestão, de forma determinística, e injetar o resumo no prompt da auditoria. Com CI vermelho, a auditoria recebe quais checks falharam e não gasta achado apontando o que o CI já apontou.",
       "done_when": "O evento guarda o resumo dos checks, e o prompt da auditoria o recebe.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -781,7 +781,7 @@
       "description": "O runtime nativo não marca nada para cache. Ordenar o que vai ao modelo com o estável primeiro, prompt de sistema e skills, e o variável depois, o diff, e marcar o fim do trecho estável para cache no provedor que suporta, pela opção de provedor do AI SDK. Registrar os tokens lidos de cache no passo, para a medição mostrar se o cache está pegando.",
       "done_when": "Um teste confere a ordem estável antes do variável, e o passo registra tokens de cache quando o provedor devolve.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -792,7 +792,7 @@
       "description": "Defeito B3 da auditoria. Em src/sources/github.ts a consulta usa granularidade de dia, fetchPr roda antes da deduplicação, a página é de 50 sem paginação, o filtro de repositório acontece depois da busca, e rascunho não é pulado. Consertar os cinco: cursor com hora completa, deduplicação pelo commit de cabeça antes de buscar diff, paginação, repositório na própria consulta quando o padrão permitir, e rascunho fora por padrão, configurável no gatilho. Testes com o cliente do GitHub substituído.",
       "done_when": "Duas batidas seguidas sobre os mesmos pull requests não buscam diff nenhum na segunda, e rascunho é ignorado.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -803,7 +803,7 @@
       "description": "Defeitos B4 e B5. A lista de execuções pede 500 e busca os passos de cada uma, somando 501 consultas. A inbox faz uma ida à ponte por pendência para buscar achados. Trocar os dois por uma consulta agregada: contagem de passos e de achados por execução numa consulta só, e os achados das pendências em lote.",
       "done_when": "A lista de execuções e a inbox fazem número fixo de consultas, independente de quantas linhas mostram, e um teste confere.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
@@ -814,7 +814,7 @@
       "description": "Defeito B6. O histórico do assistente cresce sem limite e reenvia o resultado de toda ferramenta já chamada. Manter as últimas trocas por inteiro e, das anteriores, só o texto, sem o resultado de ferramenta, que é a parte grande. Mostrar na tela quando o começo da conversa foi resumido.",
       "done_when": "Uma conversa longa mantém o tamanho enviado ao modelo abaixo do teto, e um teste confere.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

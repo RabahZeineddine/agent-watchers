@@ -1,0 +1,137 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { AgentSpec } from "../src/config/types.js";
+import { schema } from "../src/db/index.js";
+import { AgentService } from "../src/services/agent-service.js";
+import { RunService } from "../src/services/run-service.js";
+import { bancoDeTeste } from "./helpers/db.js";
+
+/**
+ * Banco que conta consulta, com uma quantidade de execuções escolhida.
+ *
+ * Cada execução tem um passo terminado com dois achados na saída, um passo
+ * parado esperando e um que quebrou, para a contagem agregada ter o que somar.
+ */
+async function bancoCom(execucoes: number) {
+  const contador = { consultas: 0 };
+  const db = bancoDeTeste({ logger: { logQuery: () => void contador.consultas++ } });
+  const versao = await new AgentService(db).upsert(
+    AgentSpec.parse({
+      id: "revisor",
+      name: "Revisor",
+      steps: [{ type: "model", key: "ler", name: "Ler", model: "anthropic/modelo", prompt: "revise" }],
+    }),
+    undefined,
+    "human",
+  );
+
+  const runIds: string[] = [];
+  for (let i = 0; i < execucoes; i++) {
+    const runId = randomUUID();
+    runIds.push(runId);
+    await db.insert(schema.runs).values({ id: runId, agentVersionId: versao.id, status: "done" });
+    await db.insert(schema.steps).values([
+      {
+        id: randomUUID(),
+        runId,
+        idx: 0,
+        stepKey: "ler",
+        name: "Ler",
+        status: "done",
+        output: {
+          findings: [
+            { severity: "high", problem: "referência nula" },
+            { severity: "low", problem: "nome confuso", file: "a.ts", line: 3 },
+            { problem: "sem severidade, fica fora" },
+            "texto solto, fica fora",
+          ],
+        },
+      },
+      { id: randomUUID(), runId, idx: 1, stepKey: "esperar", name: "Esperar", status: "awaiting_approval" },
+      { id: randomUUID(), runId, idx: 2, stepKey: "quebrar", name: "Quebrar", status: "failed", output: "texto" },
+    ]);
+  }
+  contador.consultas = 0;
+  return { db, contador, runIds };
+}
+
+test("lista de execuções faz o mesmo número de consultas com 1 ou 30 linhas", async () => {
+  const pequeno = await bancoCom(1);
+  const linhas = await new RunService(pequeno.db).list({ limit: 500 });
+  const comUma = pequeno.contador.consultas;
+
+  const grande = await bancoCom(30);
+  const muitas = await new RunService(grande.db).list({ limit: 500 });
+
+  assert.equal(linhas.length, 1);
+  assert.equal(muitas.length, 30);
+  assert.equal(grande.contador.consultas, comUma);
+});
+
+test("contagem agregada da lista bate com os passos e achados de cada execução", async () => {
+  const { db } = await bancoCom(3);
+  for (const run of await new RunService(db).list()) {
+    assert.equal(run.stepTotal, 3);
+    assert.equal(run.stepDone, 1);
+    assert.equal(run.stepPending, 1);
+    assert.equal(run.stepFailed, 1);
+    assert.equal(run.findingCount, 2);
+  }
+});
+
+test("execução sem passo nenhum aparece na lista com contagem zero", async () => {
+  const db = bancoDeTeste();
+  const versao = await new AgentService(db).upsert(
+    AgentSpec.parse({
+      id: "vazio",
+      name: "Vazio",
+      steps: [{ type: "model", key: "ler", name: "Ler", model: "anthropic/modelo", prompt: "x" }],
+    }),
+    undefined,
+    "human",
+  );
+  await db.insert(schema.runs).values({ id: randomUUID(), agentVersionId: versao.id, status: "queued" });
+
+  const [run] = await new RunService(db).list();
+  assert.equal(run?.stepTotal, 0);
+  assert.equal(run?.findingCount, 0);
+});
+
+test("achados de várias execuções saem em lote, com número fixo de consultas", async () => {
+  const pequeno = await bancoCom(1);
+  await new RunService(pequeno.db).findingsByRun(pequeno.runIds);
+  const comUma = pequeno.contador.consultas;
+
+  const grande = await bancoCom(30);
+  const porRun = await new RunService(grande.db).findingsByRun(grande.runIds);
+
+  assert.equal(grande.contador.consultas, comUma);
+  assert.equal(Object.keys(porRun).length, 30);
+  for (const runId of grande.runIds) {
+    assert.deepEqual(
+      porRun[runId]?.map((f) => f.problem),
+      ["referência nula", "nome confuso"],
+    );
+  }
+});
+
+test("lote prefere a tabela de achados quando o reconciliador já gravou", async () => {
+  const { db, runIds } = await bancoCom(2);
+  const [gravado, soNoPasso] = runIds as [string, string];
+  await db.insert(schema.findings).values({
+    id: randomUUID(),
+    runId: gravado,
+    severity: "critical",
+    body: "vazamento de segredo",
+    state: "posted",
+  });
+
+  const service = new RunService(db);
+  const porRun = await service.findingsByRun([gravado, soNoPasso, "run-que-nao-existe"]);
+
+  assert.deepEqual(porRun[gravado]?.map((f) => [f.problem, f.state]), [["vazamento de segredo", "posted"]]);
+  assert.equal(porRun[soNoPasso]?.length, 2);
+  assert.deepEqual(porRun["run-que-nao-existe"], []);
+  assert.deepEqual(await service.findings(gravado), porRun[gravado]);
+});

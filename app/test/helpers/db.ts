@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import type { Logger } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { fileURLToPath } from "node:url";
@@ -12,10 +13,10 @@ const migracoes = fileURLToPath(new URL("../../drizzle", import.meta.url));
  * Vem das migrações, e não de um `create table` escrito aqui, para que o teste
  * enxergue o mesmo esquema que o aplicativo instalado recebe na subida.
  */
-export function bancoDeTeste() {
+export function bancoDeTeste(opcoes: { logger?: Logger } = {}) {
   const sqlite = new Database(":memory:");
   sqlite.pragma("foreign_keys = ON");
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle(sqlite, { schema, logger: opcoes.logger });
   migrate(db, { migrationsFolder: migracoes });
   return db;
 }

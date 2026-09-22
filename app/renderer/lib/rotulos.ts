@@ -13,6 +13,17 @@ import type { TFunction } from "i18next";
 export const SEVERIDADES = ["critical", "high", "medium", "low"] as const;
 export type Severidade = (typeof SEVERIDADES)[number];
 
+/** Quanto a auditoria confia no próprio achado; pendência antiga vem sem. */
+export const CONFIANCAS = ["high", "medium", "low"] as const;
+export type Confianca = (typeof CONFIANCAS)[number];
+
+/**
+ * O evento da review no GitHub. Pendência gravada antes do veredito existir
+ * vem sem, e sai como comentário, que era o que sempre saía.
+ */
+export const VEREDITOS = ["APPROVE", "COMMENT", "REQUEST_CHANGES"] as const;
+export type Veredito = (typeof VEREDITOS)[number];
+
 export const ESTADOS = [
   "done",
   "running",

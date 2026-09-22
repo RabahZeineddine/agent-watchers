@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { buildExecutor } from "../executor/build.js";
-import { demoPr } from "../seed/demo-event.js";
+import { demoCleanPr, demoPr } from "../seed/demo-event.js";
 import { prReviewSpec } from "../seed/pr-review.js";
 import { fetchPr, type PrContext } from "../sources/github.js";
 import { agentService, AgentService, type AgentVersion } from "./agent-service.js";
@@ -14,10 +14,10 @@ export type RunStatus = "queued" | "done" | "paused" | "failed";
 /** Alvo real do GitHub ou o evento sintetico, que nao precisa de credencial. */
 export type RunTarget =
   | { kind: "github"; owner: string; repo: string; pull: number }
-  | { kind: "synthetic" };
+  | { kind: "synthetic"; variant?: "clean" };
 
 export interface StartInput {
-  /** Objeto ja resolvido ou o texto "owner/repo#123" ou "sintetico". */
+  /** Objeto ja resolvido ou o texto "owner/repo#123", "sintetico" ou "sintetico-limpo". */
   target: RunTarget | string;
   /** Ausente usa o agent semente, que e o unico cadastrado por padrao. */
   agentId?: string;
@@ -54,6 +54,7 @@ export interface RunStarter {
 }
 
 const SINTETICO = new Set(["demo", "sintetico", "synthetic"]);
+const SINTETICO_LIMPO = new Set(["demo-limpo", "sintetico-limpo", "synthetic-clean"]);
 
 /**
  * Disparo de execucao a partir de um alvo.
@@ -79,7 +80,11 @@ export class ExecutionService {
 
     const source = target.kind === "github" ? "github" : "demo";
     const context =
-      target.kind === "github" ? await fetchPr(target.owner, target.repo, target.pull) : demoPr;
+      target.kind === "github"
+        ? await fetchPr(target.owner, target.repo, target.pull)
+        : target.variant === "clean"
+          ? demoCleanPr
+          : demoPr;
     const { id: eventId } = await this.recordEvent(source, externalId(source, context), context);
 
     const { runId, status } = await this.startForEvent({ ...input, eventId, version });
@@ -161,6 +166,7 @@ export class ExecutionService {
 export function parseTarget(text: string): RunTarget {
   const trimmed = text.trim();
   if (SINTETICO.has(trimmed.toLowerCase())) return { kind: "synthetic" };
+  if (SINTETICO_LIMPO.has(trimmed.toLowerCase())) return { kind: "synthetic", variant: "clean" };
 
   const match = trimmed.match(/^([^/\s]+)\/([^#\s]+)#(\d+)$/);
   if (!match) {

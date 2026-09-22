@@ -91,12 +91,16 @@ function Fila({ navegar }: TelaProps) {
     if (pendentes.status !== "ready") return;
     let cancelado = false;
     void (async () => {
-      const carregados = await Promise.all(
-        pendentes.data.map(async (p) => {
-          const achados = await read("runs.findings", p.runId).catch(() => [] as Achado[]);
-          return { pendencia: p, achados, severidade: pior(achados) };
-        }),
-      );
+      // Uma ida só para a fila inteira: pedir por pendência fazia a tela
+      // esperar tantas viagens à ponte quantas linhas houvesse.
+      const porRun = await read(
+        "runs.findingsByRun",
+        [...new Set(pendentes.data.map((p) => p.runId))],
+      ).catch(() => ({}) as Record<string, Achado[]>);
+      const carregados = pendentes.data.map((p) => {
+        const achados = porRun[p.runId] ?? [];
+        return { pendencia: p, achados, severidade: pior(achados) };
+      });
       if (!cancelado) setItens(ordenar(carregados));
     })();
     return () => {

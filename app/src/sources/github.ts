@@ -1,16 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { Octokit } from "octokit";
 import { and, eq } from "drizzle-orm";
-import { db, schema } from "../db/index.js";
+import { db as defaultDb, schema } from "../db/index.js";
 import type { ActionHandler } from "../approval/gate.js";
-import type { ReviewFinding } from "../config/types.js";
+import type { ReviewFinding, ReviewVerdict } from "../config/types.js";
 import type { EventPayload } from "../executor/executor.js";
 import { GITHUB_TOKEN_ENV, githubService, githubToken } from "../services/github-service.js";
+import { fetchCiStatus, type ChecksClient, type CiStatus } from "./ci-status.js";
 import { limitDiff, type OmittedFile } from "./diff-limit.js";
 
 export type Finding = ReviewFinding;
 
-export type ReviewPayload = { owner: string; repo: string; pull: number; findings: Finding[] };
+export type ReviewPayload = {
+  owner: string;
+  repo: string;
+  pull: number;
+  findings: Finding[];
+  // Opcional porque pendência gravada antes do veredito existir continua na fila.
+  verdict?: ReviewVerdict;
+};
 
 /**
  * O cliente autenticado, com o token vindo do cofre ou do ambiente.
@@ -30,6 +38,9 @@ export function octokit(): Octokit {
   return new Octokit({ auth });
 }
 
+/** O pedaço do cliente que a ação de review usa. Existe para o teste trocar. */
+export type ReviewClient = { rest: { pulls: Pick<Octokit["rest"]["pulls"], "createReview"> } };
+
 export type PrContext = EventPayload & {
   owner: string;
   repoName: string;
@@ -45,6 +56,13 @@ export type PrContext = EventPayload & {
    */
   omittedFiles?: OmittedFile[];
   omittedSummary?: string;
+  /**
+   * Os checks do commit de cabeça na hora da ingestão.
+   *
+   * Opcional pelo mesmo motivo do corte: evento antigo não tem, e a auditoria
+   * lê "null" em vez de quebrar.
+   */
+  ci?: CiStatus;
   headSha: string;
   /**
    * Quem abriu, para onde vai e o tamanho da mudança.
@@ -64,14 +82,48 @@ export type PrContext = EventPayload & {
   draft: boolean;
 };
 
+/** O pedaço do cliente que a ingestão usa. Existe para o teste trocar. */
+export type PrClient = ChecksClient & {
+  rest: ChecksClient["rest"] & { pulls: Pick<Octokit["rest"]["pulls"], "get" | "listFiles"> };
+};
+
+/** O pull request como o GitHub devolve no `pulls.get`. */
+type PullData = Awaited<ReturnType<Octokit["rest"]["pulls"]["get"]>>["data"];
+
 /** Ingestao deterministica: sem LLM, sem token gasto. */
-export async function fetchPr(owner: string, repo: string, pull: number): Promise<PrContext> {
-  const gh = octokit();
-
+export async function fetchPr(
+  owner: string,
+  repo: string,
+  pull: number,
+  deps: { client?: PrClient; diffMaxChars?: number } = {},
+): Promise<PrContext> {
+  const gh = deps.client ?? octokit();
   const { data: pr } = await gh.rest.pulls.get({ owner, repo, pull_number: pull });
-  const files = await gh.paginate(gh.rest.pulls.listFiles, { owner, repo, pull_number: pull, per_page: 100 });
+  return contextFromPr(gh, owner, repo, pr, deps.diffMaxChars);
+}
 
-  const { diff, omittedFiles, omittedSummary } = limitDiff(files, await githubService.diffMaxChars());
+/**
+ * A parte cara da ingestão: arquivos, diff e checks.
+ *
+ * Separada do `pulls.get` porque a varredura precisa do commit de cabeça para
+ * saber se o evento já existe, e só depois disso vale gastar a paginação dos
+ * arquivos.
+ */
+async function contextFromPr(
+  gh: PrClient,
+  owner: string,
+  repo: string,
+  pr: PullData,
+  diffMaxChars?: number,
+): Promise<PrContext> {
+  const pull = pr.number;
+  const files = await gh.paginate(gh.rest.pulls.listFiles, { owner, repo, pull_number: pull, per_page: 100 });
+  const ci = await fetchCiStatus(gh, owner, repo, pr.head.sha);
+
+  const { diff, omittedFiles, omittedSummary } = limitDiff(
+    files,
+    diffMaxChars ?? (await githubService.diffMaxChars()),
+  );
 
   return {
     repo: `${owner}/${repo}`,
@@ -85,6 +137,7 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
     diff,
     omittedFiles,
     omittedSummary,
+    ci,
     author: pr.user?.login ?? "desconhecido",
     baseBranch: pr.base.ref,
     headBranch: pr.head.ref,
@@ -96,42 +149,113 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
   };
 }
 
+/** O pedaço do cliente que a varredura usa. Existe para o teste trocar. */
+export type PollClient = PrClient & {
+  rest: PrClient["rest"] & { search: Pick<Octokit["rest"]["search"], "issuesAndPullRequests"> };
+};
+
+export type PollOptions = {
+  /** Rascunho fica fora por padrão: revisar o que o autor ainda não pediu é gasto sem leitor. */
+  includeDrafts?: boolean;
+  client?: PollClient;
+  db?: typeof defaultDb;
+  /** Relógio da janela inicial, para teste. */
+  now?: number;
+  diffMaxChars?: number;
+};
+
+/**
+ * O repositório exato que o padrão descreve, quando ele descreve um só.
+ *
+ * Só vale para padrão ancorado nas duas pontas e sem metacaractere solto:
+ * `^o/api$` vira `o/api`, mas `api` também casa com `o/api-gateway`, e pôr
+ * `repo:o/api` na consulta esconderia esse outro. Ponto sem barra é "qualquer
+ * caractere" e também desqualifica, pelo mesmo motivo.
+ */
+export function exactRepo(owner: string, filter: RegExp): string | null {
+  if (filter.flags !== "") return null;
+  const m = /^\^((?:[\w-]|\\[./-]|\/)+)\$$/.exec(filter.source);
+  if (!m?.[1]) return null;
+  const nome = m[1].replace(/\\([./-])/g, "$1");
+  const [dono, repo, ...resto] = nome.split("/");
+  if (dono !== owner || !repo || resto.length > 0) return null;
+  return nome;
+}
+
+/** Hora completa, sem milissegundo, que é o formato que a busca do GitHub aceita. */
+function searchTimestamp(iso: string): string {
+  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 /**
  * Varredura por cursor. Intervalo fixo perde a janela quando o Mac dorme; o
  * cursor recupera tudo que passou, e o indice unico de evento mata duplicata.
+ *
+ * O `>=` com hora completa devolve de novo o último pull request da batida
+ * anterior. Isso é de propósito, para não perder dois atualizados no mesmo
+ * segundo, e sai barato porque a deduplicação pelo commit de cabeça acontece
+ * antes de buscar arquivo e check.
  */
-export async function pollOpenPullRequests(owner: string, repoFilter: RegExp): Promise<string[]> {
-  const gh = octokit();
+export async function pollOpenPullRequests(
+  owner: string,
+  repoFilter: RegExp,
+  deps: PollOptions = {},
+): Promise<string[]> {
+  const gh = deps.client ?? octokit();
+  const db = deps.db ?? defaultDb;
+  const includeDrafts = deps.includeDrafts ?? false;
   const source = "github";
-  const key = `prs:${owner}`;
+  const exact = exactRepo(owner, repoFilter);
+
+  // Cada escopo de consulta tem o próprio cursor. Com o repositório dentro da
+  // consulta, um cursor dividido entre dois gatilhos avançaria pelo que um viu
+  // e faria o outro pular o que ainda não tinha visto. O escopo aberto guarda
+  // a chave antiga para não perder a posição de quem já varria assim.
+  const scope = repoFilter.source === ".*" ? "" : `:${repoFilter.source}`;
+  const key = `prs:${owner}${scope}${includeDrafts ? ":rascunhos" : ""}`;
 
   const [cursor] = await db
     .select()
     .from(schema.cursors)
     .where(and(eq(schema.cursors.source, source), eq(schema.cursors.key, key)));
 
-  const since = cursor?.value ?? new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const query = `is:pr is:open org:${owner} updated:>=${since.slice(0, 10)}`;
-  const { data } = await gh.rest.search.issuesAndPullRequests({ q: query, per_page: 50 });
+  const since = searchTimestamp(cursor?.value ?? new Date((deps.now ?? Date.now()) - 24 * 3600 * 1000).toISOString());
+  const query = [
+    "is:pr",
+    "is:open",
+    exact ? `repo:${exact}` : `org:${owner}`,
+    includeDrafts ? null : "draft:false",
+    `updated:>=${since}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const items = await gh.paginate(gh.rest.search.issuesAndPullRequests, { q: query, per_page: 100 });
 
   const created: string[] = [];
   let newest = since;
 
-  for (const item of data.items) {
+  for (const item of items) {
+    if (item.updated_at > newest) newest = item.updated_at;
     const repo = item.repository_url.split("/").pop()!;
     if (!repoFilter.test(`${owner}/${repo}`)) continue;
-    if (item.updated_at > newest) newest = item.updated_at;
+    if (item.draft && !includeDrafts) continue;
 
-    const ctx = await fetchPr(owner, repo, item.number);
+    const { data: pr } = await gh.rest.pulls.get({ owner, repo, pull_number: item.number });
+    // Virou rascunho entre a busca e a leitura: vale o estado mais novo.
+    if (pr.draft && !includeDrafts) continue;
+
+    const externalId = `pr:${owner}/${repo}#${item.number}:sha:${pr.head.sha}`;
+    const [known] = await db
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(and(eq(schema.events.source, source), eq(schema.events.externalId, externalId)));
+    if (known) continue;
+
+    const ctx = await contextFromPr(gh, owner, repo, pr, deps.diffMaxChars);
     const id = randomUUID();
     const inserted = await db
       .insert(schema.events)
-      .values({
-        id,
-        source,
-        externalId: `pr:${owner}/${repo}#${item.number}:sha:${ctx.headSha}`,
-        payload: ctx as object,
-      })
+      .values({ id, source, externalId, payload: ctx as object })
       .onConflictDoNothing()
       .returning({ id: schema.events.id });
 
@@ -188,7 +312,7 @@ function renderBody(findings: Finding[]): string {
  * fica em estado pendente, visivel so para quem criou. Voce abre o PR, le e
  * envia. Nada publico antes disso.
  */
-export function githubReviewHandler(): ActionHandler {
+export function githubReviewHandler(client: () => ReviewClient = octokit): ActionHandler {
   const comments = (findings: Finding[]) =>
     findings
       .filter((f): f is Finding & { file: string; line: number } => Boolean(f.file && f.line))
@@ -199,20 +323,26 @@ export function githubReviewHandler(): ActionHandler {
       }));
 
   return {
+    // Aprovar ou pedir mudança no pull request de outra pessoa é decisão
+    // assinada por quem revisa, e por isso nunca sai sem clique, nem com o
+    // passo em modo automático. Só o comentário pode pular a fila.
+    holdForApproval(payload) {
+      return ((payload as ReviewPayload).verdict ?? "COMMENT") !== "COMMENT";
+    },
     async publish(payload) {
       const p = payload as ReviewPayload;
-      await octokit().rest.pulls.createReview({
+      await client().rest.pulls.createReview({
         owner: p.owner,
         repo: p.repo,
         pull_number: p.pull,
-        event: "COMMENT",
+        event: p.verdict ?? "COMMENT",
         body: renderBody(p.findings),
         comments: comments(p.findings),
       });
     },
     async draft(payload) {
       const p = payload as ReviewPayload;
-      await octokit().rest.pulls.createReview({
+      await client().rest.pulls.createReview({
         owner: p.owner,
         repo: p.repo,
         pull_number: p.pull,
