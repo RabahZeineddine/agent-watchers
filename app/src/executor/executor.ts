@@ -193,11 +193,9 @@ export class Executor {
         .where(eq(schema.runs.id, runId));
       return status;
     } finally {
-      try {
-        await recordSpend(spec.id, segment, newRun);
-      } finally {
-        await this.deps.mcp.closeAll().catch(() => undefined);
-      }
+      // Servidor MCP não fecha aqui: o registro vive entre execuções e cada
+      // processo sai sozinho depois do tempo ocioso, ou no encerramento do app.
+      await recordSpend(spec.id, segment, newRun);
     }
   }
 

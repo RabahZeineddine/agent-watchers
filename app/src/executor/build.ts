@@ -13,6 +13,23 @@ import { githubReviewHandler } from "../sources/github.js";
 import { trackerIssueHandler } from "../trackers/issue-action.js";
 
 /**
+ * O pool de servidores MCP do processo, um só para todos os executores.
+ *
+ * Cada chamador monta o seu executor, e registro novo por executor jogaria fora
+ * o encerramento por ocioso: o processo subiria de novo a cada execução.
+ */
+const mcpPool = new McpRegistry(new Map());
+
+/**
+ * Fecha o que o pool tem de pé. Quem chama é quem encerra o processo: a linha
+ * de comando no fim do comando, e o aplicativo ao sair, porque o processo stdio
+ * segura o event loop.
+ */
+export function closeMcpPool(): Promise<void> {
+  return mcpPool.closeAll();
+}
+
+/**
  * Montagem do executor a partir do que esta cadastrado nesta maquina.
  *
  * Mora fora da linha de comando porque o servico de runs tambem precisa dela
@@ -28,7 +45,8 @@ export async function buildExecutor(): Promise<Executor> {
   const runtimes = new Map<string, Runtime>([["native", new NativeRuntime(providerService.entries())]]);
   if (providerService.isAvailable("claude-code")) runtimes.set("claude-code", new ClaudeCodeRuntime(configs));
 
-  return new Executor({ mcp: new McpRegistry(configs), runtimes, gate: buildGate(), machineId });
+  mcpPool.reconfigure(configs);
+  return new Executor({ mcp: mcpPool, runtimes, gate: buildGate(), machineId });
 }
 
 /**

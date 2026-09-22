@@ -726,7 +726,7 @@
       "description": "Defeito B2. O finally do executor chama closeAll, desfazendo o pool com encerramento por ocioso. Tirar o fechamento do fim de cada execução e fechar só ao encerrar o aplicativo e ao estourar o tempo ocioso, que é o comportamento para o qual o registro foi desenhado.",
       "done_when": "Duas execuções seguidas reaproveitam o mesmo processo de servidor MCP, e ele fecha depois do tempo ocioso.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]

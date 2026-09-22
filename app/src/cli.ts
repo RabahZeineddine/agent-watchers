@@ -1,5 +1,5 @@
 import { McpTransport } from "./config/types.js";
-import { buildExecutor } from "./executor/build.js";
+import { buildExecutor, closeMcpPool } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
 import { credentialService } from "./services/credential-service.js";
@@ -589,7 +589,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exitCode = 1;
-});
+main()
+  .catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exitCode = 1;
+  })
+  .finally(() => closeMcpPool().catch(() => undefined));

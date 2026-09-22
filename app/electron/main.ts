@@ -5180,6 +5180,22 @@ async function main(): Promise<void> {
   // import dinamico, depois da variavel de ambiente do binding.
   const { setupTray, teardownTray, trayPendingCount } = await import("./tray.js");
 
+  // O pool de servidores MCP vive entre execuções, então quem fecha os
+  // processos é a saída do aplicativo. O `app.exit` da fumaça pula o
+  // `will-quit`, e por isso ela fecha o pool na mão antes de sair.
+  const { closeMcpPool } = await import("../src/executor/build.js");
+  let poolFechado = false;
+  app.on("will-quit", (event) => {
+    if (poolFechado) return;
+    event.preventDefault();
+    void closeMcpPool()
+      .catch(() => undefined)
+      .finally(() => {
+        poolFechado = true;
+        app.quit();
+      });
+  });
+
   if (smoke) {
     // Sem dock e sem janela: o loop de verificacao roda sem ninguem olhando, e
     // uma janela aberta travaria a iteracao esperando um clique. A bandeja
@@ -5244,6 +5260,7 @@ async function main(): Promise<void> {
         mainText,
       }),
     );
+    await closeMcpPool();
     app.exit(0);
     return;
   }
