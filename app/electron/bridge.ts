@@ -6,7 +6,7 @@ import {
   type LocumApi,
   type WindowLanguage,
 } from "./bridge-contract.js";
-import { buildGate } from "../src/executor/build.js";
+import { buildExecutor } from "../src/executor/build.js";
 import { aplicarIdioma } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
@@ -104,7 +104,8 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
       // A gate recusa pendencia inexistente ou ja resolvida, publica com o
       // externalId que ja estava gravado, e e a unica que fala com o handler de
       // publicacao. A ponte nao repete nada disso: ela leva o clique e volta.
-      await buildGate().decide(approvalId, decision);
+      // É o executor quem chama a gate, para o run seguir depois da decisão.
+      await (await buildExecutor()).decide(approvalId, decision);
       await refreshTray();
       return { approvalId, decision };
     },

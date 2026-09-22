@@ -34,8 +34,9 @@ export async function buildExecutor(): Promise<Executor> {
 /**
  * A porta unica de saida, com os handlers que sabem publicar.
  *
- * Mora aqui porque quem decide fora do executor, hoje a linha de comando e a
- * ponte da janela, precisa da mesma montagem. Montar o mapa em cada chamador
+ * Mora aqui porque o executor e os exames de fumaça do processo principal
+ * precisam da mesma montagem. A decisão da linha de comando e da ponte passa
+ * pelo executor, que chama esta gate e retoma o run. Montar o mapa em cada chamador
  * abriria caminho para um deles registrar um handler diferente sem ninguem
  * notar, e a gate so vale como porta unica se ela for sempre a mesma porta.
  */

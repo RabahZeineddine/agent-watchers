@@ -14,7 +14,7 @@ import { resolveModel, type FallbackRow } from "../providers/registry.js";
 import { providerService } from "../services/provider-service.js";
 import type { Runtime } from "../runtimes/types.js";
 import { selectSkills, skillsPreamble, type SkillContext } from "../skills/loader.js";
-import { ApprovalGate } from "../approval/gate.js";
+import { ApprovalGate, settleStep } from "../approval/gate.js";
 import { BudgetExceeded, assertWithinBudget, recordSpend } from "./budget.js";
 
 export type EventPayload = {
@@ -49,6 +49,18 @@ export class Executor {
     const id = randomUUID();
     await db.insert(schema.runs).values({ id, agentVersionId, eventId, triggerId, status: "queued" });
     return id;
+  }
+
+  /**
+   * Decide a pendência e retoma o run dela.
+   *
+   * A decisão sozinha não basta: sem retomar, o run fica `paused`, o que vem
+   * depois da ação nunca roda e a tela continua mostrando aguardando numa
+   * execução que já saiu.
+   */
+  async decide(approvalId: string, decision: "approved" | "rejected"): Promise<"done" | "paused" | "failed"> {
+    const runId = await this.deps.gate.decide(approvalId, decision);
+    return this.execute(runId);
   }
 
   /** Runs interrompidos por fechamento do app ou por crash. */
@@ -102,7 +114,13 @@ export class Executor {
           continue;
         }
         if (existing?.status === "awaiting_approval") {
-          return this.pause(runId);
+          const [approval] = await db
+            .select({ status: schema.approvals.status })
+            .from(schema.approvals)
+            .where(eq(schema.approvals.stepId, existing.id));
+          if (!approval || approval.status === "pending") return this.pause(runId);
+          outputs.set(step.key, (await settleStep(existing.id, approval.status)).output);
+          continue;
         }
 
         const stepId = existing?.id ?? randomUUID();

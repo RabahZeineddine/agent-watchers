@@ -671,7 +671,7 @@
       "description": "Defeito A1 da auditoria. ApprovalGate.decide publica e fecha a pendência, mas o passo fica em awaiting_approval e a execução em paused para sempre. Depois da decisão, o passo de ação passa para done quando aprovado e para skipped quando rejeitado, e a execução é retomada para rodar o que vier depois dele e fechar em done. Escrever primeiro o teste que falha hoje: um pipeline com passo de ação, aprovado, tem que terminar em done; rejeitado, também tem que sair de paused.",
       "done_when": "O teste de execução aprovada e o de rejeitada passam, e a tela de execuções deixa de mostrar aguardando em execução decidida.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

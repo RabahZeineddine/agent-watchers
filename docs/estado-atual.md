@@ -23,7 +23,7 @@ que a interface vai usar.
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
 | executor durável com retomada | pronto e verificado |
 | orçamento por execução e por dia | pronto e verificado |
-| fila de aprovação com identificador externo antes da publicação | pronto |
+| fila de aprovação com identificador externo antes da publicação | pronto; a decisão fecha o passo de ação, em `done` aprovado e em `skipped` rejeitado, e o executor retoma o run até o fim; na retomada, passo parado em aguardando com a pendência já fechada é reconciliado pela decisão gravada |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
 | fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
@@ -70,7 +70,7 @@ que a interface vai usar.
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 | canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
-| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo e rebaixamento de modo de ação |
+| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação e o run que termina depois da decisão, aprovada ou rejeitada |
 
 ## Execução verificada
 
