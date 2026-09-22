@@ -103,6 +103,12 @@ permanece em modo de aprovação, e o handler recusa qualquer outro modo. A trav
 unitário. Defeito corrigido sem teste que o teria pego volta. Escreva o teste
 primeiro, confira que ele falha pelo motivo certo, e só então corrija.
 
+**Teste não espera tempo fixo.** Espera fixa aposta na velocidade da máquina, e
+passa sozinha e falha em sequência. Para conferir processo que fecha, servidor
+que sobe ou tarefa em segundo plano, espere até a condição valer, com prazo
+folgado só para não travar. O loop roda a verificação logo depois do teste de
+fumaça, com a máquina carregada, e é aí que espera fixa cai.
+
 **Serviço primeiro.** Regra de cadastro mora em `app/src/services/`. Linha de
 comando, servidor MCP e interface são casca fina. Se você está escrevendo regra
 dentro do `cli.ts`, está no lugar errado.
