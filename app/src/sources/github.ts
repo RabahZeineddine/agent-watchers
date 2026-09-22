@@ -6,6 +6,7 @@ import type { ActionHandler } from "../approval/gate.js";
 import type { ReviewFinding, ReviewVerdict } from "../config/types.js";
 import type { EventPayload } from "../executor/executor.js";
 import { GITHUB_TOKEN_ENV, githubService, githubToken } from "../services/github-service.js";
+import { fetchCiStatus, type ChecksClient, type CiStatus } from "./ci-status.js";
 import { limitDiff, type OmittedFile } from "./diff-limit.js";
 
 export type Finding = ReviewFinding;
@@ -55,6 +56,13 @@ export type PrContext = EventPayload & {
    */
   omittedFiles?: OmittedFile[];
   omittedSummary?: string;
+  /**
+   * Os checks do commit de cabeça na hora da ingestão.
+   *
+   * Opcional pelo mesmo motivo do corte: evento antigo não tem, e a auditoria
+   * lê "null" em vez de quebrar.
+   */
+  ci?: CiStatus;
   headSha: string;
   /**
    * Quem abriu, para onde vai e o tamanho da mudança.
@@ -74,14 +82,28 @@ export type PrContext = EventPayload & {
   draft: boolean;
 };
 
+/** O pedaço do cliente que a ingestão usa. Existe para o teste trocar. */
+export type PrClient = ChecksClient & {
+  rest: ChecksClient["rest"] & { pulls: Pick<Octokit["rest"]["pulls"], "get" | "listFiles"> };
+};
+
 /** Ingestao deterministica: sem LLM, sem token gasto. */
-export async function fetchPr(owner: string, repo: string, pull: number): Promise<PrContext> {
-  const gh = octokit();
+export async function fetchPr(
+  owner: string,
+  repo: string,
+  pull: number,
+  deps: { client?: PrClient; diffMaxChars?: number } = {},
+): Promise<PrContext> {
+  const gh = deps.client ?? octokit();
 
   const { data: pr } = await gh.rest.pulls.get({ owner, repo, pull_number: pull });
   const files = await gh.paginate(gh.rest.pulls.listFiles, { owner, repo, pull_number: pull, per_page: 100 });
+  const ci = await fetchCiStatus(gh, owner, repo, pr.head.sha);
 
-  const { diff, omittedFiles, omittedSummary } = limitDiff(files, await githubService.diffMaxChars());
+  const { diff, omittedFiles, omittedSummary } = limitDiff(
+    files,
+    deps.diffMaxChars ?? (await githubService.diffMaxChars()),
+  );
 
   return {
     repo: `${owner}/${repo}`,
@@ -95,6 +117,7 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
     diff,
     omittedFiles,
     omittedSummary,
+    ci,
     author: pr.user?.login ?? "desconhecido",
     baseBranch: pr.base.ref,
     headBranch: pr.head.ref,

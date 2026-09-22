@@ -1,3 +1,4 @@
+import { summarizeChecks } from "../sources/ci-status.js";
 import type { PrContext } from "../sources/github.js";
 
 /**
@@ -24,6 +25,7 @@ export const demoPr: PrContext = {
   changedFiles: ["src/Auth/TokenValidator.cs", "src/Auth/SessionCache.cs"],
   omittedFiles: [],
   omittedSummary: "nenhum",
+  ci: summarizeChecks([]),
   diff: `--- src/Auth/TokenValidator.cs (modified, +9 -4)
 @@ -38,10 +38,15 @@ public sealed class TokenValidator
 -    public bool IsExpired(Token token) => token.ExpiresAt < DateTime.UtcNow;
@@ -80,6 +82,7 @@ export const demoCleanPr: PrContext = {
   changedFiles: ["src/Relatorios/NomeDoArquivo.cs"],
   omittedFiles: [],
   omittedSummary: "nenhum",
+  ci: summarizeChecks([]),
   diff: `--- src/Relatorios/NomeDoArquivo.cs (modified, +3 -1)
 @@ -5,6 +5,8 @@ namespace Vida.Relatorios;
  public static class NomeDoArquivo

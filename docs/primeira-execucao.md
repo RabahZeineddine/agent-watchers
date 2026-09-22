@@ -129,7 +129,11 @@ organização inteira:
 | Metadata | leitura |
 | Contents | leitura |
 | Pull requests | leitura |
+| Checks | leitura, para a auditoria saber o que o CI já apontou |
 | Pull requests | escrita, só se quiser que o Locum comente |
+
+Sem a leitura de Checks a revisão continua, e a auditoria recebe só o aviso de
+que os checks não puderam ser lidos.
 
 A escrita em Pull requests é a única permissão que o Locum usa para sair. Ela
 não dispensa a aprovação: sem ela o clique de aprovar falha na hora de publicar,

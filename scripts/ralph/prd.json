@@ -770,7 +770,7 @@
       "description": "O deploy_inspector da versão Python lia os checks do pull request antes de revisar. Buscar os check runs do commit de cabeça pela API do GitHub, na ingestão, de forma determinística, e injetar o resumo no prompt da auditoria. Com CI vermelho, a auditoria recebe quais checks falharam e não gasta achado apontando o que o CI já apontou.",
       "done_when": "O evento guarda o resumo dos checks, e o prompt da auditoria o recebe.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
