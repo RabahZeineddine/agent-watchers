@@ -737,7 +737,7 @@
       "description": "A triagem da versão Python classificava a mudança em correção, funcionalidade, refatoração, configuração ou dependência, e apontava os arquivos sensíveis (banco, concorrência, autenticação, pagamento, rota pública). A atual perdeu a categoria. Trazer de volta, no esquema de saída, e usar a categoria para ajustar a profundidade da auditoria: atualização de dependência pede leitura de changelog e de uso, não de lógica. Escrever o prompt em português com acento.",
       "done_when": "A saída da triagem traz categoria e arquivos sensíveis, validados pelo esquema, e um teste confere que a categoria chega à auditoria.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

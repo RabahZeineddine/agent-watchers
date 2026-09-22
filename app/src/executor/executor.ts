@@ -389,25 +389,26 @@ function alvoDoEvento(payload: EventPayload): Record<string, unknown> {
   return alvo;
 }
 
-/** Interpolacao simples: {{event.x}} e {{steps.chave}}. */
+/** Interpolação simples: {{event.x}}, {{steps.chave}} e {{steps.chave.campo}}. */
 export function renderPrompt(
   template: string,
   payload: EventPayload,
   outputs: Map<string, unknown>,
 ): string {
+  const descer = (inicio: unknown, caminho: string[]) =>
+    caminho.reduce<unknown>(
+      (acc, key) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
+      inicio,
+    );
+  const texto = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2));
+
   return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path: string) => {
     const [root, ...rest] = path.split(".");
     if (root === "steps") {
-      const value = outputs.get(rest.join("."));
-      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
+      const [chave, ...campo] = rest;
+      return texto(descer(outputs.get(chave!), campo));
     }
-    if (root === "event") {
-      const value = rest.reduce<unknown>(
-        (acc, key) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[key] : undefined),
-        payload,
-      );
-      return typeof value === "string" ? value : JSON.stringify(value ?? null, null, 2);
-    }
+    if (root === "event") return texto(descer(payload, rest));
     return "";
   });
 }

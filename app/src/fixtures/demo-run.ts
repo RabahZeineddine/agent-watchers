@@ -26,11 +26,16 @@ const APPROVAL_ID = "fixture-approval-post";
 const CRIADO_EM = 1_789_870_000;
 
 const TRIAGEM = {
+  category: "fix",
   scope: "Autenticacao: validacao de expiracao de token e cache de sessao.",
   risk_areas: [
     "fuso horario na comparacao de expiracao",
     "bloqueio de thread em caminho assincrono",
     "dicionario sem seguranca de concorrencia",
+  ],
+  sensitive_files: [
+    { file: "src/Auth/TokenValidator.cs", area: "auth" },
+    { file: "src/Auth/SessionCache.cs", area: "concurrency" },
   ],
   files_to_read: ["src/Auth/TokenValidator.cs", "src/Auth/SessionCache.cs"],
 };
