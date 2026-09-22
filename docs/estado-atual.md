@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 21 de setembro de 2026.
+Atualizado em 22 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -70,6 +70,7 @@ que a interface vai usar.
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 | canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
+| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo e rebaixamento de modo de ação |
 
 ## Execução verificada
 
@@ -129,6 +130,7 @@ npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npm run check:i18n                    # acusa texto cravado fora do dicionário
 npm run verify                        # tipos, guarda de i18n, build e smoke
+npm test                              # teste unitário, banco em memória
 npm run build:icon                    # regera build/icon.icns a partir do SVG
 npm run dist:dir                      # empacota sem instalador, em release/mac-<arch>/Locum.app
 npm run dist                          # gera o .dmg e o .zip

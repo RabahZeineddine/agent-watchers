@@ -57,3 +57,4 @@
 2026-09-21  M8.3  feito      agent de digest com ingestão determinística, parando na inbox como leitura
 2026-09-21  M8.4  feito      ação slack.post parando na fila com o texto exato do modelo, thread conferida contra o que foi lido, modo travado em approve; a guarda de núcleo do verify não passa, por duas linhas de registro em build.ts
 2026-09-21  M8.5  feito      docs/teste-do-desenho.md com o diff como prova: gate, executor, formato e banco com zero linha, quatro linhas em build.ts, e o desvio do Slack no agendador registrado como ressalva
+2026-09-22  M9.1  feito      base de teste com node --test e tsx, banco em memória pelas migrações, 20 testes em ordenação topológica, fallback com ciclo e rebaixamento de modo; sabotar o rebaixamento derruba 4

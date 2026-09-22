@@ -660,7 +660,7 @@
       "description": "O projeto tem zero teste unitário, só o teste de fumaça. Criar a base com o executor de teste embutido do Node (node --test com tsx como carregador), sem dependência nova, e script npm test. Banco em memória ou em pasta temporária por teste, nunca o banco real. Cobrir primeiro a lógica pura que mais merece: ordenação topológica e detecção de ciclo em config/types.ts, resolução de fallback com ciclo em providers/registry.ts, e rebaixamento de modo de ação no AgentService.",
       "done_when": "npm test roda e passa, e cobre as três lógicas.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
