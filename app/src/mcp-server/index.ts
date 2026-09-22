@@ -9,8 +9,15 @@
  * `console.log` perdido corrompe a sessao do cliente. Diagnostico vai para
  * stderr.
  */
+import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { migrateDb } from "../db/migrate.js";
 import { buildMcpServer } from "./server.js";
+
+// O servidor sobe da raiz do repositório, que é o que o .mcp.json manda, e a
+// busca padrão da pasta de migração sobe diretórios sem nunca descer para app/.
+// Pelo próprio arquivo, o caminho vale de onde quer que ele seja chamado.
+migrateDb(fileURLToPath(new URL("../../drizzle", import.meta.url)));
 
 const server = buildMcpServer();
 await server.connect(new StdioServerTransport());

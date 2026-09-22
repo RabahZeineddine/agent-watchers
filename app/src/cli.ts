@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { migrateDb } from "./db/migrate.js";
 import { McpTransport } from "./config/types.js";
 import { buildExecutor, closeMcpPool } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
@@ -394,7 +396,23 @@ async function secretLink(alvo: string, ref: string | null): Promise<void> {
   }
 }
 
+/**
+ * Aplica migração pendente antes de qualquer comando.
+ *
+ * O processo principal do Electron já fazia isso na subida, e a linha de
+ * comando não: aberta contra um banco de antes de uma migração, ela quebrava na
+ * primeira consulta, com coluna inexistente. O loop nunca pegou porque cria um
+ * banco novo a cada rodada, sempre no esquema mais recente.
+ *
+ * A pasta é resolvida pelo próprio arquivo, e não pelo diretório de trabalho,
+ * porque quem chama pode estar em qualquer lugar.
+ */
+function migrarAntes(): void {
+  migrateDb(fileURLToPath(new URL("../drizzle", import.meta.url)));
+}
+
 async function main(): Promise<void> {
+  migrarAntes();
   const [cmd, ...args] = process.argv.slice(2);
   const arg = args[0];
   const executor = () => buildExecutor();
