@@ -855,6 +855,23 @@ vale como porta única se ela for sempre a mesma porta, e um mapa de handlers
 montado em cada chamador deixaria um deles registrar handler diferente sem
 ninguém notar. Fonte nova não encosta no núcleo; ação nova entra por essa linha.
 
+**Claude Code com a configuração da máquina.** Sem isolamento, cada passo de
+modelo subia com a configuração pessoal inteira: na mensagem de início, 27
+servidores MCP, 13 plugins, 331 ferramentas e cinco hooks de sessão, incluindo
+servidores de produção ao alcance de um agent que lê diff de terceiro. O
+adaptador passa `--setting-sources ""`, `--strict-mcp-config` e
+`--no-session-persistence`, e a mesma chamada cai para zero servidor, dois
+plugins embutidos, 30 ferramentas e nenhum hook. O login de assinatura
+sobrevive, ao contrário do `--bare`. A subida de um `-p` mínimo caiu de 6,9 s
+para 3,3 s, e deixaram de entrar 16 mil tokens de esquema no cache a cada
+processo.
+
+O ganho na triagem inteira é menor do que a auditoria previa. Os 62 segundos
+citados lá vêm da execução plantada pelo `fixture:run`, que não chama modelo. No
+demo real a triagem leva uns 40 segundos com ou sem isolamento, porque quem
+domina é a geração: 38 s para 2237 tokens de saída antes, 42 s para 3948
+depois. O que o isolamento tira são os cerca de 3,5 s de subida por passo.
+
 ## O desenho cobrado
 
 `docs/teste-do-desenho.md` fecha o M8 cobrando do ADR 0001 a promessa de que

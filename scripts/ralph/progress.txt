@@ -61,3 +61,4 @@
 2026-09-22  M9.2  feito      decisão fecha o passo de ação (done ou skipped) e o executor retoma o run até done; retomada reconcilia passo parado com pendência já fechada; 5 testes, que falhavam antes do conserto
 2026-09-22  M9.3  feito      custo do runtime nativo por tokens vezes preço de model_prices, teto em tokens para modelo sem preço, gasto gravado em toda saída do trecho; 7 testes, 4 falhavam antes do conserto
 2026-09-22  M9.4  feito      lockfile, minificado, build e gerado fora do diff, teto de 200 mil por arquivo inteiro no GithubService, evento e prompt com o que ficou fora; 6 testes; fixture de histórico passa a conferir o par do topo
+2026-09-22  M9.5  feito      Claude Code com --setting-sources vazio, --strict-mcp-config e --no-session-persistence, login de assinatura mantido; subida de 6,9 s para 3,3 s e de 27 servidores MCP para zero, triagem inteira quase igual porque a geração domina; 5 testes, 4 falhavam antes

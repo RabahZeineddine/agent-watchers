@@ -5,47 +5,56 @@ import type { Runtime, RuntimeRequest, RuntimeResult } from "./types.js";
 
 const run = promisify(execFile);
 
+/** Argumentos da chamada, separados para o teste conferir o isolamento. */
+export function claudeArgs(req: RuntimeRequest, mcpConfigs: Map<string, McpServerConfig>): string[] {
+  const servers = req.mcpServers ?? [];
+  const allowed = Object.keys(req.tools).map((key) => {
+    const [server, ...rest] = key.split("__");
+    return `mcp__${server}__${rest.join("__")}`;
+  });
+
+  const args = ["-p", req.prompt, "--model", req.model, "--output-format", "json"];
+
+  if (req.system) args.push("--append-system-prompt", req.system);
+  if (req.outputSchema) args.push("--json-schema", JSON.stringify(req.outputSchema));
+  if (servers.length > 0) args.push("--mcp-config", mcpConfigJson(servers, mcpConfigs));
+  if (allowed.length > 0) args.push("--allowedTools", allowed.join(","));
+  args.push("--permission-prompts", "none");
+  args.push("--strict-mcp-config", "--no-session-persistence", "--setting-sources", "");
+  return args;
+}
+
+function mcpConfigJson(servers: string[], mcpConfigs: Map<string, McpServerConfig>): string {
+  const out: Record<string, unknown> = {};
+  for (const name of servers) {
+    const cfg = mcpConfigs.get(name);
+    if (!cfg) continue;
+    out[name] =
+      cfg.transport === "stdio"
+        ? { command: cfg.command![0], args: cfg.command!.slice(1), env: cfg.env ?? {} }
+        : { type: cfg.transport, url: cfg.url, headers: cfg.headers ?? {} };
+  }
+  return JSON.stringify({ mcpServers: out });
+}
+
 /**
- * Unica via que gasta a cota da assinatura Max.
+ * Única via que gasta a cota da assinatura Max.
  *
- * Nao passa `--bare`: esse modo ignora o login de assinatura e exige
- * ANTHROPIC_API_KEY, que e justamente o que queremos evitar aqui. O preco e que
- * o processo carrega a configuracao pessoal do usuario, incluindo hooks de
- * sessao que mudam o estilo da saida. A protecao e `--json-schema`, que torna a
- * saida estruturada independente de estilo.
+ * Não passa `--bare`: esse modo ignora o login de assinatura e exige
+ * ANTHROPIC_API_KEY, que é justamente o que queremos evitar aqui. O isolamento
+ * vem de três flags que mantêm o login: `--setting-sources ""` tira hooks,
+ * regras, plugins e CLAUDE.md pessoais; `--strict-mcp-config` impede que os
+ * servidores da máquina, inclusive os de produção, subam junto com um agent que
+ * lê diff de terceiro; `--no-session-persistence` deixa o histórico pessoal
+ * limpo. `--json-schema` continua sendo a proteção da saída estruturada.
  */
 export class ClaudeCodeRuntime implements Runtime {
   readonly id = "claude-code";
 
   constructor(private mcpConfigs: Map<string, McpServerConfig>) {}
 
-  private mcpConfigJson(servers: string[]): string {
-    const out: Record<string, unknown> = {};
-    for (const name of servers) {
-      const cfg = this.mcpConfigs.get(name);
-      if (!cfg) continue;
-      out[name] =
-        cfg.transport === "stdio"
-          ? { command: cfg.command![0], args: cfg.command!.slice(1), env: cfg.env ?? {} }
-          : { type: cfg.transport, url: cfg.url, headers: cfg.headers ?? {} };
-    }
-    return JSON.stringify({ mcpServers: out });
-  }
-
   async run(req: RuntimeRequest): Promise<RuntimeResult> {
-    const servers = req.mcpServers ?? [];
-    const allowed = Object.keys(req.tools).map((key) => {
-      const [server, ...rest] = key.split("__");
-      return `mcp__${server}__${rest.join("__")}`;
-    });
-
-    const args = ["-p", req.prompt, "--model", req.model, "--output-format", "json"];
-
-    if (req.system) args.push("--append-system-prompt", req.system);
-    if (req.outputSchema) args.push("--json-schema", JSON.stringify(req.outputSchema));
-    if (servers.length > 0) args.push("--mcp-config", this.mcpConfigJson(servers));
-    if (allowed.length > 0) args.push("--allowedTools", allowed.join(","));
-    args.push("--permission-prompts", "none");
+    const args = claudeArgs(req, this.mcpConfigs);
 
     const { stdout } = await run("claude", args, {
       maxBuffer: 64 * 1024 * 1024,

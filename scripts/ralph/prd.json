@@ -704,7 +704,7 @@
       "description": "Defeito B1. Cada passo sobe o Claude Code com hooks, regras, plugins e dezenove servidores MCP da máquina, incluindo os de produção. Passar --strict-mcp-config, para usar só os servidores do passo, --no-session-persistence, para não gravar sessão no histórico pessoal, e limitar as fontes de configuração com --setting-sources. Verificar com o demo que o login de assinatura continua funcionando depois do isolamento, porque --bare derruba esse login; se --setting-sources também derrubar, manter o que funciona e registrar no diário por que parou ali.",
       "done_when": "O demo roda na assinatura com o isolamento ligado, e o passo de triagem fica mensuravelmente mais rápido.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
