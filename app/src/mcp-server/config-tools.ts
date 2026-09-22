@@ -143,17 +143,23 @@ export function registerConfigTools(server: McpServer): void {
     "set_budget",
     {
       description:
-        "Ajusta o teto de gasto de um agent. Como o orcamento mora no spec, isso grava versao nova. Campo ausente fica como esta e null tira o teto.",
+        "Ajusta o teto de gasto de um agent. Como o orcamento mora no spec, isso grava versao nova. Campo ausente fica como esta e null tira o teto. O teto em tokens e o que protege modelo sem preco cadastrado, cujo custo em dolar fica zero.",
       inputSchema: {
         agentId: z.string(),
         perRunUsd: z.number().positive().nullable().optional(),
         perDayUsd: z.number().positive().nullable().optional(),
+        perRunTokens: z.number().int().positive().nullable().optional(),
+        perDayTokens: z.number().int().positive().nullable().optional(),
         note: z.string().optional(),
       },
     },
-    async ({ agentId, perRunUsd, perDayUsd, note }) =>
+    async ({ agentId, perRunUsd, perDayUsd, perRunTokens, perDayTokens, note }) =>
       respond(async () => {
-        const version = await agentService.setBudget(agentId, { perRunUsd, perDayUsd }, note);
+        const version = await agentService.setBudget(
+          agentId,
+          { perRunUsd, perDayUsd, perRunTokens, perDayTokens },
+          note,
+        );
         return { agentId, version: version.version, budget: version.spec.budget };
       }),
   );

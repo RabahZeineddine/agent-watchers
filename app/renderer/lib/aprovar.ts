@@ -16,7 +16,7 @@ type Decisao = "approved" | "rejected";
 interface PonteDeDecisao {
   approvals: {
     decide: (id: string, decisao: Decisao) => Promise<unknown>;
-    update: (id: string, payload: unknown) => Promise<unknown>;
+    update: (id: string, findings: unknown[]) => Promise<unknown>;
   };
 }
 
@@ -33,9 +33,11 @@ export async function decidir(approvalId: string, decisao: Decisao): Promise<voi
 }
 
 /**
- * Grava o texto revisado. Continua sendo edição de uma pessoa, e não
+ * Grava os achados revisados. Continua sendo edição de uma pessoa, e não
  * publicação: a pendência segue esperando o clique.
+ *
+ * Só os achados vão: o alvo da publicação fica com o que o executor gravou.
  */
-export async function gravarRevisao(approvalId: string, payload: unknown): Promise<void> {
-  await ponte().approvals.update(approvalId, payload);
+export async function gravarRevisao(approvalId: string, findings: unknown[]): Promise<void> {
+  await ponte().approvals.update(approvalId, findings);
 }

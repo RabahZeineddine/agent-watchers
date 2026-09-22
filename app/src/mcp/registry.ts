@@ -21,6 +21,10 @@ type Entry = {
   tools: ToolSet;
   timer: NodeJS.Timeout | null;
   refs: number;
+  /** O cadastro com que o processo subiu, para saber se ele ficou velho. */
+  fingerprint: string;
+  /** Saiu do pool por cadastro trocado, e fecha quando o último uso soltar. */
+  retired: boolean;
 };
 
 /**
@@ -32,6 +36,9 @@ type Entry = {
  */
 export class McpRegistry {
   private live = new Map<string, Entry>();
+  // Duas execuções ao mesmo tempo pedindo o mesmo servidor ainda frio subiriam
+  // dois processos, e o que perdesse a vaga no mapa ficaria órfão.
+  private connecting = new Map<string, Promise<Entry>>();
 
   constructor(private configs: Map<string, McpServerConfig>) {}
 
@@ -46,7 +53,15 @@ export class McpRegistry {
   private async connect(name: string): Promise<Entry> {
     const existing = this.live.get(name);
     if (existing) return existing;
+    const inFlight = this.connecting.get(name);
+    if (inFlight) return inFlight;
 
+    const pending = this.spawn(name).finally(() => this.connecting.delete(name));
+    this.connecting.set(name, pending);
+    return pending;
+  }
+
+  private async spawn(name: string): Promise<Entry> {
     const cfg = this.configs.get(name);
     if (!cfg) throw new Error(`servidor MCP "${name}" nao cadastrado`);
 
@@ -63,20 +78,63 @@ export class McpRegistry {
             transport: { type: cfg.transport, url: cfg.url!, headers: cfg.headers },
           });
 
-    const entry: Entry = { client, tools: await client.tools(), timer: null, refs: 0 };
+    const entry: Entry = {
+      client,
+      tools: await client.tools(),
+      timer: null,
+      refs: 0,
+      fingerprint: fingerprint(cfg),
+      retired: false,
+    };
     this.live.set(name, entry);
     return entry;
   }
 
-  private scheduleIdleClose(name: string): void {
-    const entry = this.live.get(name);
-    if (!entry || entry.refs > 0) return;
+  /**
+   * Troca o cadastro sem derrubar o que continua igual.
+   *
+   * O pool vive mais que uma execução, então o cadastro pode mudar com o
+   * processo de pé. Servidor removido ou alterado sai do pool; se alguém ainda
+   * o usa, fecha quando o uso soltar, e a próxima conexão sobe com o cadastro
+   * novo.
+   */
+  reconfigure(configs: Map<string, McpServerConfig>): void {
+    this.configs = configs;
+    for (const [name, entry] of this.live) {
+      const cfg = configs.get(name);
+      if (cfg && fingerprint(cfg) === entry.fingerprint) continue;
+      this.live.delete(name);
+      entry.retired = true;
+      if (entry.refs === 0) this.close(entry);
+    }
+  }
+
+  private close(entry: Entry): void {
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = null;
+    void entry.client.close().catch(() => undefined);
+  }
+
+  private take(entry: Entry): void {
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    entry.refs += 1;
+  }
+
+  private drop(name: string, entry: Entry): void {
+    entry.refs = Math.max(0, entry.refs - 1);
+    if (entry.refs > 0) return;
+    if (entry.retired) {
+      this.close(entry);
+      return;
+    }
     const cfg = this.configs.get(name)!;
     entry.timer = setTimeout(() => {
-      if (entry.refs === 0) {
-        void entry.client.close();
-        this.live.delete(name);
-      }
+      if (entry.refs > 0) return;
+      if (this.live.get(name) === entry) this.live.delete(name);
+      this.close(entry);
     }, cfg.idleTimeoutMs);
     entry.timer.unref();
   }
@@ -100,17 +158,13 @@ export class McpRegistry {
       wanted.set(ref.server, list);
     }
 
-    const taken: string[] = [];
+    const taken: [string, Entry][] = [];
     const tools: ToolSet = {};
 
     for (const [server, list] of wanted) {
       const entry = await this.connect(server);
-      if (entry.timer) {
-        clearTimeout(entry.timer);
-        entry.timer = null;
-      }
-      entry.refs += 1;
-      taken.push(server);
+      this.take(entry);
+      taken.push([server, entry]);
 
       for (const ref of list) {
         const found = entry.tools[ref.tool];
@@ -122,12 +176,7 @@ export class McpRegistry {
     return {
       tools,
       release: () => {
-        for (const server of taken) {
-          const entry = this.live.get(server);
-          if (!entry) continue;
-          entry.refs = Math.max(0, entry.refs - 1);
-          this.scheduleIdleClose(server);
-        }
+        for (const [server, entry] of taken) this.drop(server, entry);
       },
     };
   }
@@ -172,16 +221,11 @@ export class McpRegistry {
     if (!found) throw new Error(`ferramenta "${tool}" nao existe no servidor "${server}"`);
     if (!found.execute) throw new Error(`ferramenta "${tool}" do servidor "${server}" nao executa`);
 
-    if (entry.timer) {
-      clearTimeout(entry.timer);
-      entry.timer = null;
-    }
-    entry.refs += 1;
+    this.take(entry);
     try {
       return await found.execute(args, { toolCallId: randomUUID(), messages: [] });
     } finally {
-      entry.refs = Math.max(0, entry.refs - 1);
-      this.scheduleIdleClose(server);
+      this.drop(server, entry);
     }
   }
 
@@ -197,6 +241,11 @@ export class McpRegistry {
       this.live.delete(name);
     }
   }
+}
+
+/** Só o que muda o processo que sobe; o tempo ocioso vale na próxima soltura. */
+function fingerprint(cfg: McpServerConfig): string {
+  return JSON.stringify([cfg.transport, cfg.command, cfg.env, cfg.url, cfg.headers]);
 }
 
 /**

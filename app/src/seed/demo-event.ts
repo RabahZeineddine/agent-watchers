@@ -22,6 +22,8 @@ export const demoPr: PrContext = {
   fileCount: 2,
   draft: false,
   changedFiles: ["src/Auth/TokenValidator.cs", "src/Auth/SessionCache.cs"],
+  omittedFiles: [],
+  omittedSummary: "nenhum",
   diff: `--- src/Auth/TokenValidator.cs (modified, +9 -4)
 @@ -38,10 +38,15 @@ public sealed class TokenValidator
 -    public bool IsExpired(Token token) => token.ExpiresAt < DateTime.UtcNow;

@@ -146,7 +146,7 @@ export class McpService {
 
   /**
    * Registro descartavel com um servidor so. O registro do executor fica vivo
-   * enquanto o run dura, mas conferir cadastro e operacao avulsa: abre, olha e
+   * entre execuções, mas conferir cadastro e operacao avulsa: abre, olha e
    * fecha, sem deixar processo para tras.
    */
   private async probe<T>(name: string, fn: (registry: McpRegistry) => Promise<T>): Promise<T> {

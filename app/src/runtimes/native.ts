@@ -1,5 +1,6 @@
 import { generateText, stepCountIs, type LanguageModel } from "ai";
 import { buildProviders, type ProviderEntry } from "../providers/registry.js";
+import { costOf, priceService, type PriceService } from "../services/price-service.js";
 import type { Runtime, RuntimeRequest, RuntimeResult } from "./types.js";
 
 /**
@@ -13,7 +14,10 @@ export class NativeRuntime implements Runtime {
 
   // Recebe os provedores prontos porque quem monta o executor ja os remontou
   // com o que veio do keychain. Construir aqui de novo leria so o ambiente.
-  constructor(private readonly providers: Record<string, ProviderEntry> = buildProviders()) {}
+  constructor(
+    private readonly providers: Record<string, ProviderEntry> = buildProviders(),
+    private readonly prices: Pick<PriceService, "priceFor"> = priceService,
+  ) {}
 
   private modelFor(provider: string, model: string): LanguageModel {
     const entry = this.providers[provider];
@@ -44,13 +48,20 @@ export class NativeRuntime implements Runtime {
       for (const call of step.toolCalls ?? []) toolsUsed.add(call.toolName);
     }
 
+    // `totalUsage` soma todas as voltas do laço de ferramentas; `usage` seria
+    // só a última, e o passo que chamou cinco ferramentas pareceria barato.
+    const promptTokens = result.totalUsage?.inputTokens ?? 0;
+    const completionTokens = result.totalUsage?.outputTokens ?? 0;
+    const price = await this.prices.priceFor(req.provider, req.model);
+
     return {
       text: result.text,
       structured: req.outputSchema ? parseJson(result.text) : undefined,
-      promptTokens: result.usage?.inputTokens ?? 0,
-      completionTokens: result.usage?.outputTokens ?? 0,
-      costUsd: 0,
+      promptTokens,
+      completionTokens,
+      costUsd: price ? costOf(price, promptTokens, completionTokens) : 0,
       billable: true,
+      priced: price !== undefined,
       toolsUsed: [...toolsUsed],
     };
   }

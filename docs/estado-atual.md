@@ -2,7 +2,7 @@
 
 Projeto renomeado de Agent Watchers para Locum em 19 de setembro de 2026.
 
-Atualizado em 21 de setembro de 2026.
+Atualizado em 22 de setembro de 2026.
 
 ## O que existe e roda
 
@@ -13,18 +13,19 @@ que a interface vai usar.
 
 | área | estado |
 |---|---|
-| esquema SQLite com 18 tabelas | pronto |
-| migração de esquema no aplicativo | três migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
+| esquema SQLite com 20 tabelas | pronto |
+| migração de esquema no aplicativo | quatro migrações em `app/drizzle` aplicadas na subida do processo principal, banco existente adotado sem recriar tabela |
 | AgentSpec em zod, herança de ferramentas, ordenação topológica | pronto |
 | registro de provedores e resolução de fallback por máquina | pronto, com cadastro pelo serviço; a chave de cada provedor entra pela interface, vai para o keychain e o registro é remontado na hora |
 | provedor compatível com OpenAI cadastrável | identificador, nome e endereço base no banco, o registro monta os fixos mais os cadastrados, chave própria no keychain e remoção avisando onde o provedor aparece |
-| registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco |
-| runtime nativo sobre o AI SDK | pronto, sem teste com chave real |
+| registro MCP com spawn sob demanda e encerramento por ocioso | pronto, lendo o cadastro do banco; um pool só por processo, que vive entre execuções, reaproveita o servidor que continua com o mesmo cadastro, troca o que mudou e fecha no tempo ocioso, no fim do comando da linha de comando ou na saída do aplicativo |
+| runtime nativo sobre o AI SDK | pronto, sem teste com chave real; custo calculado pelos tokens do laço inteiro vezes o preço cadastrado em `model_prices`, e zero com aviso quando o modelo não tem preço |
 | runtime de assinatura sobre `claude -p` | pronto e verificado |
 | executor durável com retomada | pronto e verificado |
-| orçamento por execução e por dia | pronto e verificado |
-| fila de aprovação com identificador externo antes da publicação | pronto |
+| orçamento por execução e por dia | teto em dólar e teto em tokens, por run e por dia; o gasto vai para `usage_daily` em toda saída do trecho executado, `done`, `paused` ou `failed`, uma vez por trecho, e a retomada não conta execução nova; o teto do dia soma o que o trecho em curso ainda não gravou |
+| fila de aprovação com identificador externo antes da publicação | pronto; a decisão fecha o passo de ação, em `done` aprovado e em `skipped` rejeitado, e o executor retoma o run até o fim; na retomada, passo parado em aguardando com a pendência já fechada é reconciliado pela decisão gravada; a edição pela janela troca só a lista de achados, validada um a um, e dono, repositório e pull request ficam os que o executor gravou |
 | fonte GitHub com varredura por cursor | escrito, sem teste com token; o token sai do cofre e o ambiente é o caminho de trás |
+| corte do diff | lockfile, arquivo minificado, pasta de build e código gerado saem antes do modelo; depois vale um teto de caracteres, 200 mil por padrão e trocável pelo `GithubService`, cortando por arquivo inteiro; o evento guarda o que ficou fora e por quê, e triagem e auditoria recebem a lista para não afirmar o que não leram |
 | fonte por consulta a servidor MCP | pronta e verificada contra o servidor de brinquedo; cursor por servidor e ferramenta, `{{cursor}}` trocado nos argumentos do cadastro, e deduplicação pelo `id` do item |
 | fonte de menções do Slack | pronta e verificada contra o servidor de brinquedo; o servidor MCP de Slack e os canais entram pela configuração, um cursor por canal, e o evento sai com autor, canal, texto e vínculo da thread; nenhum token de Slack no Locum |
 | agent de digest do Slack | pronto e verificado com conversa sintética; a ingestão agrupa por canal e por thread e filtra ruído antes do modelo, e o digest para na inbox como proposta de leitura, sem ação de saída |
@@ -38,7 +39,7 @@ que a interface vai usar.
 | reconciliador de review humano | pronto, verificado com evento e reviews sintéticos, sem teste com token; disparado pela batida do agendador, com cursor próprio por execução |
 | métricas por versão de agent | agregação de `finding_outcomes` em `agent_metrics`, por versão mais conjunto de skills |
 | agendador | cursor de tempo por gatilho, batido de fora, sem relógio próprio; acordado pelo evento de energia do Electron |
-| camada de serviço, vinte serviços | pronto |
+| camada de serviço, vinte e um serviços | pronto, com o `PriceService` do preço por modelo |
 | servidor MCP próprio, 19 ferramentas | pronto |
 | reconciliador de review humano | pronto, sem teste com token |
 | métricas por versão | pronto |
@@ -47,14 +48,14 @@ que a interface vai usar.
 | credenciais no keychain | `safeStorage` cifra, o banco guarda só a referência, e sem keychain vale a variável de ambiente |
 | notificação nativa | um aviso por run, para achado crítico na fila ou run que falhou, com o clique apontando para o run |
 | deep link `locum://` | esquema registrado no sistema, retorno de OAuth com PKCE roteado do `open-url` até o cofre |
-| ponte entre janela e serviços | preload em sandbox, 62 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada, e guarda de compilação contra canal que abra tarefa ou publique no Slack |
+| ponte entre janela e serviços | preload em sandbox, 65 canais tipados pelos próprios métodos dos serviços, decisão de aprovação só encaminhada, e guarda de compilação contra canal que abra tarefa ou publique no Slack |
 | interface | esqueleto do renderer em Vite com React e Tailwind, construído para `dist/renderer` e carregado pela janela, já lendo pela ponte |
 | componentes da interface | shadcn e AI Elements vendorizados em `app/renderer/components`, tema escuro por padrão, sem dependência de rede |
 | cliente da ponte no renderer | `app/renderer/lib/bridge.ts` com catálogo de leitura escrito à mão e hook `useRead`, a janela lendo agents, execuções e fila |
 | layout e roteamento | barra lateral com os quatro destinos, rota por hash com sub-rota de detalhe, paleta de comandos pelo atalho, ainda sem comando |
 | tela de execuções | lista virtualizada com estado, custo e agent, detalhe com a linha do tempo dos passos e botão de reexecutar por passo |
 | tela de agents | somente leitura: lista, histórico de versões, comparação de spec linha a linha, e por passo o modelo pedido contra o que esta máquina resolve |
-| tela de configuração | provedores com disponibilidade e campo de chave por provedor, cadastro de gateway compatível com OpenAI, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura e filtro de autoria, canais do Slack observados por servidor MCP, e orçamentos com o gasto do dia |
+| tela de configuração | provedores com disponibilidade e campo de chave por provedor, cadastro de gateway compatível com OpenAI, tabela de substituição de modelo, servidores MCP com testar conexão e listar ferramentas por token, credencial do GitHub com guardar, conferir e esquecer, repositórios observados com gatilho de varredura e filtro de autoria, canais do Slack observados por servidor MCP, preço por modelo editável na linha de cada provedor, e orçamentos com o gasto do dia em dólar e em tokens, avisando quando um modelo sem preço deixa o teto medindo só em tokens |
 | grafo da execução | desenho somente leitura sobre a família de workflow do AI Elements, lendo `needs` do spec, com estado por cor da borda |
 | base de i18n | i18next e react-i18next com dicionário em `app/locales`, idioma vindo de `app.getLocale()` pela ponte, preferência em `settings` por cima, plural por `Intl.PluralRules` e chave ausente estourando fora de app empacotado |
 | texto do processo principal | menu da bandeja, notificação, item de login e a saída do `--smoke` pelo mesmo dicionário, com instância própria do i18next sem React |
@@ -64,12 +65,14 @@ que a interface vai usar.
 | seleção de idioma | seção na tela de configuração com os idiomas disponíveis e a opção de seguir o sistema, gravada em `settings`, aplicada sem recarregar a janela e valendo também para bandeja e notificação |
 | ícone do aplicativo | `app/build/icon.svg` versionado e `app/build/icon.icns` gerado dele por `npm run build:icon`, com `sips` e `iconutil` do próprio sistema |
 | empacotamento | electron-builder por `app/electron-builder.yml`, alvos `dmg` e `zip` para arm64 e x64, saída em `app/release`, com dicionário, migração e binário nativo dentro do pacote; `node_modules` fora e o processo principal embutido, `.app` de 234 MB e imagem de 100 MB |
+| fumaça fora do banco real | `--smoke` sem `LOCUM_HOME` roda numa pasta de rascunho vazia, semeada com o agent `pr-review` e apagada na saída; com `LOCUM_HOME`, como o loop faz, a pasta escolhida vale |
 | fumaça contra o pacote | `npm run smoke:dist` roda o binário de dentro do `.app` com `--smoke`, com a mesma bateria do smoke de desenvolvimento |
 | atualização automática | electron-updater atrás de interruptor em `settings`, desligado por padrão, sem carregar o módulo nem sair para a rede enquanto estiver desligado |
 | credencial do GitHub na interface | seção na configuração guarda o token no keychain pelo `GithubService`, mostra se existe, de quem é e quando foi conferido, e nunca o valor; o botão de conferir pergunta ao GitHub a conta e os escopos |
 | repositórios observados na interface | seção na configuração cadastra dono, padrão de repositório e cadência, e mostra a última varredura e a próxima; o gatilho nasce parado e ligar é o segundo clique |
 | canais do Slack na interface | seção na configuração escolhe qual servidor MCP responde pelo Slack e quais canais o Locum lê, sem campo de token: a credencial é a do servidor MCP |
 | guia da primeira execução real | `docs/primeira-execucao.md` na ordem em que alguém faria, do provedor ao primeiro review na fila, com a seção de tracker explicando onde pegar a credencial, o que o Locum cria e por que abrir tarefa nunca é automático |
+| teste unitário | `npm test` pelo executor embutido do Node com `tsx` como carregador, sem dependência nova; testes em `app/test`, banco em memória montado pelas migrações, e `LOCUM_HOME` apontado para pasta temporária antes de qualquer importação, para que nenhum teste alcance o banco de verdade; cobre ordenação topológica, resolução de fallback com ciclo, rebaixamento de modo de ação, o run que termina depois da decisão, aprovada ou rejeitada, e o orçamento: custo pelo preço cadastrado, gasto gravado ao pausar e ao falhar, e teto em dólar e em tokens interrompendo o runtime nativo, o corte do diff: descarte por tipo de arquivo, teto por arquivo inteiro e a lista chegando ao prompt, a edição da revisão que não troca o alvo, e o pool MCP: duas execuções no mesmo processo do servidor, fechamento depois do ócio e troca de cadastro |
 
 ## Execução verificada
 
@@ -129,6 +132,7 @@ npm run build                         # processo principal mais página
 npm run smoke                         # sobe o Electron sem janela e sai 0
 npm run check:i18n                    # acusa texto cravado fora do dicionário
 npm run verify                        # tipos, guarda de i18n, build e smoke
+npm test                              # teste unitário, banco em memória
 npm run build:icon                    # regera build/icon.icns a partir do SVG
 npm run dist:dir                      # empacota sem instalador, em release/mac-<arch>/Locum.app
 npm run dist                          # gera o .dmg e o .zip
@@ -506,6 +510,13 @@ ninguém escreve nela: o teto que o executor lê antes de cada passo está no
 mostraria vazio para sempre. O `AgentService.budgets()` cruza a versão do topo
 com `usage_daily`, que é onde o gasto acumula.
 
+**Modelo sem preço custa zero, e o teto em dólar não o alcança.** O runtime
+nativo multiplica os tokens pelo preço de `model_prices`, que alguém cadastra
+na linha do provedor; sem linha ali, o custo gravado é zero. Para esses
+modelos o que protege é `perRunTokens` e `perDayTokens` no `budget` do spec, e
+a seção de orçamentos avisa qual modelo do agent está nessa situação. A
+assinatura fica fora do aviso: ela gasta cota, não token cobrado.
+
 **Credencial se acha por quem aponta, não por nome.** A tela de configuração
 poderia adivinhar que o provider `anthropic` usa a referência
 `provider/anthropic`, e acertaria hoje. Quem escolhe a referência, porém, é
@@ -844,6 +855,23 @@ gate é montada. É a única mudança de núcleo do M8, e é de propósito: a ga
 vale como porta única se ela for sempre a mesma porta, e um mapa de handlers
 montado em cada chamador deixaria um deles registrar handler diferente sem
 ninguém notar. Fonte nova não encosta no núcleo; ação nova entra por essa linha.
+
+**Claude Code com a configuração da máquina.** Sem isolamento, cada passo de
+modelo subia com a configuração pessoal inteira: na mensagem de início, 27
+servidores MCP, 13 plugins, 331 ferramentas e cinco hooks de sessão, incluindo
+servidores de produção ao alcance de um agent que lê diff de terceiro. O
+adaptador passa `--setting-sources ""`, `--strict-mcp-config` e
+`--no-session-persistence`, e a mesma chamada cai para zero servidor, dois
+plugins embutidos, 30 ferramentas e nenhum hook. O login de assinatura
+sobrevive, ao contrário do `--bare`. A subida de um `-p` mínimo caiu de 6,9 s
+para 3,3 s, e deixaram de entrar 16 mil tokens de esquema no cache a cada
+processo.
+
+O ganho na triagem inteira é menor do que a auditoria previa. Os 62 segundos
+citados lá vêm da execução plantada pelo `fixture:run`, que não chama modelo. No
+demo real a triagem leva uns 40 segundos com ou sem isolamento, porque quem
+domina é a geração: 38 s para 2237 tokens de saída antes, 42 s para 3948
+depois. O que o isolamento tira são os cerca de 3,5 s de subida por passo.
 
 ## O desenho cobrado
 

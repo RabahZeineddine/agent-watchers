@@ -50,11 +50,16 @@ export async function ensureAgentHistory(): Promise<AgentVersion[]> {
   const antes = await agentService.listVersions(agentId);
   const topo = antes[0];
 
+  // O par que a tela compara é o topo com o anterior, e não qualquer versão do
+  // histórico: quando o spec semente muda, o `ensureDemoRun` grava a versão nova
+  // por cima da canônica antiga, e o rascunho plantado fica fundo demais para
+  // aparecer na comparação.
+  const anterior = antes[1];
   const jaServe =
-    antes.length >= 2 &&
     topo !== undefined &&
+    anterior !== undefined &&
     modoDaAcao(topo) === "approve" &&
-    antes.some((versao) => modoDaAcao(versao) !== "approve");
+    modoDaAcao(anterior) !== "approve";
 
   if (!jaServe) {
     // `human` porque `agent` rebaixaria o `draft` para `approve` na gravacao, e

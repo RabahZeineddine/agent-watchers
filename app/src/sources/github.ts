@@ -3,17 +3,12 @@ import { Octokit } from "octokit";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import type { ActionHandler } from "../approval/gate.js";
+import type { ReviewFinding } from "../config/types.js";
 import type { EventPayload } from "../executor/executor.js";
-import { GITHUB_TOKEN_ENV, githubToken } from "../services/github-service.js";
+import { GITHUB_TOKEN_ENV, githubService, githubToken } from "../services/github-service.js";
+import { limitDiff, type OmittedFile } from "./diff-limit.js";
 
-export type Finding = {
-  file?: string;
-  line?: number;
-  severity: "critical" | "high" | "medium" | "low";
-  category?: string;
-  problem: string;
-  fix?: string;
-};
+export type Finding = ReviewFinding;
 
 export type ReviewPayload = { owner: string; repo: string; pull: number; findings: Finding[] };
 
@@ -42,6 +37,14 @@ export type PrContext = EventPayload & {
   title: string;
   description: string;
   diff: string;
+  /**
+   * O que ficou fora do diff e por quê.
+   *
+   * Opcional porque evento gravado antes do corte não tem, e reexecutar um
+   * desses não pode quebrar por falta de campo.
+   */
+  omittedFiles?: OmittedFile[];
+  omittedSummary?: string;
   headSha: string;
   /**
    * Quem abriu, para onde vai e o tamanho da mudança.
@@ -68,9 +71,7 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
   const { data: pr } = await gh.rest.pulls.get({ owner, repo, pull_number: pull });
   const files = await gh.paginate(gh.rest.pulls.listFiles, { owner, repo, pull_number: pull, per_page: 100 });
 
-  const diff = files
-    .map((f) => `--- ${f.filename} (${f.status}, +${f.additions} -${f.deletions})\n${f.patch ?? "(sem patch)"}`)
-    .join("\n\n");
+  const { diff, omittedFiles, omittedSummary } = limitDiff(files, await githubService.diffMaxChars());
 
   return {
     repo: `${owner}/${repo}`,
@@ -82,6 +83,8 @@ export async function fetchPr(owner: string, repo: string, pull: number): Promis
     headSha: pr.head.sha,
     changedFiles: files.map((f) => f.filename),
     diff,
+    omittedFiles,
+    omittedSummary,
     author: pr.user?.login ?? "desconhecido",
     baseBranch: pr.base.ref,
     headBranch: pr.head.ref,

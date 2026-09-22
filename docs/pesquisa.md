@@ -20,9 +20,11 @@ suposição. Datado de setembro de 2026; vale reconferir antes de decidir de nov
 - `--bare` reduz o tempo de inicialização pulando descoberta de hooks, skills,
   comandos, subagents, plugins, MCP e CLAUDE.md. Em contrapartida não lê
   credencial OAuth nem keychain, e passa a exigir `ANTHROPIC_API_KEY`.
-- Consequência para nós: a via de assinatura não pode usar `--bare`, e por isso
-  carrega a configuração pessoal da máquina. A proteção contra hooks que alteram
-  o estilo da saída é `--json-schema`.
+- Consequência para nós: a via de assinatura não pode usar `--bare`. O
+  isolamento sai de outras três flags, que mantêm o login: `--setting-sources ""`
+  (sem hooks, plugins, regras e CLAUDE.md pessoais), `--strict-mcp-config` e
+  `--no-session-persistence`. Conferido na versão 2.1.280 com `apiKeySource`
+  igual a `none` na mensagem de início.
 - `--output-format json` traz `result`, `structured_output`, `total_cost_usd`,
   `session_id` e uso. O custo é estimativa do lado do cliente.
 - Continuação por `--continue` ou `--resume <id>`, e o id é encontrado em

@@ -39,6 +39,17 @@ server.registerTool(
   async ({ a, b }) => ({ content: [{ type: "text", text: String(a + b) }] }),
 );
 
+// Quem pergunta é o teste do pool: o mesmo pid em duas execuções é a prova de
+// que o processo foi reaproveitado, e não subido de novo.
+server.registerTool(
+  "pid",
+  {
+    description: "Devolve o pid do processo do servidor.",
+    inputSchema: {},
+  },
+  async () => ({ content: [{ type: "text", text: String(process.pid) }] }),
+);
+
 server.registerTool(
   "slow",
   {

@@ -6,7 +6,7 @@ import {
   type LocumApi,
   type WindowLanguage,
 } from "./bridge-contract.js";
-import { buildGate } from "../src/executor/build.js";
+import { buildExecutor } from "../src/executor/build.js";
 import { aplicarIdioma } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
@@ -16,6 +16,7 @@ import { i18nService } from "../src/services/i18n-service.js";
 import { machineService } from "../src/services/machine-service.js";
 import { mcpService } from "../src/services/mcp-service.js";
 import { metricsService } from "../src/services/metrics-service.js";
+import { priceService } from "../src/services/price-service.js";
 import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
 import { slackService } from "../src/services/slack-service.js";
@@ -95,7 +96,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "approvals.listPending": () => approvalService.listPending(),
     "approvals.get": (approvalId) => approvalService.get(approvalId),
-    "approvals.update": (approvalId, payload) => approvalService.updatePayload(approvalId, payload),
+    "approvals.update": (approvalId, findings) => approvalService.updateFindings(approvalId, findings),
 
     "approvals.decide": async (approvalId, decision) => {
       if (decision !== "approved" && decision !== "rejected") {
@@ -104,7 +105,8 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
       // A gate recusa pendencia inexistente ou ja resolvida, publica com o
       // externalId que ja estava gravado, e e a unica que fala com o handler de
       // publicacao. A ponte nao repete nada disso: ela leva o clique e volta.
-      await buildGate().decide(approvalId, decision);
+      // É o executor quem chama a gate, para o run seguir depois da decisão.
+      await (await buildExecutor()).decide(approvalId, decision);
       await refreshTray();
       return { approvalId, decision };
     },
@@ -135,6 +137,9 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "providers.saveSecret": (nome, chave) => providerService.setSecret(nome, chave),
     "providers.forgetSecret": (nome) => providerService.clearSecret(nome),
     "providers.checkSecret": (nome) => providerService.check(nome),
+    "providers.prices": () => priceService.list(),
+    "providers.setPrice": (preco) => priceService.set(preco),
+    "providers.removePrice": (provedor, modelo) => priceService.remove(provedor, modelo),
 
     "credentials.overview": () => credentialService.overview(),
 

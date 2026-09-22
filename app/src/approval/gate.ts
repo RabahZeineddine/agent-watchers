@@ -91,8 +91,12 @@ export class ApprovalGate {
     return "published";
   }
 
-  /** Chamado pela inbox quando voce clica. */
-  async decide(approvalId: string, decision: "approved" | "rejected"): Promise<void> {
+  /**
+   * Chamado pela inbox quando você clica. Devolve o run da pendência, que quem
+   * chamou precisa retomar: a gate só fecha a pendência e o passo, e rodar o
+   * resto do pipeline é trabalho do executor.
+   */
+  async decide(approvalId: string, decision: "approved" | "rejected"): Promise<string> {
     const [row] = await db.select().from(schema.approvals).where(eq(schema.approvals.id, approvalId));
     if (!row) throw new Error(`aprovacao ${approvalId} nao encontrada`);
     if (row.status !== "pending") throw new Error(`aprovacao ${approvalId} ja resolvida: ${row.status}`);
@@ -104,6 +108,8 @@ export class ApprovalGate {
       await handler.publish(row.payload, row.externalId!);
     }
     await this.close(approvalId, decision);
+    await settleStep(row.stepId, decision);
+    return row.runId;
   }
 
   private async close(id: string, status: string): Promise<void> {
@@ -112,4 +118,27 @@ export class ApprovalGate {
       .set({ status, decidedAt: Math.floor(Date.now() / 1000) })
       .where(eq(schema.approvals.id, id));
   }
+}
+
+/**
+ * Leva o passo de ação ao estado que a decisão gravada na pendência diz.
+ *
+ * Mora fora da gate porque o executor também chama, na retomada: quem caiu
+ * entre fechar a pendência e atualizar o passo deixaria o passo em
+ * `awaiting_approval` com a decisão já tomada, e a retomada pausaria de novo
+ * para sempre. Rejeitar pula o passo em vez de falhar, porque rejeitar é uma
+ * resposta válida e o que vem depois ainda pode rodar.
+ */
+export async function settleStep(stepId: string, status: string): Promise<{ output: unknown }> {
+  const endedAt = Math.floor(Date.now() / 1000);
+  if (status === "rejected") {
+    await db
+      .update(schema.steps)
+      .set({ status: "skipped", error: "rejeitado na fila de aprovação", output: null, endedAt })
+      .where(eq(schema.steps.id, stepId));
+    return { output: null };
+  }
+  const output = { state: status === "drafted" ? "drafted" : "published" };
+  await db.update(schema.steps).set({ status: "done", output, endedAt }).where(eq(schema.steps.id, stepId));
+  return { output };
 }

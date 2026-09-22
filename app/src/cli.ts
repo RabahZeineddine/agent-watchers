@@ -1,5 +1,5 @@
 import { McpTransport } from "./config/types.js";
-import { buildExecutor, buildGate } from "./executor/build.js";
+import { buildExecutor, closeMcpPool } from "./executor/build.js";
 import { agentService } from "./services/agent-service.js";
 import { approvalService } from "./services/approval-service.js";
 import { credentialService } from "./services/credential-service.js";
@@ -524,8 +524,8 @@ async function main(): Promise<void> {
     case "approve":
     case "reject": {
       if (!arg) throw new Error(`uso: ${cmd} <approval-id>`);
-      await buildGate().decide(arg, cmd === "approve" ? "approved" : "rejected");
-      console.log(`${arg} ${cmd === "approve" ? "aprovado e publicado" : "rejeitado"}`);
+      const estado = await (await executor()).decide(arg, cmd === "approve" ? "approved" : "rejected");
+      console.log(`${arg} ${cmd === "approve" ? "aprovado e publicado" : "rejeitado"}, run ${estado}`);
       break;
     }
     case "resume": {
@@ -589,7 +589,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exitCode = 1;
-});
+main()
+  .catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exitCode = 1;
+  })
+  .finally(() => closeMcpPool().catch(() => undefined));

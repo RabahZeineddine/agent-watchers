@@ -13,6 +13,7 @@
     "mcp": "tsx src/mcp-server/index.ts",
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --import ./test/setup.ts --test \"test/**/*.test.ts\"",
     "check:i18n": "node scripts/check-i18n.mjs",
     "build:main": "node scripts/build-main.mjs",
     "build:renderer": "tsc -p renderer/tsconfig.json --noEmit && vite build --config renderer/vite.config.ts renderer",

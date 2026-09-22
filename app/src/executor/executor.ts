@@ -14,8 +14,8 @@ import { resolveModel, type FallbackRow } from "../providers/registry.js";
 import { providerService } from "../services/provider-service.js";
 import type { Runtime } from "../runtimes/types.js";
 import { selectSkills, skillsPreamble, type SkillContext } from "../skills/loader.js";
-import { ApprovalGate } from "../approval/gate.js";
-import { BudgetExceeded, assertWithinBudget, recordSpend } from "./budget.js";
+import { ApprovalGate, settleStep } from "../approval/gate.js";
+import { BudgetExceeded, assertWithinBudget, recordSpend, type Spend } from "./budget.js";
 
 export type EventPayload = {
   repo: string;
@@ -31,6 +31,8 @@ type Deps = {
 };
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+type StepOutcome = { kind: "ok"; output: unknown; costUsd: number; tokens: number; billable: boolean };
 
 /**
  * Maquina de estado duravel.
@@ -49,6 +51,18 @@ export class Executor {
     const id = randomUUID();
     await db.insert(schema.runs).values({ id, agentVersionId, eventId, triggerId, status: "queued" });
     return id;
+  }
+
+  /**
+   * Decide a pendência e retoma o run dela.
+   *
+   * A decisão sozinha não basta: sem retomar, o run fica `paused`, o que vem
+   * depois da ação nunca roda e a tela continua mostrando aguardando numa
+   * execução que já saiu.
+   */
+  async decide(approvalId: string, decision: "approved" | "rejected"): Promise<"done" | "paused" | "failed"> {
+    const runId = await this.deps.gate.decide(approvalId, decision);
+    return this.execute(runId);
   }
 
   /** Runs interrompidos por fechamento do app ou por crash. */
@@ -91,7 +105,13 @@ export class Executor {
 
     const outputs = new Map<string, unknown>();
     let runCost = run.costUsd;
+    let runTokens = run.tokens;
     let runEstimate = run.estimateUsd;
+    // O que este trecho gastou. Vai para o dia em qualquer saída, e não só em
+    // `done`: o review para na fila antes de terminar, e gravar só no fim
+    // deixava o teto diário sem ver gasto nenhum.
+    const segment: Spend = { usd: 0, tokens: 0 };
+    const newRun = run.startedAt === null;
 
     try {
       for (const [idx, step] of topoSort(spec.steps).entries()) {
@@ -102,7 +122,13 @@ export class Executor {
           continue;
         }
         if (existing?.status === "awaiting_approval") {
-          return this.pause(runId);
+          const [approval] = await db
+            .select({ status: schema.approvals.status })
+            .from(schema.approvals)
+            .where(eq(schema.approvals.stepId, existing.id));
+          if (!approval || approval.status === "pending") return this.pause(runId);
+          outputs.set(step.key, (await settleStep(existing.id, approval.status)).output);
+          continue;
         }
 
         const stepId = existing?.id ?? randomUUID();
@@ -119,7 +145,17 @@ export class Executor {
 
         const outcome =
           step.type === "model"
-            ? await this.runModelStep({ runId, stepId, step, spec, payload, outputs, fallbacks, runCost })
+            ? await this.runModelStep({
+                runId,
+                stepId,
+                step,
+                spec,
+                payload,
+                outputs,
+                fallbacks,
+                run: { usd: runCost, tokens: runTokens },
+                segment,
+              })
             : await this.runActionStep({ runId, stepId, step, outputs, payload });
 
         if (outcome.kind === "paused") return this.pause(runId);
@@ -128,16 +164,20 @@ export class Executor {
           continue;
         }
 
-        if (outcome.billable) runCost += outcome.costUsd;
+        if (outcome.billable) {
+          runCost += outcome.costUsd;
+          runTokens += outcome.tokens;
+          segment.usd += outcome.costUsd;
+          segment.tokens += outcome.tokens;
+        }
         runEstimate += outcome.costUsd;
         outputs.set(step.key, outcome.output);
         await db
           .update(schema.runs)
-          .set({ costUsd: runCost, estimateUsd: runEstimate })
+          .set({ costUsd: runCost, tokens: runTokens, estimateUsd: runEstimate })
           .where(eq(schema.runs.id, runId));
       }
 
-      await recordSpend(spec.id, runCost);
       await db
         .update(schema.runs)
         .set({ status: "done", endedAt: nowSec() })
@@ -153,7 +193,9 @@ export class Executor {
         .where(eq(schema.runs.id, runId));
       return status;
     } finally {
-      await this.deps.mcp.closeAll().catch(() => undefined);
+      // Servidor MCP não fecha aqui: o registro vive entre execuções e cada
+      // processo sai sozinho depois do tempo ocioso, ou no encerramento do app.
+      await recordSpend(spec.id, segment, newRun);
     }
   }
 
@@ -178,11 +220,12 @@ export class Executor {
     payload: EventPayload;
     outputs: Map<string, unknown>;
     fallbacks: FallbackRow[];
-    runCost: number;
-  }): Promise<{ kind: "ok"; output: unknown; costUsd: number; billable: boolean } | { kind: "skipped" }> {
-    const { runId, stepId, step, spec, payload, outputs, fallbacks, runCost } = args;
+    run: Spend;
+    segment: Spend;
+  }): Promise<StepOutcome | { kind: "skipped" }> {
+    const { runId, stepId, step, spec, payload, outputs, fallbacks } = args;
 
-    await assertWithinBudget(spec.id, runCost, spec.budget);
+    await assertWithinBudget(spec.id, args.run, args.segment, spec.budget);
 
     const missing = this.deps.mcp.missing(step.requiresServers);
     if (missing.length > 0) {
@@ -252,7 +295,13 @@ export class Executor {
         })
         .where(eq(schema.steps.id, stepId));
 
-      return { kind: "ok", output, costUsd: result.costUsd, billable: result.billable };
+      return {
+        kind: "ok",
+        output,
+        costUsd: result.costUsd,
+        tokens: result.promptTokens + result.completionTokens,
+        billable: result.billable,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await db
@@ -271,7 +320,7 @@ export class Executor {
     step: ActionStep;
     outputs: Map<string, unknown>;
     payload: EventPayload;
-  }): Promise<{ kind: "ok"; output: unknown; costUsd: number; billable: boolean } | { kind: "paused" }> {
+  }): Promise<StepOutcome | { kind: "paused" }> {
     const { runId, stepId, step, outputs } = args;
     const source = step.input ?? step.needs[0];
     const saida = source ? outputs.get(source) : undefined;
@@ -301,7 +350,7 @@ export class Executor {
       .update(schema.steps)
       .set({ status: "done", endedAt: nowSec(), output: { state } })
       .where(eq(schema.steps.id, stepId));
-    return { kind: "ok", output: { state }, costUsd: 0, billable: false };
+    return { kind: "ok", output: { state }, costUsd: 0, tokens: 0, billable: false };
   }
 }
 

@@ -12,6 +12,7 @@ type Provedor = ReadResult<"providers.list">[number];
 type Fallback = ReadResult<"providers.fallbacks">[number];
 type Servidor = ReadResult<"mcp.list">[number];
 type Orcamento = ReadResult<"agents.budgets">[number];
+type Preco = ReadResult<"providers.prices">[number];
 type Credencial = ReadResult<"credentials.overview">["refs"][number];
 type ChaveDeProvedor = ReadResult<"providers.credentials">[number];
 type ConferenciaDeProvedor = ReadResult<"providers.checkSecret">;
@@ -73,8 +74,28 @@ export function Configuracao() {
   const servidores = useRead("mcp.list");
   const orcamentos = useRead("agents.budgets");
   const credenciais = useRead("credentials.overview");
+  const precos = useRead("providers.prices");
+  /*
+   * Gravar preço muda o aviso do orçamento: modelo que ganhou preço deixa de
+   * ser medido só em tokens. As duas leituras voltam juntas pelo mesmo motivo
+   * das de provedor logo acima.
+   */
+  const [precosRecarregados, setPrecosRecarregados] = useState<{
+    precos: Preco[];
+    orcamentos: Orcamento[];
+  } | null>(null);
 
-  const leituras = [provedores, chaves, fallbacks, servidores, orcamentos, credenciais];
+  const recarregarPrecos = (): Promise<void> =>
+    Promise.all([read("providers.prices"), read("agents.budgets")]).then(
+      ([novosPrecos, novosOrcamentos]) =>
+        setPrecosRecarregados({ precos: novosPrecos, orcamentos: novosOrcamentos }),
+      () => undefined,
+    );
+
+  const listaDePrecos = precosRecarregados?.precos ?? precos.data ?? [];
+  const listaDeOrcamentos = precosRecarregados?.orcamentos ?? orcamentos.data ?? [];
+
+  const leituras = [provedores, chaves, fallbacks, servidores, orcamentos, credenciais, precos];
   const erro = leituras.find((l) => l.status === "error")?.error;
   const pronto =
     machineId !== null && leituras.every((l) => l.status === "ready");
@@ -96,7 +117,7 @@ export function Configuracao() {
       data-locum-cofre={credenciais.data?.available === true ? "legivel" : "fechado"}
       data-locum-fallbacks={fallbacks.data?.length ?? -1}
       data-locum-maquina={machineId ?? ""}
-      data-locum-orcamentos={(orcamentos.data ?? []).map((o) => o.agentId).join(",")}
+      data-locum-orcamentos={listaDeOrcamentos.map((o) => o.agentId).join(",")}
       data-locum-probe="configuracao"
       data-locum-provedores={listaDeProvedores.map((p) => p.name).join(",")}
       data-locum-servidores={(servidores.data ?? []).map((s) => s.config.name).join(",")}
@@ -129,8 +150,10 @@ export function Configuracao() {
           <LinhaDoProvedor
             chave={chavesPorProvedor.get(provedor.name)}
             key={provedor.name}
+            precos={listaDePrecos.filter((p) => p.provider === provedor.name)}
             provedor={provedor}
             recarregar={recarregarProvedores}
+            recarregarPrecos={recarregarPrecos}
           />
         ))}
       </Secao>
@@ -201,7 +224,7 @@ export function Configuracao() {
         descricao={t("settings.budgets.description")}
         titulo={t("settings.budgets.title")}
       >
-        {(orcamentos.data ?? []).map((orcamento) => (
+        {listaDeOrcamentos.map((orcamento) => (
           <LinhaDoOrcamento key={orcamento.agentId} orcamento={orcamento} />
         ))}
       </Secao>
@@ -330,12 +353,16 @@ function EscolhaDoIdioma() {
 
 function LinhaDoProvedor({
   chave,
+  precos,
   provedor,
   recarregar,
+  recarregarPrecos,
 }: {
   chave: ChaveDeProvedor | undefined;
+  precos: Preco[];
   provedor: Provedor;
   recarregar: () => Promise<void>;
+  recarregarPrecos: () => Promise<void>;
 }) {
   const { t } = useTranslation();
 
@@ -396,6 +423,124 @@ function LinhaDoProvedor({
 
       {chave === undefined || chave.variable === null ? null : (
         <ChaveDoProvedor chave={chave} provedor={provedor} recarregar={recarregar} />
+      )}
+
+      {/* A assinatura gasta cota do plano, e não token cobrado: preço ali não mede nada. */}
+      {provedor.subscription ? null : (
+        <PrecosDoProvedor precos={precos} provedor={provedor.name} recarregar={recarregarPrecos} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * O preço de cada modelo deste provedor, em dólar por milhão de tokens.
+ *
+ * É o que o runtime nativo multiplica pelo uso de cada passo. Modelo sem
+ * preço aqui custa zero no registro, e o orçamento dele só vale em tokens; a
+ * seção de orçamentos avisa quando é esse o caso.
+ */
+function PrecosDoProvedor({
+  precos,
+  provedor,
+  recarregar,
+}: {
+  precos: Preco[];
+  provedor: string;
+  recarregar: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [modelo, setModelo] = useState("");
+  const [entrada, setEntrada] = useState("");
+  const [saida, setSaida] = useState("");
+  const [recusa, setRecusa] = useState<string | null>(null);
+
+  const numero = (texto: string): number => Number(texto.replace(",", "."));
+  const valido =
+    modelo.trim().length > 0 &&
+    entrada.trim().length > 0 &&
+    saida.trim().length > 0 &&
+    numero(entrada) >= 0 &&
+    numero(saida) >= 0;
+
+  const recusar = (erro: unknown): void => setRecusa(erro instanceof Error ? erro.message : String(erro));
+
+  const gravar = (): void => {
+    setRecusa(null);
+    call("providers.setPrice", {
+      provider: provedor,
+      model: modelo.trim(),
+      inputUsdPerMtok: numero(entrada),
+      outputUsdPerMtok: numero(saida),
+    }).then(() => {
+      setModelo("");
+      setEntrada("");
+      setSaida("");
+      return recarregar();
+    }, recusar);
+  };
+
+  const apagar = (nome: string): void => {
+    setRecusa(null);
+    call("providers.removePrice", provedor, nome).then(recarregar, recusar);
+  };
+
+  const campo =
+    "border-border bg-background focus-visible:ring-ring rounded-md border px-3 py-1.5 font-mono text-xs outline-none focus-visible:ring-1";
+
+  return (
+    <div className="flex flex-col gap-1.5 pl-5" data-locum-precos={provedor}>
+      {precos.map((preco) => (
+        <div
+          className="flex flex-wrap items-center gap-3 text-xs"
+          data-locum-preco={`${preco.provider}/${preco.model}`}
+          key={preco.model}
+        >
+          <span className="w-48 shrink-0 truncate font-mono">{preco.model}</span>
+          <span className="tabular-nums">
+            {t("settings.prices.rate", {
+              input: preco.inputUsdPerMtok,
+              output: preco.outputUsdPerMtok,
+            })}
+          </span>
+          <Button onClick={() => apagar(preco.model)} size="sm" variant="ghost">
+            {t("settings.prices.remove")}
+          </Button>
+        </div>
+      ))}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label={t("settings.prices.model", { provider: provedor })}
+          className={cn(campo, "min-w-40 flex-1")}
+          onChange={(evento) => setModelo(evento.target.value)}
+          placeholder={t("settings.prices.modelPlaceholder")}
+          spellCheck={false}
+          value={modelo}
+        />
+        <input
+          aria-label={t("settings.prices.input")}
+          className={cn(campo, "w-28")}
+          inputMode="decimal"
+          onChange={(evento) => setEntrada(evento.target.value)}
+          placeholder={t("settings.prices.input")}
+          value={entrada}
+        />
+        <input
+          aria-label={t("settings.prices.output")}
+          className={cn(campo, "w-28")}
+          inputMode="decimal"
+          onChange={(evento) => setSaida(evento.target.value)}
+          placeholder={t("settings.prices.output")}
+          value={saida}
+        />
+        <Button disabled={!valido} onClick={gravar} size="sm" variant="secondary">
+          {t("settings.prices.save")}
+        </Button>
+      </div>
+
+      {recusa === null ? null : (
+        <p className="text-destructive text-xs">{t("settings.prices.refused", { message: recusa })}</p>
       )}
     </div>
   );
@@ -2213,6 +2358,7 @@ function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
     valor === null
       ? t("settings.budgets.noCap")
       : t("settings.budgets.amount", { amount: valor.toFixed(2) });
+  const semTetoEmTokens = orcamento.perRunTokens === null && orcamento.perDayTokens === null;
 
   return (
     <div
@@ -2234,6 +2380,14 @@ function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
       <span className="text-xs tabular-nums">
         {t("settings.budgets.perDay", { amount: moeda(orcamento.perDayUsd) })}
       </span>
+      {semTetoEmTokens ? null : (
+        <span className="text-xs tabular-nums" data-locum-teto-tokens="">
+          {t("settings.budgets.tokenCaps", {
+            perRun: orcamento.perRunTokens ?? t("settings.budgets.noCap"),
+            perDay: orcamento.perDayTokens ?? t("settings.budgets.noCap"),
+          })}
+        </span>
+      )}
       <span
         className="ml-auto text-muted-foreground text-xs tabular-nums"
         data-locum-hoje={orcamento.runsToday}
@@ -2243,6 +2397,19 @@ function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
           spent: orcamento.spentTodayUsd.toFixed(3),
         })}
       </span>
+      <span className="text-muted-foreground text-xs tabular-nums" data-locum-tokens-hoje={orcamento.tokensToday}>
+        {t("settings.budgets.tokensToday", { count: orcamento.tokensToday })}
+      </span>
+      {orcamento.unpricedModels.length === 0 ? null : (
+        <p
+          className="basis-full text-amber-500 text-xs"
+          data-locum-medindo-tokens={orcamento.unpricedModels.join(",")}
+        >
+          {t(semTetoEmTokens ? "settings.budgets.unpricedNoCap" : "settings.budgets.unpriced", {
+            models: orcamento.unpricedModels.join(", "),
+          })}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { desc, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
-import { AgentBudgetPatch, AgentSpec, type ActionMode } from "../config/types.js";
+import { AgentBudgetPatch, AgentSpec, type ActionMode, type AgentBudget } from "../config/types.js";
 import { today } from "../executor/budget.js";
+import { splitModelId } from "../providers/registry.js";
 
 type Db = typeof defaultDb;
 
@@ -17,7 +18,7 @@ export interface AgentOverview extends AgentRow {
   models: string[];
   toolCount: number;
   skillCount: number;
-  budget: { perRunUsd?: number; perDayUsd?: number };
+  budget: AgentBudget;
   triggers: { kind: string; enabled: boolean; config: unknown }[];
   lastRun: {
     id: string;
@@ -55,8 +56,16 @@ export interface AgentBudgetView {
   version: number | null;
   perRunUsd: number | null;
   perDayUsd: number | null;
+  perRunTokens: number | null;
+  perDayTokens: number | null;
   spentTodayUsd: number;
+  tokensToday: number;
   runsToday: number;
+  /**
+   * Modelos pedidos pelos passos sem preço cadastrado. O custo deles fica em
+   * zero, e o teto em dólar não os alcança: para eles só o teto em tokens vale.
+   */
+  unpricedModels: string[];
 }
 
 /**
@@ -114,6 +123,8 @@ export class AgentService {
       .select()
       .from(schema.usageDaily)
       .where(eq(schema.usageDaily.day, today()));
+    const prices = await this.db.select().from(schema.modelPrices);
+    const tabelados = new Set(prices.map((p) => `${p.provider}/${p.model}`));
 
     // As versoes chegam da mais nova para a mais velha, entao a primeira de
     // cada agent e a do topo e as seguintes nao substituem.
@@ -125,8 +136,16 @@ export class AgentService {
 
     return rows.map((agent) => {
       const version = topo.get(agent.id);
-      const budget = version ? AgentSpec.parse(version.spec).budget : {};
+      const spec = version ? AgentSpec.parse(version.spec) : undefined;
+      const budget: AgentBudget = spec?.budget ?? {};
       const hoje = gasto.get(agent.id);
+      // A assinatura não cobra por token, então não entra como modelo sem preço.
+      const semPreco = new Set<string>();
+      for (const step of spec?.steps ?? []) {
+        if (step.type !== "model") continue;
+        const { provider, model } = splitModelId(step.model);
+        if (provider !== "claude-code" && !tabelados.has(`${provider}/${model}`)) semPreco.add(step.model);
+      }
       return {
         agentId: agent.id,
         name: agent.name,
@@ -134,8 +153,12 @@ export class AgentService {
         version: version?.version ?? null,
         perRunUsd: budget.perRunUsd ?? null,
         perDayUsd: budget.perDayUsd ?? null,
+        perRunTokens: budget.perRunTokens ?? null,
+        perDayTokens: budget.perDayTokens ?? null,
         spentTodayUsd: hoje?.costUsd ?? 0,
+        tokensToday: hoje?.tokens ?? 0,
         runsToday: hoje?.runs ?? 0,
+        unpricedModels: [...semPreco],
       };
     });
   }
@@ -216,7 +239,7 @@ export class AgentService {
     if (!latest) throw new Error(`agent "${agentId}" nao cadastrado`);
 
     const budget = { ...latest.spec.budget };
-    for (const key of ["perRunUsd", "perDayUsd"] as const) {
+    for (const key of ["perRunUsd", "perDayUsd", "perRunTokens", "perDayTokens"] as const) {
       const value = parsed[key];
       if (value === undefined) continue;
       if (value === null) delete budget[key];

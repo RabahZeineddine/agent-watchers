@@ -83,10 +83,10 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
     }
     const id = setTimeout(() => {
       setGravando(true);
-      void gravarRevisao(pendencia.id, {
-        ...(pendencia.payload as object),
-        findings: achados.filter((a) => a.incluido).map(({ incluido: _, ...resto }) => resto),
-      }).finally(() => setGravando(false));
+      void gravarRevisao(
+        pendencia.id,
+        achados.filter((a) => a.incluido).map(({ incluido: _, ...resto }) => resto),
+      ).finally(() => setGravando(false));
     }, 700);
     return () => clearTimeout(id);
   }, [achados, pendencia]);

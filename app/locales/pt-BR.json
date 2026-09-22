@@ -250,6 +250,16 @@
       "uses": "usa {{requirements}}",
       "missing": "falta {{requirements}}"
     },
+    "prices": {
+      "rate": "entrada {{input}} e saída {{output}} USD por milhão de tokens",
+      "model": "Modelo de {{provider}} a tarifar",
+      "modelPlaceholder": "modelo",
+      "input": "entrada, USD/M",
+      "output": "saída, USD/M",
+      "save": "Gravar preço",
+      "remove": "Apagar",
+      "refused": "O preço não foi gravado: {{message}}"
+    },
     "providerKey": {
       "field": "chave de API do {{provider}}",
       "placeholder": "cole a chave aqui, ela vai para o keychain",
@@ -452,7 +462,12 @@
       "noCap": "sem teto",
       "amount": "{{amount}} USD",
       "today_one": "hoje {{spent}} USD em {{count}} execução",
-      "today_other": "hoje {{spent}} USD em {{count}} execuções"
+      "today_other": "hoje {{spent}} USD em {{count}} execuções",
+      "tokenCaps": "em tokens, por run {{perRun}} e por dia {{perDay}}",
+      "tokensToday_one": "{{count}} token cobrado hoje",
+      "tokensToday_other": "{{count}} tokens cobrados hoje",
+      "unpriced": "Sem preço para {{models}}: esses passos custam zero no registro, e o teto está medindo em tokens.",
+      "unpricedNoCap": "Sem preço para {{models}}: esses passos custam zero no registro e o teto em dólar não os alcança. Cadastre o preço junto do provedor ou um teto em tokens."
     }
   },
   "severity": {
