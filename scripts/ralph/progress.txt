@@ -60,3 +60,4 @@
 2026-09-22  M9.1  feito      base de teste com node --test e tsx, banco em memória pelas migrações, 20 testes em ordenação topológica, fallback com ciclo e rebaixamento de modo; sabotar o rebaixamento derruba 4
 2026-09-22  M9.2  feito      decisão fecha o passo de ação (done ou skipped) e o executor retoma o run até done; retomada reconcilia passo parado com pendência já fechada; 5 testes, que falhavam antes do conserto
 2026-09-22  M9.3  feito      custo do runtime nativo por tokens vezes preço de model_prices, teto em tokens para modelo sem preço, gasto gravado em toda saída do trecho; 7 testes, 4 falhavam antes do conserto
+2026-09-22  M9.4  feito      lockfile, minificado, build e gerado fora do diff, teto de 200 mil por arquivo inteiro no GithubService, evento e prompt com o que ficou fora; 6 testes; fixture de histórico passa a conferir o par do topo

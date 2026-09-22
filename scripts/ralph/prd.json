@@ -693,7 +693,7 @@
       "description": "Defeito A3. O diff vai inteiro para o modelo. Antes de montar o evento, descartar arquivo que não se revisa (lockfile de npm, yarn, pnpm, cargo e go, arquivo minificado, pasta de build e de código gerado), registrando o que foi descartado. Depois, aplicar um teto de caracteres configurável, cortando por arquivo e não no meio de um. O evento guarda o que ficou de fora, e o prompt de auditoria passa a receber essa informação, para não afirmar que revisou o que não viu.",
       "done_when": "Um diff com lockfile e com arquivo acima do teto chega ao modelo sem eles, e o evento lista o que foi descartado.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

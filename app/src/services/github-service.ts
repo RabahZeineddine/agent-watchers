@@ -27,6 +27,18 @@ const LOGIN = "login";
 const ESCOPOS = "scopes";
 
 /**
+ * Teto de caracteres do diff que vai para o modelo.
+ *
+ * O mesmo número da versão Python, que já tinha rodado em pull request de
+ * verdade: cabe um pull request grande de código escrito à mão e barra o que
+ * só chega a esse tamanho com migração ou dado gerado.
+ */
+export const DEFAULT_DIFF_MAX_CHARS = 200_000;
+
+// Fora do nome da credencial: o teto vale para o diff, não para a conta.
+const DIFF_MAX_CHARS_KEY = "github:diffMaxChars";
+
+/**
  * O token do GitHub para quem vai conectar.
  *
  * O cofre vem antes do ambiente porque é ele que a interface alimenta: quem
@@ -226,6 +238,18 @@ export class GithubService {
    */
   async viewerLogin(): Promise<string | null> {
     return (await this.status()).identity?.login ?? null;
+  }
+
+  async diffMaxChars(): Promise<number> {
+    const guardado = Number(await this.settings.get(DIFF_MAX_CHARS_KEY));
+    return Number.isSafeInteger(guardado) && guardado > 0 ? guardado : DEFAULT_DIFF_MAX_CHARS;
+  }
+
+  async setDiffMaxChars(chars: number): Promise<void> {
+    if (!Number.isSafeInteger(chars) || chars <= 0) {
+      throw new Error(`teto do diff precisa ser inteiro positivo, veio ${chars}`);
+    }
+    await this.settings.set(DIFF_MAX_CHARS_KEY, String(chars));
   }
 
   private async esquecerConferencia(): Promise<void> {
