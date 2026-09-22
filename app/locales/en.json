@@ -68,6 +68,7 @@
     "placeholder": "Ask something",
     "placeholderUnavailable": "choose the model in Settings",
     "disclaimer": "It does not approve and does not publish. The decision is still your click in the inbox.",
+    "summarized": "The start of the conversation was summarized. From earlier exchanges the model keeps only the text, without tool results, and the oldest may have been dropped.",
     "empty": {
       "title": "Locum console",
       "body": "Ask about runs, findings, cost or settings. It looks at the real state before answering."

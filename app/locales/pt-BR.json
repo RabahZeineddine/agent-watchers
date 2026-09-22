@@ -68,6 +68,7 @@
     "placeholder": "Pergunte alguma coisa",
     "placeholderUnavailable": "escolha o modelo em Configuração",
     "disclaimer": "Ele não aprova nem publica. A decisão continua sendo o seu clique na inbox.",
+    "summarized": "O começo da conversa foi resumido. Das trocas antigas o modelo guarda só o texto, sem o resultado das ferramentas, e as mais antigas podem ter saído.",
     "empty": {
       "title": "Console do Locum",
       "body": "Pergunte sobre execuções, achados, custo ou configuração. Ele olha o estado real antes de responder."

@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
 import { buildProviders } from "../src/providers/registry.js";
+import { compactarHistorico } from "../src/services/chat-history.js";
 import { providerService } from "../src/services/provider-service.js";
 import { settingsService } from "../src/services/settings-service.js";
 import { chatTools } from "./chat-tools.js";
@@ -13,6 +14,7 @@ export type ChatEvent =
   | { tipo: "ferramenta"; nome: string; entrada: unknown }
   | { tipo: "resultado"; nome: string }
   | { tipo: "fim"; motivo: string }
+  | { tipo: "resumido" }
   | { tipo: "erro"; mensagem: string };
 
 /** Onde a escolha do modelo do assistente fica guardada. */
@@ -118,6 +120,11 @@ export class ChatSession {
 
     const entry = buildProviders()[escolha.provedor]!;
     this.historico.push({ role: "user", content: texto });
+    // Guardado já enxuto, e não só enviado enxuto: o processo principal fica
+    // de pé o dia inteiro e o histórico cheio viveria na memória dele.
+    const { mensagens, resumido } = compactarHistorico(this.historico);
+    this.historico = mensagens;
+    if (resumido) emitir(alvo, { tipo: "resumido" });
     this.cancelar = new AbortController();
 
     try {

@@ -35,6 +35,7 @@ export function Assistente() {
   const [falas, setFalas] = useState<Fala[]>([]);
   const [rascunho, setRascunho] = useState("");
   const [respondendo, setRespondendo] = useState(false);
+  const [resumido, setResumido] = useState(false);
   const status = useRead("chat.status");
   const campo = useRef<HTMLTextAreaElement>(null);
 
@@ -57,6 +58,10 @@ export function Assistente() {
   // O fluxo chega pedaco a pedaco e cai sempre na ultima fala do assistente.
   useEffect(() => {
     return assinarEventosDoChat((evento: ChatEvent) => {
+      if (evento.tipo === "resumido") {
+        setResumido(true);
+        return;
+      }
       setFalas((atual) => {
         const copia = [...atual];
         const ultima = copia.at(-1);
@@ -125,6 +130,13 @@ export function Assistente() {
               icon={<MessageSquare className="size-5" />}
               title={t(indisponivel ? "assistant.unavailable.title" : "assistant.empty.title")}
             />
+          )}
+
+          {/* As falas continuam todas na tela; o aviso é sobre o que o modelo ainda enxerga. */}
+          {resumido && (
+            <p className="text-muted-foreground/80 border-border rounded-md border border-dashed px-3 py-2 text-xs">
+              {t("assistant.summarized")}
+            </p>
           )}
 
           {falas.map((fala, i) => (

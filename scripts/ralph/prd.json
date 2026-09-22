@@ -814,7 +814,7 @@
       "description": "Defeito B6. O histórico do assistente cresce sem limite e reenvia o resultado de toda ferramenta já chamada. Manter as últimas trocas por inteiro e, das anteriores, só o texto, sem o resultado de ferramenta, que é a parte grande. Mostrar na tela quando o começo da conversa foi resumido.",
       "done_when": "Uma conversa longa mantém o tamanho enviado ao modelo abaixo do teto, e um teste confere.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     }
   ]
