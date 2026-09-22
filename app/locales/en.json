@@ -556,7 +556,12 @@
     "saved": "review saved",
     "see_run": "see run",
     "not_found": "this item is no longer waiting for a decision",
-    "body_label": "comment text"
+    "body_label": "comment text",
+    "confidence": {
+      "high": "high confidence",
+      "medium": "medium confidence",
+      "low": "low confidence"
+    }
   },
   "schema": {
     "created": "schema created from scratch, migrations applied: {{count}}",

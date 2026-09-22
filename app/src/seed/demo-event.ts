@@ -53,3 +53,41 @@ export const demoPr: PrContext = {
 +        else _items[key] = session;
      }`,
 };
+
+/**
+ * Par do evento de cima, com diff correto: troca literal por constante sem
+ * mudar comportamento. Existe para testar a regra de não inventar achado, e por
+ * isso fica longe de autenticação, concorrência e dado de entrada, onde um
+ * revisor rigoroso sempre acha o que especular. Qualquer achado aqui é ruído.
+ */
+export const demoCleanPr: PrContext = {
+  repo: "exemplo/loja-api",
+  owner: "time",
+  repoName: "loja-api",
+  pull: 483,
+  title: "Extrai a extensão do nome do relatório para constante",
+  description:
+    "Sem mudança de comportamento. O nome gerado continua o mesmo; a constante prepara o formato xlsx do próximo pull request.",
+  headSha: "def789abc012",
+  author: "alice.exemplo",
+  baseBranch: "main",
+  headBranch: "refactor/extensao-relatorio",
+  url: "https://github.com/exemplo/loja-api/pull/483",
+  additions: 3,
+  deletions: 1,
+  fileCount: 1,
+  draft: false,
+  changedFiles: ["src/Relatorios/NomeDoArquivo.cs"],
+  omittedFiles: [],
+  omittedSummary: "nenhum",
+  diff: `--- src/Relatorios/NomeDoArquivo.cs (modified, +3 -1)
+@@ -5,6 +5,8 @@ namespace Vida.Relatorios;
+ public static class NomeDoArquivo
+ {
++    private const string Extensao = ".csv";
++
+     public static string Para(string pedido, DateOnly referencia)
+-        => $"{pedido}_{referencia:yyyyMMdd}.csv";
++        => $"{pedido}_{referencia:yyyyMMdd}{Extensao}";
+ }`,
+};

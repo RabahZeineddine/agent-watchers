@@ -24,7 +24,9 @@ export function registerRunTools(server: McpServer): void {
       inputSchema: {
         target: z
           .string()
-          .describe('"owner/repo#123" para alvo real ou "sintetico" para o evento de fumaca'),
+          .describe(
+            '"owner/repo#123" para alvo real, "sintetico" para o evento de fumaca com defeito plantado ou "sintetico-limpo" para o diff correto',
+          ),
         agentId: z
           .string()
           .optional()

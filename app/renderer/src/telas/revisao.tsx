@@ -1,7 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { gravarRevisao, decidir } from "@/lib/aprovar";
 import { useRead } from "@/lib/bridge";
-import { rotuloDeSeveridade, SEVERIDADES, type Severidade } from "@/lib/rotulos";
+import {
+  CONFIANCAS,
+  rotuloDeSeveridade,
+  SEVERIDADES,
+  type Confianca,
+  type Severidade,
+} from "@/lib/rotulos";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +18,7 @@ interface AchadoEditavel {
   file?: string;
   line?: number;
   severity: Severidade;
+  confidence?: Confianca;
   category?: string;
   problem: string;
   fix?: string;
@@ -64,6 +71,9 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
           severity: (SEVERIDADES as readonly string[]).includes(String(f.severity))
             ? (f.severity as Severidade)
             : "low",
+          confidence: (CONFIANCAS as readonly string[]).includes(String(f.confidence))
+            ? (f.confidence as Confianca)
+            : undefined,
           category: typeof f.category === "string" ? f.category : undefined,
           problem: typeof f.problem === "string" ? f.problem : "",
           fix: typeof f.fix === "string" ? f.fix : undefined,
@@ -179,6 +189,12 @@ export function Revisao({ detalhe, navegar }: TelaProps) {
                     </option>
                   ))}
                 </select>
+
+                {achado.confidence && (
+                  <span className="text-muted-foreground text-xs">
+                    {t(`review.confidence.${achado.confidence}`)}
+                  </span>
+                )}
 
                 <label className="text-muted-foreground ml-auto flex cursor-pointer items-center gap-1.5 text-xs">
                   <input

@@ -748,7 +748,7 @@
       "description": "O prompt de auditoria atual tem quatro linhas. Trazer da versão Python, em watchers/pr_reviewer/prompts.py, os seis focos: regressão funcional, idempotência e concorrência, segurança e autorização, erro engolido sem registro, quebra de contrato de API ou esquema, e lacuna de teste em caminho crítico. Acrescentar uma rubrica curta do que é crítico, alto, médio e baixo; o título e a descrição do pull request, para pegar a intenção que o código contradiz; a lista do que ficou fora do diff; e um campo de confiança por achado.\n\nVerificação com dois eventos sintéticos. O de sempre, com defeitos plantados, tem que continuar achando todos. Um novo, com diff limpo e correto, tem que devolver zero achado: é o que testa a regra de não inventar. Nesta story podem rodar duas execuções de demo.",
       "done_when": "O evento com defeito plantado acha todos, o evento limpo devolve zero achado, e o esquema de saída traz confiança.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

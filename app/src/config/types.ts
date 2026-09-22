@@ -84,6 +84,8 @@ export const ReviewFinding = z
     file: z.string().min(1).optional(),
     line: z.number().int().positive().optional(),
     severity: z.enum(["critical", "high", "medium", "low"]),
+    // Opcional porque pendência gravada antes do campo existir continua na fila.
+    confidence: z.enum(["high", "medium", "low"]).optional(),
     category: z.string().optional(),
     problem: z.string().trim().min(1),
     fix: z.string().optional(),

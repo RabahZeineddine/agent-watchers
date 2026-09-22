@@ -46,6 +46,7 @@ const ACHADOS = {
       file: "src/Auth/TokenValidator.cs",
       line: 41,
       severity: "critical",
+      confidence: "high",
       category: "correcao",
       problem:
         "`DateTime.Now` devolve hora local e `ExpiresAt` vem em UTC. Em BRT o token so expira tres horas depois do que deveria.",
@@ -55,6 +56,7 @@ const ACHADOS = {
       file: "src/Auth/TokenValidator.cs",
       line: 46,
       severity: "critical",
+      confidence: "high",
       category: "correcao",
       problem:
         "`.Result` numa chamada assincrona trava a thread e trava de vez sob contexto de sincronizacao.",
@@ -64,6 +66,7 @@ const ACHADOS = {
       file: "src/Auth/SessionCache.cs",
       line: 23,
       severity: "high",
+      confidence: "high",
       category: "concorrencia",
       problem:
         "Trocar `ConcurrentDictionary` por `Dictionary` deixa escrita simultanea corromper o balde interno.",
@@ -73,6 +76,7 @@ const ACHADOS = {
       file: "src/Auth/SessionCache.cs",
       line: 27,
       severity: "medium",
+      confidence: "high",
       category: "correcao",
       problem: "`Put` sobrescreve sessao existente sem invalidar o token anterior.",
       fix: "Invalidar a sessao antiga antes de gravar a nova.",

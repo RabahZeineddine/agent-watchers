@@ -556,7 +556,12 @@
     "saved": "revisão gravada",
     "see_run": "ver execução",
     "not_found": "essa pendência não está mais esperando decisão",
-    "body_label": "texto do comentário"
+    "body_label": "texto do comentário",
+    "confidence": {
+      "high": "confiança alta",
+      "medium": "confiança média",
+      "low": "confiança baixa"
+    }
   },
   "schema": {
     "created": "esquema criado do zero, migrações aplicadas: {{count}}",

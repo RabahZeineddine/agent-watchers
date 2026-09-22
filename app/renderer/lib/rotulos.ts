@@ -13,6 +13,10 @@ import type { TFunction } from "i18next";
 export const SEVERIDADES = ["critical", "high", "medium", "low"] as const;
 export type Severidade = (typeof SEVERIDADES)[number];
 
+/** Quanto a auditoria confia no próprio achado; pendência antiga vem sem. */
+export const CONFIANCAS = ["high", "medium", "low"] as const;
+export type Confianca = (typeof CONFIANCAS)[number];
+
 export const ESTADOS = [
   "done",
   "running",
