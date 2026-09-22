@@ -57,6 +57,22 @@ export type ActionHandler = {
 export class ApprovalGate {
   constructor(private handlers: Map<string, ActionHandler>) {}
 
+  /**
+   * Os modos que cada ação aceita, perguntados ao próprio handler.
+   *
+   * A tela de edição precisa saber que criar tarefa só aceita aprovação. Copiar
+   * essa regra para a janela seria a segunda fonte da verdade, e as duas
+   * divergem na primeira ação nova. A gate continua recusando o modo errado na
+   * hora de publicar, com ou sem a tela ter avisado.
+   */
+  describe(): { kind: string; modes: readonly ActionMode[]; holdsByContent: boolean }[] {
+    return [...this.handlers.entries()].map(([kind, handler]) => ({
+      kind,
+      modes: handler.modes ?? (["approve", "draft", "auto"] as const),
+      holdsByContent: typeof handler.holdForApproval === "function",
+    }));
+  }
+
   async submit(req: ActionRequest, mode: ActionMode): Promise<"pending" | "drafted" | "published"> {
     const id = randomUUID();
     const externalId = `${req.runId}:${req.stepId}`;

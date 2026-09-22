@@ -58,6 +58,18 @@ interface ServiceApi {
   "agents.budgets": AgentService["budgets"];
   /** O que a lista mostra sem abrir agent nenhum: modelo, cadência, gasto. */
   "agents.overview": AgentService["overview"];
+  /**
+   * O que uma pessoa editou na tela, gravado como versão nova e como pessoa.
+   *
+   * Fica fora do catálogo que a janela expõe, pela mesma razão de
+   * `approvals.decide`: gravar como pessoa pode subir o modo de um passo de
+   * ação, e subir o modo e depois executar é publicar sem clique em dois
+   * passos. Quem chama é o botão de salvar, e mais ninguém.
+   */
+  "agents.saveEdited": AgentService["saveEdited"];
+  /** Os modos que cada ação aceita, perguntados ao handler. Só leitura. */
+  "actions.describe": () => { kind: string; modes: readonly ("approve" | "draft" | "auto")[]; holdsByContent: boolean }[];
+  "agents.duplicate": AgentService["duplicate"];
 
   "runs.list": RunService["list"];
   "runs.get": RunService["get"];
@@ -278,6 +290,9 @@ export const BRIDGE_CHANNELS = [
   "agents.versions",
   "agents.budgets",
   "agents.overview",
+  "agents.saveEdited",
+  "actions.describe",
+  "agents.duplicate",
   "runs.list",
   "runs.get",
   "runs.findings",

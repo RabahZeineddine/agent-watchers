@@ -5204,6 +5204,17 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
     writeFileSync(join(destino, `${id}${detalhe ? "-detalhe" : ""}.png`), imagem.toPNG());
   }
 
+  // O editor abre por clique, então a captura clica.
+  const primeiroAgent = (await (await import("../src/services/agent-service.js")).agentService.list())[0]?.id;
+  if (primeiroAgent) {
+    await irPara(janela, "agents", primeiroAgent);
+    await janela.webContents.executeJavaScript(
+      `(document.querySelector("[data-locum-editar]")?.click(), null)`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    writeFileSync(join(destino, "agents-editor.png"), (await janela.webContents.capturePage()).toPNG());
+  }
+
   // O painel do assistente abre por atalho, então a captura usa o mesmo caminho.
   await irPara(janela, "inbox");
   await janela.webContents.executeJavaScript(

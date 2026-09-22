@@ -3,6 +3,8 @@ import { CodeBlock, CodeBlockCopyButton } from "@/components/ai-elements/code-bl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
+import { duplicarAgent } from "@/lib/editar-agent";
+import { EditorDeAgent } from "../editor-agent";
 import { comContexto, diffJson, type LinhaDoDiff } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
@@ -180,8 +182,54 @@ function ultima(t: TFunction, run: Resumo["lastRun"]): string {
  * e a ordem em que se procura: o que mudou por ultimo e o que se quer ver
  * primeiro.
  */
+/**
+ * Pedido de abrir direto em edição, deixado por quem acabou de duplicar.
+ *
+ * Passado em memória e lido uma vez, em vez de ir na rota: "criar e editar"
+ * promete abrir o agent novo já editando, e um parâmetro na rota continuaria lá
+ * depois de salvar, reabrindo o editor a cada visita.
+ */
+let editarAoAbrir: string | null = null;
+
 function Agent({ agentId, navegar }: { agentId: string; navegar: TelaProps["navegar"] }) {
+  const [editando, setEditando] = useState(() => {
+    const pedido = editarAoAbrir === agentId;
+    if (pedido) editarAoAbrir = null;
+    return pedido;
+  });
+  // Salvar grava versão nova; remontar o detalhe relê o histórico inteiro.
+  const [recarga, setRecarga] = useState(0);
+
+  return (
+    <DetalheDoAgent
+      agentId={agentId}
+      editando={editando}
+      key={recarga}
+      navegar={navegar}
+      setEditando={setEditando}
+      aoSalvar={() => {
+        setEditando(false);
+        setRecarga((r) => r + 1);
+      }}
+    />
+  );
+}
+
+function DetalheDoAgent({
+  agentId,
+  editando,
+  navegar,
+  setEditando,
+  aoSalvar,
+}: {
+  agentId: string;
+  editando: boolean;
+  navegar: TelaProps["navegar"];
+  setEditando: (v: boolean) => void;
+  aoSalvar: () => void;
+}) {
   const { t } = useTranslation();
+  const [duplicando, setDuplicando] = useState(false);
   const versoes = useRead("agents.versions", agentId);
   const maquina = useRead("machine.profile");
   const [escolhida, setEscolhida] = useState<number | null>(null);
@@ -222,8 +270,45 @@ function Agent({ agentId, navegar }: { agentId: string; navegar: TelaProps["nave
         <span className="ml-auto text-muted-foreground text-xs">
           {t("agents.detail.versions", { count: lista.length })}
         </span>
+        {!editando && (
+          <>
+            <Button className="cursor-pointer" onClick={() => setDuplicando(true)} size="sm" variant="ghost">
+              {t("agents.editor.duplicate")}
+            </Button>
+            <Button
+              className="cursor-pointer"
+              data-locum-editar=""
+              onClick={() => setEditando(true)}
+              size="sm"
+            >
+              {t("agents.editor.edit")}
+            </Button>
+          </>
+        )}
       </div>
 
+      {duplicando && (
+        <Duplicar
+          aoCancelar={() => setDuplicando(false)}
+          aoCriar={(novo) => {
+            editarAoAbrir = novo;
+            navegar("agents", novo);
+          }}
+          de={agentId}
+          nome={lista[0]!.spec.name}
+        />
+      )}
+
+      {editando ? (
+        <EditorDeAgent
+          agentId={agentId}
+          aoSair={() => setEditando(false)}
+          aoSalvar={aoSalvar}
+          spec={lista[0]!.spec}
+          versao={lista[0]!.version}
+        />
+      ) : (
+        <>
       <Historico
         atual={atual.version}
         contra={anterior?.version ?? null}
@@ -239,6 +324,78 @@ function Agent({ agentId, navegar }: { agentId: string; navegar: TelaProps["nave
       />
 
       <Comparacao anterior={anterior} atual={atual} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Agent novo a partir deste.
+ *
+ * O jeito real de criar agent: partir de um que funciona e mudar o que for
+ * diferente. Criado, ele abre direto em edição.
+ */
+function Duplicar({
+  aoCancelar,
+  aoCriar,
+  de,
+  nome,
+}: {
+  aoCancelar: () => void;
+  aoCriar: (id: string) => void;
+  de: string;
+  nome: string;
+}) {
+  const { t } = useTranslation();
+  const [novoId, setNovoId] = useState(`${de}-copia`);
+  const [novoNome, setNovoNome] = useState(() => t("agents.editor.dup.copyName", { name: nome }));
+  const [criando, setCriando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function criar() {
+    setCriando(true);
+    setErro(null);
+    try {
+      aoCriar(await duplicarAgent(de, novoId, novoNome));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+      setCriando(false);
+    }
+  }
+
+  return (
+    <div className="border-border bg-card flex max-w-xl flex-col gap-3 rounded-lg border px-4 py-3">
+      <div>
+        <p className="text-sm font-medium">{t("agents.editor.dup.title", { name: nome })}</p>
+        <p className="text-muted-foreground text-xs">{t("agents.editor.dup.hint")}</p>
+      </div>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">{t("agents.editor.dup.newId")}</span>
+        <input
+          className="border-border bg-background focus-visible:ring-ring rounded-md border px-2 py-1 font-mono outline-none focus-visible:ring-1"
+          onChange={(e) => setNovoId(e.target.value)}
+          spellCheck={false}
+          value={novoId}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">{t("agents.editor.dup.newName")}</span>
+        <input
+          className="border-border bg-background focus-visible:ring-ring rounded-md border px-2 py-1 outline-none focus-visible:ring-1"
+          onChange={(e) => setNovoNome(e.target.value)}
+          value={novoNome}
+        />
+      </label>
+      {erro && <p className="text-sev-critical text-xs">{erro}</p>}
+      <div className="flex gap-2">
+        <Button className="cursor-pointer" disabled={criando} onClick={() => void criar()} size="sm">
+          {criando ? t("agents.editor.dup.creating") : t("agents.editor.dup.create")}
+        </Button>
+        <Button className="cursor-pointer" onClick={aoCancelar} size="sm" variant="ghost">
+          {t("agents.editor.cancel")}
+        </Button>
+      </div>
     </div>
   );
 }

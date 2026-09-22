@@ -193,4 +193,36 @@ if (achados.length > 0) {
   process.exit(1);
 }
 
-console.log(`check-i18n: nenhum literal solto em ${RAIZES.join(", ")}.`);
+/*
+ * Plural sem forma para zero, em português.
+ *
+ * Em pt-BR o Intl.PluralRules põe o zero na categoria "one", então uma chave só
+ * com `_one` e `_other` escreve "0 achado" e "hoje em 0 execução". Em inglês o
+ * zero cai em "other" e sai certo, o que esconde o defeito de quem testa num
+ * idioma só. A chave nova sem `_zero` quebra aqui, em vez de sair errada na tela.
+ */
+const PLURAIS_COM_ZERO = ["pt-BR"];
+const semZero = [];
+for (const idioma of PLURAIS_COM_ZERO) {
+  const dicionario = JSON.parse(readFileSync(new URL(`../locales/${idioma}.json`, import.meta.url), "utf8"));
+  const andar = (objeto, caminho) => {
+    for (const base of new Set(Object.keys(objeto).filter((k) => k.endsWith("_one")).map((k) => k.slice(0, -4)))) {
+      if (!(`${base}_zero` in objeto)) semZero.push(`${idioma}: ${caminho}${base}`);
+    }
+    for (const [chave, valor] of Object.entries(objeto)) {
+      if (valor && typeof valor === "object") andar(valor, `${caminho}${chave}.`);
+    }
+  };
+  andar(dicionario, "");
+}
+
+if (semZero.length > 0) {
+  console.error(`${semZero.length} plural sem forma para zero:\n`);
+  for (const chave of semZero) console.error(`  ${chave}`);
+  console.error(
+    "\nEm pt-BR o zero cai em \"one\" e sai no singular. Acrescente a chave _zero, em geral igual à _other.",
+  );
+  process.exit(1);
+}
+
+console.log(`check-i18n: nenhum literal solto em ${RAIZES.join(", ")}, e todo plural em pt-BR tem forma para zero.`);

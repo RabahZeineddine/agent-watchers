@@ -58,7 +58,75 @@
     "never_ran": "never ran",
     "last_run": "last {{when}}, {{status}}",
     "spend": "{{amount}} USD",
-    "subscription_spend": "{{amount}} USD equivalent"
+    "subscription_spend": "{{amount}} USD equivalent",
+    "editor": {
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "editing": "Editing from version {{version}}",
+      "name": "Name",
+      "id": "Identifier",
+      "cancel": "Cancel",
+      "discardAsk": "Discard your changes?",
+      "discardYes": "Discard",
+      "keepEditing": "Keep editing",
+      "review": "Review and save",
+      "back": "Back to editing",
+      "unchanged": "Nothing changed yet.",
+      "changes_one": "{{count}} line changed",
+      "changes_other": "{{count}} lines changed",
+      "note": "What changed",
+      "notePlaceholder": "e.g. stricter audit on concurrency",
+      "noteHint": "The note becomes the version's entry in the history.",
+      "save": "Save as version {{version}}",
+      "saving": "Saving...",
+      "step": {
+        "model": "Model",
+        "prompt": "Prompt",
+        "optional": "Optional: skip without failing if a server is missing",
+        "tools": "Tools",
+        "mode": "Mode",
+        "notInCatalog": "not in this machine's catalog",
+        "loadingCatalog": "reading provider catalogs...",
+        "catalogEmpty": "no provider with a catalog on this machine",
+        "subscription": "subscription: Claude Code resolves the name"
+      },
+      "mode": {
+        "approve": "Approval: waits for your click",
+        "draft": "Draft: prepares without publishing",
+        "auto": "Automatic: publishes without waiting",
+        "locked": "This action only accepts approval.",
+        "verdictHold": "Approving or requesting changes always waits for a click, even on automatic."
+      },
+      "tools": {
+        "inherits_one": "inherits {{count}} tool from the agent",
+        "inherits_other": "inherits {{count}} tools from the agent",
+        "customize": "use its own tools",
+        "inherit": "inherit again",
+        "noServers": "no MCP server registered",
+        "open": "show tools",
+        "loading": "starting the server...",
+        "tokens": "~{{tokens}} tok",
+        "total": "{{count}} selected, ~{{tokens}} tokens per call",
+        "inherits_zero": "inherits no tools from the agent"
+      },
+      "budget": {
+        "title": "Budget",
+        "perRunUsd": "per run, USD",
+        "perDayUsd": "per day, USD",
+        "perRunTokens": "per run, tokens",
+        "perDayTokens": "per day, tokens",
+        "empty": "no cap"
+      },
+      "dup": {
+        "title": "Duplicate {{name}}",
+        "hint": "The new agent starts with the same steps, models and tools.",
+        "newId": "New identifier",
+        "newName": "New name",
+        "create": "Create and edit",
+        "creating": "Creating...",
+        "copyName": "{{name}} (copy)"
+      }
+    }
   },
   "assistant": {
     "title": "Assistant",

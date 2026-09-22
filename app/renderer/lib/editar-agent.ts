@@ -1,0 +1,31 @@
+import type { AgentSpec } from "../../src/config/types.js";
+import { BRIDGE_GLOBAL } from "../../electron/bridge-contract.js";
+
+/**
+ * Acesso estreito à gravação de agent, com autoridade de pessoa.
+ *
+ * Fica fora de `lib/bridge.ts` pelo mesmo motivo de `lib/aprovar.ts`. Gravar
+ * como pessoa pode subir o modo de um passo de ação para automático, e subir o
+ * modo e depois executar é publicar sem clique em dois passos. Esta gravação é
+ * o clique de quem editou, e só o botão de salvar e o de duplicar chamam daqui.
+ */
+interface PonteDeEdicao {
+  agents: {
+    saveEdited: (agentId: string, spec: AgentSpec, note: string) => Promise<{ version: number }>;
+    duplicate: (fromId: string, newId: string, newName: string) => Promise<{ agentId: string }>;
+  };
+}
+
+function ponte(): PonteDeEdicao {
+  const achada = (globalThis as Record<string, unknown>)[BRIDGE_GLOBAL] as PonteDeEdicao | undefined;
+  if (!achada?.agents?.saveEdited) throw new Error("ponte indisponivel");
+  return achada;
+}
+
+export async function salvarAgent(agentId: string, spec: AgentSpec, note: string): Promise<number> {
+  return (await ponte().agents.saveEdited(agentId, spec, note)).version;
+}
+
+export async function duplicarAgent(fromId: string, newId: string, newName: string): Promise<string> {
+  return (await ponte().agents.duplicate(fromId, newId, newName)).agentId;
+}

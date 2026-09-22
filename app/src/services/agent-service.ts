@@ -251,6 +251,50 @@ export class AgentService {
   }
 
   /**
+   * Grava o que uma pessoa editou na tela, como versão nova.
+   *
+   * O identificador do spec tem que ser o do agent aberto. Sem essa trava, um
+   * spec com outro `id` criaria um agent novo em silêncio, e a pessoa acharia
+   * que tinha editado o que estava na tela.
+   *
+   * Grava como pessoa, e não como agent: é o clique de quem editou, então pode
+   * subir o modo de um passo de ação. A nota é obrigatória porque é o que o
+   * histórico mostra, e versão sem motivo é versão que ninguém entende depois.
+   */
+  async saveEdited(agentId: string, spec: AgentSpec, note: string): Promise<AgentVersion> {
+    const motivo = note.trim();
+    if (motivo.length === 0) throw new Error("diga o que mudou: a nota vira o registro da versão");
+    if (spec.id !== agentId) {
+      throw new Error(`o spec diz ser "${spec.id}" e a tela editava "${agentId}"`);
+    }
+    if (!(await this.get(agentId))) throw new Error(`agent "${agentId}" não existe`);
+    return this.upsert(spec, motivo, "human");
+  }
+
+  /**
+   * Agent novo a partir de um existente.
+   *
+   * Criar do zero, com passos vazios, raramente é o que se quer e é difícil de
+   * acertar: o jeito real de ter um agent novo é partir de um que funciona e
+   * mudar o que for diferente. A cópia sai como pessoa, então mantém o modo dos
+   * passos de ação do original.
+   */
+  async duplicate(fromId: string, newId: string, newName: string): Promise<AgentVersion> {
+    const id = newId.trim();
+    const nome = newName.trim();
+    if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(id)) {
+      throw new Error("identificador em minúsculas, números e hífen, de 2 a 63 caracteres");
+    }
+    if (nome.length === 0) throw new Error("o agent novo precisa de nome");
+    if (await this.get(id)) throw new Error(`já existe um agent "${id}"`);
+
+    const origem = await this.getLatestVersion(fromId);
+    if (!origem) throw new Error(`agent "${fromId}" não existe`);
+
+    return this.upsert({ ...origem.spec, id, name: nome }, `duplicado de ${fromId}`, "human");
+  }
+
+  /**
    * O que a lista de agents precisa mostrar sem abrir nenhum deles.
    *
    * Uma linha com nome e "habilitado" não responde nenhuma pergunta real: em

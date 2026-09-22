@@ -185,10 +185,12 @@ roda_marco() {
       exit 8
     fi
 
-    if ! (cd "$WORKTREE/app" && npx tsc --noEmit >/dev/null 2>&1); then
+    # typecheck cobre o renderer também. O tsc da raiz não enxerga a janela, que
+    # tem tsconfig próprio, e erro de tipo nela passava até o build.
+    if ! (cd "$WORKTREE/app" && npm run typecheck >/dev/null 2>&1); then
       echo ""
       echo "ABORTADO: tsc com erro no fim da iteracao."
-      (cd "$WORKTREE/app" && npx tsc --noEmit) || true
+      (cd "$WORKTREE/app" && npm run typecheck) || true
       exit 4
     fi
 

@@ -6,7 +6,7 @@ import {
   type LocumApi,
   type WindowLanguage,
 } from "./bridge-contract.js";
-import { buildExecutor } from "../src/executor/build.js";
+import { buildExecutor, buildGate } from "../src/executor/build.js";
 import { aplicarIdioma } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
@@ -87,6 +87,9 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "agents.get": (agentId) => agentService.get(agentId),
     "agents.versions": (agentId) => agentService.listVersions(agentId),
     "agents.overview": () => agentService.overview(),
+    "agents.saveEdited": (agentId, spec, note) => agentService.saveEdited(agentId, spec, note),
+    "actions.describe": async () => buildGate().describe(),
+    "agents.duplicate": (fromId, newId, newName) => agentService.duplicate(fromId, newId, newName),
     "agents.budgets": () => agentService.budgets(),
 
     "runs.list": (filter) => runService.list(filter),

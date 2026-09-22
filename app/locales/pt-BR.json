@@ -12,7 +12,8 @@
       "missing": "o agent {{agentId}} não tem versão gravada",
       "back": "Agents",
       "versions_one": "{{count}} versão",
-      "versions_other": "{{count}} versões"
+      "versions_other": "{{count}} versões",
+      "versions_zero": "{{count}} versões"
     },
     "history": {
       "noNote": "sem nota",
@@ -40,7 +41,8 @@
       "alone": "Não há outra versão para comparar. O spec da v{{version}} está abaixo.",
       "summary_one": "v{{from}} contra v{{to}}: {{count}} linha diferente",
       "summary_other": "v{{from}} contra v{{to}}: {{count}} linhas diferentes",
-      "identical": "Os dois specs são idênticos."
+      "identical": "Os dois specs são idênticos.",
+      "summary_zero": "v{{from}} contra v{{to}}: {{count}} linhas diferentes"
     },
     "steps_one": "{{count}} passo",
     "steps_other": "{{count}} passos",
@@ -58,7 +60,80 @@
     "never_ran": "nunca executou",
     "last_run": "última {{when}}, {{status}}",
     "spend": "{{amount}} USD",
-    "subscription_spend": "{{amount}} USD equivalente"
+    "subscription_spend": "{{amount}} USD equivalente",
+    "editor": {
+      "edit": "Editar",
+      "duplicate": "Duplicar",
+      "editing": "Editando a partir da versão {{version}}",
+      "name": "Nome",
+      "id": "Identificador",
+      "cancel": "Cancelar",
+      "discardAsk": "Descartar o que mudou?",
+      "discardYes": "Descartar",
+      "keepEditing": "Continuar editando",
+      "review": "Revisar e salvar",
+      "back": "Voltar à edição",
+      "unchanged": "Nada mudou ainda.",
+      "changes_one": "{{count}} linha mudou",
+      "changes_other": "{{count}} linhas mudaram",
+      "note": "O que mudou",
+      "notePlaceholder": "ex: auditoria mais rigorosa com concorrência",
+      "noteHint": "A nota vira o registro da versão no histórico.",
+      "save": "Salvar como versão {{version}}",
+      "saving": "Gravando...",
+      "step": {
+        "model": "Modelo",
+        "prompt": "Prompt",
+        "optional": "Opcional: pular sem falhar se faltar servidor",
+        "tools": "Ferramentas",
+        "mode": "Modo",
+        "notInCatalog": "fora do catálogo desta máquina",
+        "loadingCatalog": "lendo o catálogo dos provedores...",
+        "catalogEmpty": "nenhum provedor com catálogo nesta máquina",
+        "subscription": "assinatura: o Claude Code resolve o nome"
+      },
+      "mode": {
+        "approve": "Aprovação: espera o seu clique",
+        "draft": "Rascunho: prepara sem publicar",
+        "auto": "Automático: publica sem esperar",
+        "locked": "Esta ação só aceita aprovação.",
+        "verdictHold": "Aprovar ou pedir mudança sempre espera o clique, mesmo em automático."
+      },
+      "tools": {
+        "inherits_one": "herda {{count}} ferramenta do agent",
+        "inherits_other": "herda {{count}} ferramentas do agent",
+        "customize": "usar ferramentas próprias",
+        "inherit": "voltar a herdar",
+        "noServers": "nenhum servidor MCP cadastrado",
+        "open": "ver ferramentas",
+        "loading": "subindo o servidor...",
+        "tokens": "~{{tokens}} tok",
+        "total": "{{count}} marcadas, ~{{tokens}} tokens por chamada",
+        "inherits_zero": "não herda ferramentas do agent"
+      },
+      "budget": {
+        "title": "Orçamento",
+        "perRunUsd": "por execução, USD",
+        "perDayUsd": "por dia, USD",
+        "perRunTokens": "por execução, tokens",
+        "perDayTokens": "por dia, tokens",
+        "empty": "sem teto"
+      },
+      "dup": {
+        "title": "Duplicar {{name}}",
+        "hint": "O agent novo começa com os mesmos passos, modelos e ferramentas.",
+        "newId": "Identificador do novo",
+        "newName": "Nome do novo",
+        "create": "Criar e editar",
+        "creating": "Criando...",
+        "copyName": "{{name}} (cópia)"
+      },
+      "changes_zero": "{{count}} linhas mudaram"
+    },
+    "count_zero": "{{count}} agents",
+    "skills_zero": "{{count}} skills",
+    "steps_zero": "{{count}} passos",
+    "tools_zero": "{{count}} ferramentas"
   },
   "assistant": {
     "title": "Assistente",
@@ -82,7 +157,8 @@
       "refresh": "Atualizar catálogo",
       "noProvider": "Nenhum provedor com chave de API nesta máquina. O assistente não usa o runtime de assinatura, porque ele não entrega texto em pedaço e a conversa ficaria muda.",
       "count_one": "{{count}} modelo",
-      "count_other": "{{count}} modelos"
+      "count_other": "{{count}} modelos",
+      "count_zero": "{{count}} modelos"
     },
     "status": {
       "noModel": "escolha o modelo do assistente em Configuração",
@@ -99,7 +175,9 @@
     "agents_one": "{{count}} agent",
     "agents_other": "{{count}} agents",
     "runs_one": "{{count}} execução",
-    "runs_other": "{{count}} execuções"
+    "runs_other": "{{count}} execuções",
+    "agents_zero": "{{count}} agents",
+    "runs_zero": "{{count}} execuções"
   },
   "common": {
     "version": "v{{version}}",
@@ -109,7 +187,8 @@
   "findings": {
     "count_one": "{{count}} achado",
     "count_other": "{{count}} achados",
-    "general": "geral"
+    "general": "geral",
+    "count_zero": "{{count}} achados"
   },
   "graph": {
     "optional": "opcional",
@@ -150,7 +229,10 @@
     "by": "por {{author}}",
     "diff": "{{files}} arq · +{{additions}} −{{deletions}}",
     "draft": "rascunho",
-    "branch": "{{head}} → {{base}}"
+    "branch": "{{head}} → {{base}}",
+    "expand_zero": "ver os {{count}}",
+    "failures_zero": "{{count}} execuções falharam",
+    "findings_zero": "{{count}} achados"
   },
   "loginItem": {
     "applied": "início no login: preferência {{preference}}, sistema {{status}}"
@@ -170,7 +252,9 @@
       "title_one": "{{agent}}: {{count}} achado crítico aguardando aprovação",
       "title_other": "{{agent}}: {{count}} achados críticos aguardando aprovação",
       "body_one": "Um achado crítico está na fila esperando decisão.",
-      "body_other": "{{count}} achados críticos estão na fila esperando decisão."
+      "body_other": "{{count}} achados críticos estão na fila esperando decisão.",
+      "body_zero": "{{count}} achados críticos estão na fila esperando decisão.",
+      "title_zero": "{{agent}}: {{count}} achados críticos aguardando aprovação"
     }
   },
   "palette": {
@@ -212,7 +296,8 @@
         "skills": "Skills: {{skills}}",
         "noSkills": "Nenhuma skill selecionada.",
         "attempt_one": "Tentativa {{attempt}}, {{count}} token de entrada e {{completion}} de saída.",
-        "attempt_other": "Tentativa {{attempt}}, {{count}} tokens de entrada e {{completion}} de saída."
+        "attempt_other": "Tentativa {{attempt}}, {{count}} tokens de entrada e {{completion}} de saída.",
+        "attempt_zero": "Tentativa {{attempt}}, {{count}} tokens de entrada e {{completion}} de saída."
       }
     },
     "progress": "{{done}}/{{total}} passos",
@@ -227,7 +312,9 @@
     "when_now": "agora",
     "when_hours": "{{hours}}h",
     "when_days": "{{days}}d",
-    "when_date": "{{date}}"
+    "when_date": "{{date}}",
+    "count_zero": "{{count}} execuções",
+    "findings_zero": "{{count}} achados"
   },
   "settings": {
     "refused": "a ponte recusou {{channel}}: {{message}}",
@@ -277,7 +364,9 @@
       "answered_other": "o {{provider}} respondeu {{count}} modelos",
       "missing": "o {{provider}} não tem chave nesta máquina: guarde uma acima",
       "failed": "o catálogo recusou: {{message}}",
-      "bridgeRefused": "a ponte recusou: {{message}}"
+      "bridgeRefused": "a ponte recusou: {{message}}",
+      "answered_zero": "o {{provider}} respondeu {{count}} modelos",
+      "lastCheck_zero": "{{count}} modelos no último catálogo, conferido em {{when}}"
     },
     "registered": {
       "title": "Provedores compatíveis",
@@ -297,7 +386,8 @@
       "useStep": "passo {{step}} do agent {{agent}}",
       "useFallback": "substituição de {{from}} para {{to}}",
       "howTo": "O identificador vira o prefixo do modelo: cadastrado como meu-gateway, um passo aponta para meu-gateway/nome-do-modelo. A chave entra na seção de provedores, acima, junto com a dos de fábrica.",
-      "refused": "a ponte recusou: {{message}}"
+      "refused": "a ponte recusou: {{message}}",
+      "inUse_zero": "em uso em {{count}} lugares: {{where}}"
     },
     "credential": {
       "stored": "{{ref}} · guardada",
@@ -326,7 +416,8 @@
       "ok_one": "conectou em {{elapsed}}ms e expõe {{count}} ferramenta",
       "ok_other": "conectou em {{elapsed}}ms e expõe {{count}} ferramentas",
       "failed": "não conectou em {{elapsed}}ms: {{error}}",
-      "noReason": "sem motivo"
+      "noReason": "sem motivo",
+      "ok_zero": "conectou em {{elapsed}}ms e expõe {{count}} ferramentas"
     },
     "github": {
       "title": "Credencial do GitHub",
@@ -380,7 +471,8 @@
       "never": "nunca",
       "parked": "nenhuma, o gatilho está parado",
       "howTo": "O padrão do repositório é uma expressão regular aplicada ao nome, então \"^api-\" pega todos os que começam assim e \"^meu-servico$\" pega um só. A varredura precisa do token do GitHub guardado acima, e filtrar por autoria precisa dele conferido: é a conta dele que diz quais pull requests são seus. Achado nenhum vira comentário sozinho: ele para na fila e espera o seu clique.",
-      "refused": "a ponte recusou: {{message}}"
+      "refused": "a ponte recusou: {{message}}",
+      "every_zero": "a cada {{count}} minutos"
     },
     "slack": {
       "title": "Slack observado",
@@ -451,7 +543,9 @@
       "failed": "o tracker recusou: {{error}}",
       "bridgeRefused": "a ponte recusou: {{message}}",
       "refused": "a ponte recusou: {{message}}",
-      "howTo": "No Jira, o token sai de id.atlassian.com/manage-profile/security/api-tokens e vai junto com o e-mail da conta, porque a autenticação é básica. No GitHub Issues, um token com escrita em Issues no repositório de destino basta, e ele é separado do token que lê pull request de propósito. Cadastrar não abre tarefa nenhuma: quem abre é o passo de ação, que para na fila até você aprovar."
+      "howTo": "No Jira, o token sai de id.atlassian.com/manage-profile/security/api-tokens e vai junto com o e-mail da conta, porque a autenticação é básica. No GitHub Issues, um token com escrita em Issues no repositório de destino basta, e ele é separado do token que lê pull request de propósito. Cadastrar não abre tarefa nenhuma: quem abre é o passo de ação, que para na fila até você aprovar.",
+      "answered_zero": "respondeu {{count}} destinos visíveis",
+      "lastCheck_zero": "{{count}} destinos visíveis em {{when}}"
     },
     "budgets": {
       "title": "Orçamentos",
@@ -468,7 +562,9 @@
       "tokensToday_one": "{{count}} token cobrado hoje",
       "tokensToday_other": "{{count}} tokens cobrados hoje",
       "unpriced": "Sem preço para {{models}}: esses passos custam zero no registro, e o teto está medindo em tokens.",
-      "unpricedNoCap": "Sem preço para {{models}}: esses passos custam zero no registro e o teto em dólar não os alcança. Cadastre o preço junto do provedor ou um teto em tokens."
+      "unpricedNoCap": "Sem preço para {{models}}: esses passos custam zero no registro e o teto em dólar não os alcança. Cadastre o preço junto do provedor ou um teto em tokens.",
+      "today_zero": "hoje {{spent}} USD em {{count}} execuções",
+      "tokensToday_zero": "{{count}} tokens cobrados hoje"
     }
   },
   "severity": {
@@ -569,7 +665,8 @@
       "COMMENT": "só comentar",
       "REQUEST_CHANGES": "pedir mudança"
     },
-    "verdict_only": "só o veredito vai sair, sem achado"
+    "verdict_only": "só o veredito vai sair, sem achado",
+    "will_post_zero": "{{count}} achados vão sair"
   },
   "schema": {
     "created": "esquema criado do zero, migrações aplicadas: {{count}}",
