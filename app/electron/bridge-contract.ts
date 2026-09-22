@@ -6,6 +6,7 @@ import type { Language, LanguageState } from "../src/services/i18n-service.js";
 import type { MachineService } from "../src/services/machine-service.js";
 import type { McpService } from "../src/services/mcp-service.js";
 import type { MetricsService } from "../src/services/metrics-service.js";
+import type { PriceService } from "../src/services/price-service.js";
 import type { ProviderService } from "../src/services/provider-service.js";
 import type { RunService } from "../src/services/run-service.js";
 import type { SlackService } from "../src/services/slack-service.js";
@@ -131,6 +132,14 @@ interface ServiceApi {
   "providers.saveSecret": ProviderService["setSecret"];
   "providers.forgetSecret": ProviderService["clearSecret"];
   "providers.checkSecret": ProviderService["check"];
+
+  /**
+   * O preço por modelo, editado junto do provedor. É o que o runtime nativo
+   * multiplica pelos tokens, e sem ele o teto em dólar nunca é alcançado.
+   */
+  "providers.prices": PriceService["list"];
+  "providers.setPrice": PriceService["set"];
+  "providers.removePrice": PriceService["remove"];
 
   /**
    * Onde cada credencial mora e se ha valor guardado nela. Nunca o valor: o
@@ -290,6 +299,9 @@ export const BRIDGE_CHANNELS = [
   "providers.saveSecret",
   "providers.forgetSecret",
   "providers.checkSecret",
+  "providers.prices",
+  "providers.setPrice",
+  "providers.removePrice",
   "credentials.overview",
   "github.status",
   "github.save",

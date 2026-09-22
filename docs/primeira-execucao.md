@@ -267,6 +267,13 @@ O gasto aparece na seção de orçamentos da configuração. O agent semente nas
 com teto de 0,40 dólar por execução e 6 por dia, e a execução para ao estourar,
 em vez de continuar e cobrar.
 
+O teto em dólar só enxerga provedor por chave se o modelo tiver preço. O Locum
+não traz tabela de preço, porque ela muda sem aviso e gateway cobra o que
+quiser: cadastre entrada e saída, em dólar por milhão de tokens, na linha do
+provedor. Sem preço, o passo custa zero no registro, e a seção de orçamentos
+avisa que o teto está medindo em tokens; `set_budget` pelo servidor MCP aceita
+`perRunTokens` e `perDayTokens` para esse caso.
+
 ## 7. Ler o primeiro review na fila
 
 A contagem na bandeja é o primeiro sinal. Clicando nela, ou abrindo a janela, a

@@ -94,6 +94,11 @@ export const runs = sqliteTable(
     costUsd: real("cost_usd").notNull().default(0),
     /** Inclui o equivalente estimado do que rodou na assinatura. */
     estimateUsd: real("estimate_usd").notNull().default(0),
+    /**
+     * Tokens dos passos cobrados. É o que o teto em tokens mede, e existe
+     * porque modelo sem preço cadastrado custaria zero para sempre.
+     */
+    tokens: integer("tokens").notNull().default(0),
     error: text("error"),
     createdAt: integer("created_at").notNull().default(now),
   },
@@ -310,9 +315,29 @@ export const usageDaily = sqliteTable(
     day: text("day").notNull(),
     agentId: text("agent_id").notNull(),
     costUsd: real("cost_usd").notNull().default(0),
+    tokens: integer("tokens").notNull().default(0),
     runs: integer("runs").notNull().default(0),
   },
   (t) => [uniqueIndex("usage_daily_unq").on(t.day, t.agentId)],
+);
+
+/**
+ * Preço por modelo, em dólar por milhão de tokens.
+ *
+ * Cadastrado por quem administra, e não tabelado no código: o preço muda sem
+ * aviso e gateway compatível com OpenAI cobra o que quiser. Modelo sem linha
+ * aqui custa zero no registro, e o orçamento dele só protege em tokens.
+ */
+export const modelPrices = sqliteTable(
+  "model_prices",
+  {
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    inputUsdPerMtok: real("input_usd_per_mtok").notNull(),
+    outputUsdPerMtok: real("output_usd_per_mtok").notNull(),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [uniqueIndex("model_prices_unq").on(t.provider, t.model)],
 );
 
 /* --------------------------------------------------------------- ajustes */

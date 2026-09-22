@@ -682,7 +682,7 @@
       "description": "Defeito A2. O runtime nativo reporta custo zero sempre, e o gasto diário só é gravado quando a execução chega a done, caminho que o review nunca percorre. Duas correções. Primeira: custo do runtime nativo calculado por tokens vezes preço cadastrado por modelo, com o preço editável junto do provedor; sem preço cadastrado, o teto passa a valer em tokens e a tela avisa que está medindo em tokens. Segunda: o gasto é gravado em toda saída da execução, done, paused e failed, uma vez só por trecho executado. Testes para os dois.",
       "done_when": "Uma execução que pausa grava o gasto do dia, e um teto baixo interrompe execução de provedor por chave.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

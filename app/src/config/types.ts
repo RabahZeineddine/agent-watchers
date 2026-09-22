@@ -84,6 +84,12 @@ export type ActionStep = z.infer<typeof ActionStep>;
 export const AgentBudget = z.object({
   perRunUsd: z.number().positive().optional(),
   perDayUsd: z.number().positive().optional(),
+  /**
+   * Teto em tokens dos passos cobrados. É o que protege modelo sem preço
+   * cadastrado, cujo custo em dólar fica zero e nunca alcança o teto acima.
+   */
+  perRunTokens: z.number().int().positive().optional(),
+  perDayTokens: z.number().int().positive().optional(),
 });
 export type AgentBudget = z.infer<typeof AgentBudget>;
 
@@ -95,6 +101,8 @@ export type AgentBudget = z.infer<typeof AgentBudget>;
 export const AgentBudgetPatch = z.object({
   perRunUsd: z.number().positive().nullable().optional(),
   perDayUsd: z.number().positive().nullable().optional(),
+  perRunTokens: z.number().int().positive().nullable().optional(),
+  perDayTokens: z.number().int().positive().nullable().optional(),
 });
 export type AgentBudgetPatch = z.infer<typeof AgentBudgetPatch>;
 

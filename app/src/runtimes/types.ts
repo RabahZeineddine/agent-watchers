@@ -23,6 +23,11 @@ export type RuntimeResult = {
   costUsd: number;
   /** false quando a execucao gastou cota de assinatura, nao dinheiro. */
   billable: boolean;
+  /**
+   * false quando o modelo não tem preço cadastrado e `costUsd` é zero por
+   * falta de tabela, e não por ser de graça.
+   */
+  priced?: boolean;
   toolsUsed: string[];
 };
 

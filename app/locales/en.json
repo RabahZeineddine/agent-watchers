@@ -250,6 +250,16 @@
       "uses": "uses {{requirements}}",
       "missing": "missing {{requirements}}"
     },
+    "prices": {
+      "rate": "input {{input}} and output {{output}} USD per million tokens",
+      "model": "Model of {{provider}} to price",
+      "modelPlaceholder": "model",
+      "input": "input, USD/M",
+      "output": "output, USD/M",
+      "save": "Save price",
+      "remove": "Remove",
+      "refused": "The price was not saved: {{message}}"
+    },
     "providerKey": {
       "field": "{{provider}} API key",
       "placeholder": "paste the key here, it goes to the keychain",
@@ -452,7 +462,12 @@
       "noCap": "no cap",
       "amount": "{{amount}} USD",
       "today_one": "today {{spent}} USD in {{count}} run",
-      "today_other": "today {{spent}} USD in {{count}} runs"
+      "today_other": "today {{spent}} USD in {{count}} runs",
+      "tokenCaps": "in tokens, per run {{perRun}} and per day {{perDay}}",
+      "tokensToday_one": "{{count}} billed token today",
+      "tokensToday_other": "{{count}} billed tokens today",
+      "unpriced": "No price for {{models}}: these steps cost zero in the record, and the cap is measuring in tokens.",
+      "unpricedNoCap": "No price for {{models}}: these steps cost zero in the record and the dollar cap never reaches them. Set the price next to the provider, or a token cap."
     }
   },
   "severity": {

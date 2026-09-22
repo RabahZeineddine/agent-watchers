@@ -16,6 +16,7 @@ import { i18nService } from "../src/services/i18n-service.js";
 import { machineService } from "../src/services/machine-service.js";
 import { mcpService } from "../src/services/mcp-service.js";
 import { metricsService } from "../src/services/metrics-service.js";
+import { priceService } from "../src/services/price-service.js";
 import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
 import { slackService } from "../src/services/slack-service.js";
@@ -136,6 +137,9 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "providers.saveSecret": (nome, chave) => providerService.setSecret(nome, chave),
     "providers.forgetSecret": (nome) => providerService.clearSecret(nome),
     "providers.checkSecret": (nome) => providerService.check(nome),
+    "providers.prices": () => priceService.list(),
+    "providers.setPrice": (preco) => priceService.set(preco),
+    "providers.removePrice": (provedor, modelo) => priceService.remove(provedor, modelo),
 
     "credentials.overview": () => credentialService.overview(),
 

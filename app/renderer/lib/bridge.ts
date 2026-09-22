@@ -56,6 +56,8 @@ export const READ_CHANNELS = [
   // O cadastro de gateway compatível: identificador, nome e endereço, que é
   // o que alguém escreveu. A chave dele não está aqui, e nem em canal nenhum.
   "providers.registered",
+  // Preço por modelo, que é número digitado por alguém e nada de segredo.
+  "providers.prices",
   // Mesma razão de `credentials.overview`: responde endereço, sim ou não e o
   // que a última conferência descobriu. O token não volta por canal nenhum.
   "github.status",
@@ -142,6 +144,9 @@ export const ACTION_CHANNELS = [
   // provedor aparece em vez de apagar.
   "providers.register",
   "providers.remove",
+  // Gravar e apagar preço de modelo. Escrita, e cada uma é um clique.
+  "providers.setPrice",
+  "providers.removePrice",
   // Buscar catálogo bate na rede de cada provedor, então fica atrás de um
   // clique e não do carregamento da tela.
   "providers.models",
