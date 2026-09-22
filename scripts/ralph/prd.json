@@ -803,7 +803,7 @@
       "description": "Defeitos B4 e B5. A lista de execuções pede 500 e busca os passos de cada uma, somando 501 consultas. A inbox faz uma ida à ponte por pendência para buscar achados. Trocar os dois por uma consulta agregada: contagem de passos e de achados por execução numa consulta só, e os achados das pendências em lote.",
       "done_when": "A lista de execuções e a inbox fazem número fixo de consultas, independente de quantas linhas mostram, e um teste confere.",
       "verify": "npx tsc --noEmit && npm test && node scripts/check-i18n.mjs && npm run build && npm run smoke",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {

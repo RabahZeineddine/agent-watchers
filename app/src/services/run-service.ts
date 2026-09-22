@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { AgentSpec } from "../config/types.js";
 import { buildExecutor } from "../executor/build.js";
@@ -97,25 +97,59 @@ export class RunService {
       .orderBy(desc(schema.runs.createdAt))
       .limit(filter.limit ?? 20);
 
-    return Promise.all(
-      rows.map(async (r) => {
-        const passos = await this.steps(r.run.id);
-        const achados = passos.flatMap((p) => fromStepOutput(p.output));
-        return {
-          ...r.run,
-          agentId: r.agentId,
-          agentName: r.agentName,
-          agentVersion: r.agentVersion,
-          target: alvo(r.evento),
-          stepTotal: passos.length,
-          stepDone: passos.filter((p) => p.status === "done").length,
-          stepPending: passos.filter((p) =>
-            ["pending", "running", "awaiting_approval"].includes(p.status),
-          ).length,
-          stepFailed: passos.filter((p) => p.status === "failed").length,
-          findingCount: achados.length,
-        };
-      }),
+    const contagens = await this.stepCounts(rows.map((r) => r.run.id));
+    return rows.map((r) => ({
+      ...r.run,
+      agentId: r.agentId,
+      agentName: r.agentName,
+      agentVersion: r.agentVersion,
+      target: alvo(r.evento),
+      ...(contagens.get(r.run.id) ?? SEM_PASSOS),
+    }));
+  }
+
+  /**
+   * Andamento e achados de várias execuções numa consulta só.
+   *
+   * A lista pede quinhentas linhas, e buscar os passos de cada uma eram
+   * quinhentas idas ao banco a cada atualização da tela. O achado é contado
+   * com o mesmo critério de `fromStepOutput`: objeto com `problem` e
+   * `severity` em texto, e o resto fica fora.
+   */
+  private async stepCounts(runIds: string[]): Promise<Map<string, StepCounts>> {
+    if (runIds.length === 0) return new Map();
+    const s = schema.steps;
+    const rows = await this.db
+      .select({
+        runId: s.runId,
+        stepTotal: sql<number>`count(*)`,
+        stepDone: sql<number>`sum(${s.status} = 'done')`,
+        stepPending: sql<number>`sum(${s.status} in ('pending', 'running', 'awaiting_approval'))`,
+        stepFailed: sql<number>`sum(${s.status} = 'failed')`,
+        // O `case` protege o `json_each`: saída que não é objeto JSON, ou
+        // objeto sem lista em `findings`, estouraria a consulta inteira.
+        findingCount: sql<number>`sum(case when json_valid(${s.output}) and json_type(${s.output}, '$.findings') = 'array' then (
+          select count(*) from json_each(${s.output}, '$.findings') as f
+          where f.type = 'object'
+            and json_type(f.value, '$.problem') = 'text'
+            and json_type(f.value, '$.severity') = 'text'
+        ) else 0 end)`,
+      })
+      .from(s)
+      .where(inArray(s.runId, runIds))
+      .groupBy(s.runId);
+
+    return new Map(
+      rows.map((r) => [
+        r.runId,
+        {
+          stepTotal: Number(r.stepTotal),
+          stepDone: Number(r.stepDone ?? 0),
+          stepPending: Number(r.stepPending ?? 0),
+          stepFailed: Number(r.stepFailed ?? 0),
+          findingCount: Number(r.findingCount ?? 0),
+        },
+      ]),
     );
   }
 
@@ -158,24 +192,49 @@ export class RunService {
    * de la que ele sai.
    */
   async findings(runId: string): Promise<RunFinding[]> {
-    const rows = await this.db
+    return (await this.findingsByRun([runId]))[runId] ?? [];
+  }
+
+  /**
+   * Achados de várias execuções de uma vez, com o mesmo critério de
+   * `findings`: a tabela quando o reconciliador já gravou, a saída dos passos
+   * quando não.
+   *
+   * A inbox mostra os achados de cada pendência na linha fechada, e pedir um
+   * por um era uma ida à ponte e ao banco por linha. Aqui são duas consultas,
+   * seja qual for o tamanho da fila.
+   */
+  async findingsByRun(runIds: string[]): Promise<Record<string, RunFinding[]>> {
+    const out: Record<string, RunFinding[]> = Object.fromEntries(runIds.map((id) => [id, []]));
+    if (runIds.length === 0) return out;
+
+    const gravados = await this.db
       .select()
       .from(schema.findings)
-      .where(eq(schema.findings.runId, runId))
+      .where(inArray(schema.findings.runId, runIds))
       .orderBy(asc(schema.findings.createdAt));
-
-    if (rows.length > 0) {
-      return rows.map((r) => ({
+    for (const r of gravados) {
+      out[r.runId]!.push({
         severity: r.severity,
         file: r.file ?? undefined,
         line: r.line ?? undefined,
         category: r.category ?? undefined,
         problem: r.body,
         state: r.state,
-      }));
+      });
     }
 
-    return (await this.steps(runId)).flatMap((step) => fromStepOutput(step.output));
+    const semTabela = runIds.filter((id) => out[id]!.length === 0);
+    if (semTabela.length === 0) return out;
+
+    const passos = await this.db
+      .select({ runId: schema.steps.runId, output: schema.steps.output })
+      .from(schema.steps)
+      .where(inArray(schema.steps.runId, semTabela))
+      .orderBy(asc(schema.steps.runId), asc(schema.steps.idx));
+    for (const p of passos) out[p.runId]!.push(...fromStepOutput(p.output));
+
+    return out;
   }
 
   /**
@@ -257,6 +316,19 @@ export class RunService {
       .where(eq(schema.runs.id, run.id));
   }
 }
+
+type StepCounts = Pick<
+  RunSummary,
+  "stepTotal" | "stepDone" | "stepPending" | "stepFailed" | "findingCount"
+>;
+
+const SEM_PASSOS: StepCounts = {
+  stepTotal: 0,
+  stepDone: 0,
+  stepPending: 0,
+  stepFailed: 0,
+  findingCount: 0,
+};
 
 /** O passo pedido mais o fecho transitivo de quem depende dele. */
 function dependents(spec: AgentSpec, stepKey: string): Set<string> {
