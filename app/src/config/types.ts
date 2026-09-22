@@ -265,6 +265,12 @@ export const PollTrigger = z.object({
    * outro lado da comparação é a conta do token conferida na configuração.
    */
   authorship: Authorship.default("any"),
+  /**
+   * Rascunho entra na varredura. Falso por padrão: quem abre rascunho ainda
+   * não pediu revisão, e a batida gastaria diff e modelo num trabalho que vai
+   * mudar.
+   */
+  includeDrafts: z.boolean().default(false),
   everyMinutes: z.number().int().min(1).default(15),
 });
 

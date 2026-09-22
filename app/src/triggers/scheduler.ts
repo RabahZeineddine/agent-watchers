@@ -61,7 +61,7 @@ export interface TickOptions {
 }
 
 /** A varredura do GitHub entra como dependencia para poder ser trocada em teste. */
-export type PollFn = (owner: string, repoFilter: RegExp) => Promise<string[]>;
+export type PollFn = (owner: string, repoFilter: RegExp, options?: { includeDrafts?: boolean }) => Promise<string[]>;
 
 /** A conferencia de pull request fechado, trocavel pelo mesmo motivo. */
 export type SweepFn = (options?: SweepOptions) => Promise<SweepReport>;
@@ -127,9 +127,9 @@ export interface TriggerSchedule {
  * viria junto nessa carona, e ele nao tem o que fazer ate alguem habilitar um
  * gatilho de varredura.
  */
-const varrerNoGithub: PollFn = async (owner, repoFilter) => {
+const varrerNoGithub: PollFn = async (owner, repoFilter, options) => {
   const { pollOpenPullRequests } = await import("../sources/github.js");
-  return pollOpenPullRequests(owner, repoFilter);
+  return pollOpenPullRequests(owner, repoFilter, options);
 };
 
 /** Pelo mesmo motivo do `varrerNoGithub`: o octokit so entra quando bate. */
@@ -362,7 +362,9 @@ export class Scheduler {
           throw new Error("gatilho sem dono e sem GITHUB_OWNER, a varredura precisa da org");
         }
 
-        const created = await this.poll(owner, new RegExp(config.repoMatch));
+        const created = await this.poll(owner, new RegExp(config.repoMatch), {
+          includeDrafts: config.includeDrafts,
+        });
         const { eventIds, detail } = await this.byAuthorship(config.authorship, created);
         const runs = await this.runsFor(trigger, eventIds, wait);
         // A contagem de eventos continua sendo o que a varredura trouxe, e não

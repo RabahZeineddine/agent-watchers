@@ -792,7 +792,7 @@
       "description": "Defeito B3 da auditoria. Em src/sources/github.ts a consulta usa granularidade de dia, fetchPr roda antes da deduplicação, a página é de 50 sem paginação, o filtro de repositório acontece depois da busca, e rascunho não é pulado. Consertar os cinco: cursor com hora completa, deduplicação pelo commit de cabeça antes de buscar diff, paginação, repositório na própria consulta quando o padrão permitir, e rascunho fora por padrão, configurável no gatilho. Testes com o cliente do GitHub substituído.",
       "done_when": "Duas batidas seguidas sobre os mesmos pull requests não buscam diff nenhum na segunda, e rascunho é ignorado.",
       "verify": "npx tsc --noEmit && npm test",
-      "passes": false,
+      "passes": true,
       "blocked": false
     },
     {
