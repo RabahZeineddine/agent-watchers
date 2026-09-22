@@ -18,6 +18,22 @@ before(() => {
   process.env.OLLAMA_BASE_URL = "http://127.0.0.1:9";
 });
 
+/**
+ * Espera até a condição valer, ou estoura.
+ *
+ * Espera fixa aposta na velocidade da máquina: subir e derrubar processo pelo
+ * `npx tsx` passa de 500 ms quando a máquina está carregada, e o teste caía
+ * rodando logo depois do teste de fumaça do Electron. Aqui o teste termina assim
+ * que a condição vale, e o prazo só existe para não travar para sempre.
+ */
+async function ateQue(condicao: () => boolean, mensagem: string, prazoMs = 15_000): Promise<void> {
+  const limite = Date.now() + prazoMs;
+  while (!condicao()) {
+    if (Date.now() > limite) assert.fail(mensagem);
+    await esperar(50);
+  }
+}
+
 function brinquedo(idleTimeoutMs: number, extra: Record<string, string> = {}): McpServerConfig {
   return McpServerConfig.parse({
     name: "brinquedo",
@@ -99,8 +115,7 @@ test("duas execuções seguidas reaproveitam o processo, que fecha depois do óc
   assert.equal(pids[0], pids[1], "a segunda execução subiu outro processo");
   assert.ok(vivo(pids[0]!), "o processo deveria continuar de pé entre execuções");
 
-  await esperar(3_000);
-  assert.equal(vivo(pids[0]!), false, "o processo deveria ter fechado depois do tempo ocioso");
+  await ateQue(() => !vivo(pids[0]!), "o processo deveria ter fechado depois do tempo ocioso");
 });
 
 test("recadastro igual mantém o processo, e cadastro trocado sobe outro", async () => {
@@ -115,10 +130,8 @@ test("recadastro igual mantém o processo, e cadastro trocado sobe outro", async
   registro.reconfigure(new Map([["brinquedo", brinquedo(60_000, { MARCA: "outra" })]]));
   const segundo = await pid();
   assert.notEqual(segundo, primeiro);
-  await esperar(500);
-  assert.equal(vivo(primeiro), false, "o processo do cadastro antigo deveria ter fechado");
+  await ateQue(() => !vivo(primeiro), "o processo do cadastro antigo deveria ter fechado");
 
   registro.reconfigure(new Map());
-  await esperar(500);
-  assert.equal(vivo(segundo), false, "servidor que saiu do cadastro deveria ter fechado");
+  await ateQue(() => !vivo(segundo), "servidor que saiu do cadastro deveria ter fechado");
 });
