@@ -14,6 +14,9 @@
 #   ./ralph.sh M1 12        um marco
 #   ./ralph.sh all 30       M1, depois M2, depois N, no mesmo worktree
 #   ./ralph.sh status       só imprime o estado do backlog
+#
+# Saídas: 0 fechou, 1 teto, 2 hook bloqueou, 3 prd ilegível, 4 tsc, 6 branch
+# errada, 7 árvore suja, 8 branch no remoto, 9 story marcada com verify falhando.
 
 set -e
 
@@ -63,7 +66,7 @@ estado() {
     | "\(if .passes then "[x]" elif .blocked then "[!]" else "[ ]" end)  \(.milestone)  \(.id)  \(.title)\(if .blocked then "  <- " + (.blocked_reason // "bloqueada") else "" end)"' \
     "$PRD_FILE"
   echo ""
-  for m in M1 M2 N M3 M4a M4c M5 M6 M7 M8 M9; do
+  for m in M1 M2 N M3 M4a M4c M5 M6 M7 M8 M9 M10; do
     echo "  $m: $(pendentes "$m") pendente(s), $(bloqueadas "$m") bloqueada(s)"
   done
   echo ""
@@ -143,6 +146,11 @@ roda_marco() {
     return 0
   fi
 
+  # O que já estava marcado ao começar já foi conferido e mesclado. A partir
+  # daqui, cada marcação nova passa pela verificação da própria story.
+  local conferidas
+  conferidas=$(jq -r '[.userStories[] | select(.passes == true) | .id] | join(" ")' "$PRD_FILE")
+
   for i in $(seq 1 "$teto"); do
     echo ""
     echo "==============================================================="
@@ -192,6 +200,25 @@ roda_marco() {
       git -C "$WORKTREE" status --short
       exit 7
     fi
+
+    # O agente diz que a story passou; o script confere. Antes, o [x] era a
+    # palavra do agente, e no M8.4 ele marcou feito com a guarda do núcleo
+    # falhando, dizendo isso no próprio relato. A marcação só vale se o comando
+    # de verificação da story sair zero, rodado aqui e não descrito lá.
+    local nova verify
+    for nova in $(jq -r '[.userStories[] | select(.passes == true) | .id] | join(" ")' "$PRD_FILE"); do
+      case " $conferidas " in *" $nova "*) continue ;; esac
+      verify=$(jq -r --arg id "$nova" '.userStories[] | select(.id == $id) | .verify' "$PRD_FILE")
+      echo "conferindo $nova: $verify"
+      if ! (cd "$WORKTREE/app" && bash -c "$verify" >/dev/null 2>&1); then
+        echo ""
+        echo "ABORTADO: $nova foi marcada como feita e a verificação dela falha."
+        echo "  $verify"
+        (cd "$WORKTREE/app" && bash -c "$verify") 2>&1 | tail -20 || true
+        exit 9
+      fi
+      conferidas="$conferidas $nova"
+    done
 
     # Conclusão é ESTADO. O prd.json é a fonte da verdade.
     local pend blo
