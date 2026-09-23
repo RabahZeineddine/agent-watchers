@@ -5267,7 +5267,10 @@ async function main(): Promise<void> {
       .catch(() => undefined)
       .finally(() => {
         poolFechado = true;
-        app.quit();
+        // `exit`, e não um segundo `quit`: com o `will-quit` já cancelado uma
+        // vez, o Electron ignora o `quit` seguinte e o processo fica de pé sem
+        // janela, sem bandeja respondendo e sem sair.
+        app.exit(0);
       });
   });
 
