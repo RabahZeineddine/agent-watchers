@@ -5261,6 +5261,8 @@ async function main(): Promise<void> {
   app.on("will-quit", (event) => {
     if (poolFechado) return;
     event.preventDefault();
+    // Batida nova no meio da saída abriria servidor MCP depois do pool fechado.
+    void import("./power.js").then(({ teardownPower }) => teardownPower());
     void closeMcpPool()
       .catch(() => undefined)
       .finally(() => {
@@ -5371,14 +5373,26 @@ async function main(): Promise<void> {
     );
   }
 
+  // Banco recém-criado não tem agent, e a tela de repositórios observados não
+  // deixa salvar sem um. Quem abriu o `.dmg` não tem a linha de comando à mão
+  // para rodar o `seed`, então a semente entra aqui, uma vez: com qualquer
+  // agent no banco, nada é gravado.
+  const { agentService } = await import("../src/services/agent-service.js");
+  if ((await agentService.list()).length === 0) {
+    const { prReviewSpec } = await import("../src/seed/pr-review.js");
+    await agentService.upsert(prReviewSpec, "seed", "human");
+    console.log("semente: banco sem agent, pr-review gravado");
+  }
+
   await setupTray({ openWindow: showWindow });
 
   const { setupNotifications } = await import("./notify.js");
   const jaNaFila = await setupNotifications({ openInbox });
   if (jaNaFila > 0) console.log(`notificacao: ${jaNaFila} aviso(s) ja na fila, nenhum exibido`);
 
-  const { setupPower } = await import("./power.js");
+  const { setupClock, setupPower } = await import("./power.js");
   setupPower();
+  setupClock();
 
   // Depois de tudo que o Locum precisa para funcionar: atualizar é o único
   // passo da subida que fala com a internet, e ele não pode atrasar a bandeja

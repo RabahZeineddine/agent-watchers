@@ -1,5 +1,6 @@
 import { powerMonitor } from "electron";
 import { isPaused } from "./tray.js";
+import { ligarRelogio, umaDeCadaVez, type Relogio } from "../src/triggers/clock.js";
 import { scheduler } from "../src/triggers/scheduler.js";
 
 /**
@@ -18,6 +19,7 @@ export interface PowerOptions {
 
 let suspendedAt: number | null = null;
 let registered: { suspend: () => void; resume: () => void } | null = null;
+let relogio: Relogio | null = null;
 
 /**
  * Liga os eventos de energia do macOS ao agendador.
@@ -32,7 +34,7 @@ export function setupPower(options: PowerOptions = {}): void {
   if (registered !== null) return;
 
   const now = options.now ?? Date.now;
-  const onWake = options.onWake ?? beatScheduler;
+  const onWake = options.onWake ?? (() => baterUmaVez("wake"));
 
   const suspend = (): void => {
     suspendedAt = now();
@@ -56,7 +58,23 @@ export function setupPower(options: PowerOptions = {}): void {
   registered = { suspend, resume };
 }
 
+/**
+ * Liga o relógio que bate o agendador com a máquina acordada.
+ *
+ * Fica separado do `setupPower` porque o smoke liga os eventos de energia para
+ * provar que o resume chega ao agendador, e não pode ligar um relógio que sairia
+ * batendo gatilho de verdade meio minuto depois.
+ */
+export function setupClock(): void {
+  if (relogio !== null) return;
+  relogio = ligarRelogio(() => baterUmaVez("timer"), {
+    aoFalhar: (err) => console.error("relógio: batida falhou", err),
+  });
+}
+
 export function teardownPower(): void {
+  relogio?.parar();
+  relogio = null;
   if (registered === null) return;
   powerMonitor.removeListener("suspend", registered.suspend);
   powerMonitor.removeListener("resume", registered.resume);
@@ -81,18 +99,34 @@ export function emitPowerEvent(event: "suspend" | "resume"): void {
   powerMonitor.emit(event);
 }
 
+type Motivo = "wake" | "timer";
+
+/**
+ * O acordar e o relógio batem pela mesma porta, uma batida por vez: os dois
+ * podem cair no mesmo segundo quando o Mac volta do sono.
+ */
+const baterUmaVez = umaDeCadaVez(beatScheduler);
+
 /** A batida de verdade, que e o que roda quando ninguem troca o `onWake`. */
-async function beatScheduler(): Promise<void> {
+async function beatScheduler(motivo: Motivo): Promise<void> {
+  const origem = motivo === "wake" ? "energia: batida de acordar" : "relógio: batida";
   if (isPaused()) {
-    console.log("energia: pausado na bandeja, o agendador nao foi batido");
+    // O relógio bate a cada poucos minutos, e repetir o aviso a cada batida
+    // pausada só enche o log. O acordar é raro e continua avisando.
+    if (motivo === "wake") console.log("energia: pausado na bandeja, o agendador nao foi batido");
     return;
   }
 
-  const result = await scheduler.onWake();
+  const result = await scheduler.tick({ reason: motivo });
   const fired = result.outcomes.filter((o) => o.status === "fired").length;
   const runs = result.outcomes.reduce((total, o) => total + o.runs.length, 0);
+  const falhas = result.outcomes.filter((o) => o.status === "failed");
+  for (const f of falhas) console.error(`${origem}: gatilho ${f.triggerId} falhou: ${f.detail ?? "sem detalhe"}`);
+  if (result.reconciled.detail) console.error(`${origem}: conferência falhou: ${result.reconciled.detail}`);
+  // Batida de relógio em que nada venceu é o caso comum e não merece linha.
+  if (motivo === "timer" && fired === 0 && falhas.length === 0 && result.reconciled.settled === 0) return;
   console.log(
-    `energia: batida de acordar em ${result.outcomes.length} gatilho(s), ` +
+    `${origem} em ${result.outcomes.length} gatilho(s), ` +
       `${fired} disparado(s), ${runs} run(s) criado(s), ` +
       `${result.reconciled.settled} execução(ões) com desfecho`,
   );
