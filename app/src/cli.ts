@@ -20,18 +20,16 @@ import { collectSlackDigest, buildDigestEvent } from "./digest/ingest.js";
 import { slackService } from "./services/slack-service.js";
 import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
-import { fallbacksSemAssinatura, prReviewSpec } from "./seed/pr-review.js";
+import { prReviewSpec } from "./seed/pr-review.js";
 import { slackDigestSpec } from "./seed/slack-digest.js";
 
-/** Garante a versao do agent semente e os fallbacks da maquina sem assinatura. */
+/**
+ * Garante a versao do agent semente. A substituicao de modelo nao entra aqui:
+ * ela e escolha de cada maquina, feita na configuracao, e um padrao escrito no
+ * codigo apontaria para provedor que a maquina pode nem ter.
+ */
 async function seed(): Promise<string> {
   const version = await agentService.upsert(prReviewSpec, "seed", "human");
-
-  if (machineId !== "minha-maquina") {
-    for (const f of fallbacksSemAssinatura) {
-      await providerService.setFallback(machineId, f.fromModel, f.toModel, f.order);
-    }
-  }
   return version.id;
 }
 

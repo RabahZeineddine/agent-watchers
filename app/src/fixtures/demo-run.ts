@@ -95,8 +95,8 @@ const PASSOS = [
     modelUsed: "claude-code/claude-sonnet-5",
     substitutionReason: null as string | null,
     skillsUsed: [
-      { name: "escrita-do-time", origin: "plugin", hash: "a1b2c3d4" },
-      { name: "dotnet", origin: "plugin", hash: "e5f6a7b8" },
+      { name: "escrita-do-time", origin: "user", hash: "a1b2c3d4" },
+      { name: "dotnet", origin: "user", hash: "e5f6a7b8" },
     ],
     toolsUsed: ["Read", "Grep"],
     input: { needs: [] },
@@ -116,8 +116,8 @@ const PASSOS = [
     modelUsed: "claude-code/claude-opus-5",
     substitutionReason: null,
     skillsUsed: [
-      { name: "escrita-do-time", origin: "plugin", hash: "a1b2c3d4" },
-      { name: "dotnet", origin: "plugin", hash: "e5f6a7b8" },
+      { name: "escrita-do-time", origin: "user", hash: "a1b2c3d4" },
+      { name: "dotnet", origin: "user", hash: "e5f6a7b8" },
     ],
     toolsUsed: ["Read", "Grep", "Glob"],
     input: { needs: [TRIAGEM] },

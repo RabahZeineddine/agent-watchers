@@ -2900,8 +2900,8 @@ async function checkDigest(): Promise<string> {
   const PRIMEIRO_TS = Math.floor(Date.parse("2026-02-01T00:00:00.000Z") / 1000);
   const carimbo = (i: number): string => `${PRIMEIRO_TS + i * 60}.000100`;
 
-  const pergunta = "Alguem consegue olhar a fila da pedido 4471 hoje?";
-  const resposta = "Olhei agora, travou na emissao do nota.";
+  const pergunta = "Alguem consegue olhar a fila do pedido 4471 hoje?";
+  const resposta = "Olhei agora, travou na emissao da nota.";
   const aviso = "Deploy do orquestrador as 18h, janela de dez minutos.";
   const conversa = "bom dia";
 
@@ -3055,7 +3055,7 @@ async function checkDigest(): Promise<string> {
           channel: suporte,
           subject: pergunta,
           kind: "needs_reply",
-          summary: "Alice pergunta quem olha a fila da pedido, e Bruno achou o travamento no nota.",
+          summary: "Alice pergunta quem olha a fila do pedido, e Bruno achou o travamento na emissao da nota.",
           threadTs: carimbo(0),
         },
       ],
@@ -3192,14 +3192,14 @@ async function checkSlackPost(): Promise<string> {
   const source = slackSource(server);
 
   const abertura = `${Math.floor(Date.parse("2026-03-02T12:00:00.000Z") / 1000)}.000100`;
-  const pergunta = "Alguem sabe se a emissao do nota 4471 voltou?";
+  const pergunta = "Alguem sabe se a emissao da nota do pedido 4471 voltou?";
   const permalink = `https://exemplo.invalido/${canal}/${abertura}`;
   const externalId = `slack:${canal}:${abertura}`;
 
   // O que o passo de modelo teria escrito. Confirmado adiante caractere por
   // caractere: a fila so vale como ultima leitura se o que ela mostra for o
   // que sai.
-  const resposta = "Voltou as 11h40. A fila zerou e o nota 4471 saiu com o resto.";
+  const resposta = "Voltou as 11h40. A fila zerou e a nota do pedido 4471 saiu com o resto.";
 
   let runId: string | undefined;
 

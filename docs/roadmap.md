@@ -88,7 +88,7 @@ assinatura Claude.
 
 **Credencial de sessão web e extensão de navegador.** Há uma classe de MCP que
 não usa aplicativo aprovado e sim a sessão do navegador, porque o registro de
-aplicativo não sai. O `sistema-interno-mcp` e o `outro-sistema-mcp` são desse tipo.
+aplicativo não sai: sistema interno de empresa, sem OAuth aberto a terceiros.
 
 Tecnicamente eles rodariam hoje, porque são processos stdio. Mas não é assim que
 entram, e por dois motivos.

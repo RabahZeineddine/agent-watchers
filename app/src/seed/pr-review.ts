@@ -4,18 +4,18 @@ import type { AgentSpec } from "../config/types.js";
  * Agent semente da v1.
  *
  * Os modelos sao concretos de proposito: o passo nunca muda, quem muda e a
- * tabela de fallback da maquina. Numa maquina sem assinatura, os dois primeiros
- * passos caem para glm e gemini sem tocar nesta definicao.
+ * tabela de substituicao da maquina. Numa maquina sem assinatura, a
+ * substituicao aponta os passos para o provedor que houver, sem tocar nesta
+ * definicao.
  */
 export const prReviewSpec: AgentSpec = {
   id: "pr-review",
   name: "PR Review",
   defaultTools: [],
-  skills: [
-    { skill: "escrita-do-time", when: { always: true } },
-    { skill: "dotnet", when: { filesMatch: ["**/*.cs", "**/*.csproj"] } },
-    { skill: "front-fiel-ao-design", when: { filesMatch: ["**/*.tsx", "**/*.jsx", "**/*.css"] } },
-  ],
+  // Sem skill de fábrica: convenção de escrita e de linguagem é de quem usa, e
+  // skill que só existe numa máquina faria o semente depender dela. Quem quiser
+  // acrescenta as suas no spec, com `when` por arquivo alterado.
+  skills: [],
   budget: { perRunUsd: 0.4, perDayUsd: 6 },
   steps: [
     {
@@ -206,7 +206,8 @@ export const prReviewSpec: AgentSpec = {
       key: "deploy_context",
       name: "Contexto de deploy",
       needs: ["audit"],
-      // Opcional de proposito: no PC sem VPN o passo e pulado e o run segue.
+      // Opcional de proposito: sem o servidor cadastrado, o passo e pulado e o
+      // run segue.
       optional: true,
       model: "claude-code/claude-sonnet-5",
       maxSteps: 8,
@@ -233,10 +234,3 @@ export const prReviewSpec: AgentSpec = {
     },
   ],
 };
-
-/** Fallback da maquina sem assinatura. Local, nao vai para o git. */
-export const fallbacksSemAssinatura = [
-  { fromModel: "claude-code/claude-opus-5", toModel: "google/gemini-2.5-pro", order: 0 },
-  { fromModel: "claude-code/claude-sonnet-5", toModel: "glm/glm-4.6", order: 0 },
-  { fromModel: "google/gemini-2.5-pro", toModel: "glm/glm-4.6", order: 1 },
-];

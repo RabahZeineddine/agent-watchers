@@ -166,7 +166,6 @@ export function buildProviders(
     },
 
     glm: compat("glm", "GLM_API_KEY", "GLM_BASE_URL"),
-    gateway: compat("gateway", "GATEWAY_API_KEY", "GATEWAY_BASE_URL"),
 
     ollama: {
       available: () => Boolean(env("OLLAMA_BASE_URL")),

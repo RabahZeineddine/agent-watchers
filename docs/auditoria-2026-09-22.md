@@ -70,7 +70,7 @@ manual não.
 
 O adaptador não isola o processo (`src/runtimes/claude-code.ts`). Cada passo de
 modelo sobe o Claude Code carregando os hooks, as regras pessoais, os plugins e
-os servidores MCP da máquina: 3 globais e 16 do plugins, incluindo os de
+os servidores MCP da máquina: 3 globais e 16 de plugins, incluindo os de
 produção.
 
 Isso explica 62 segundos de triagem num diff de dois arquivos, quase tudo

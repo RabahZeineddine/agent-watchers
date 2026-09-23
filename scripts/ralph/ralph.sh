@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ralph do Locum. Adaptado do ralph.sh original.
+# Ralph do Locum.
 #
 # Diferenças que importam:
 #   - worktree próprio, para não disputar índice com a sessão interativa que

@@ -8,7 +8,7 @@ import type { PrContext } from "../sources/github.js";
  */
 export const demoPr: PrContext = {
   repo: "exemplo/loja-api",
-  owner: "time",
+  owner: "exemplo",
   repoName: "loja-api",
   pull: 482,
   title: "Corrige validacao de expiracao do token",
@@ -64,7 +64,7 @@ export const demoPr: PrContext = {
  */
 export const demoCleanPr: PrContext = {
   repo: "exemplo/loja-api",
-  owner: "time",
+  owner: "exemplo",
   repoName: "loja-api",
   pull: 483,
   title: "Extrai a extensão do nome do relatório para constante",
@@ -84,7 +84,7 @@ export const demoCleanPr: PrContext = {
   omittedSummary: "nenhum",
   ci: summarizeChecks([]),
   diff: `--- src/Relatorios/NomeDoArquivo.cs (modified, +3 -1)
-@@ -5,6 +5,8 @@ namespace Vida.Relatorios;
+@@ -5,6 +5,8 @@ namespace Loja.Relatorios;
  public static class NomeDoArquivo
  {
 +    private const string Extensao = ".csv";

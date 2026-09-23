@@ -8,7 +8,7 @@ resultado sai sozinho é decisão sua: cada ação tem modo de aprovação, rasc
 ou automático, destravado por categoria conforme a medição sustenta.
 
 Primeiro caso de uso: revisão dos pull requests do time, com triagem e auditoria
-em modelos diferentes, contexto de deploy cruzado do ArgoCD, e convenções da
+em modelos diferentes, contexto de deploy cruzado do ArgoCD, e convenções do
 time carregadas como skill conforme os arquivos alterados.
 
 ## Estado

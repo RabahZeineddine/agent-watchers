@@ -110,7 +110,7 @@ resultou em alteração de código.
    ambiente onde não se pode registrar aplicativo.
 4. **Concorrência.** Revisão de PR com IA já existe em vários produtos. O que
    justifica este é o contexto cruzado: deploy no ArgoCD, incidente no New Relic,
-   convenção da time em skill própria. O passo de contexto de deploy não é
+   convenção do time em skill própria. O passo de contexto de deploy não é
    enfeite, é a razão do projeto.
 5. **Manutenção.** Provedor muda, MCP muda, flag do Claude Code muda. É meia hora
    por mês, para sempre.
