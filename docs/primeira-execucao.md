@@ -22,10 +22,15 @@ Três coisas precisam estar no lugar. Nenhuma delas é o token.
 caminho está em [empacotamento.md](empacotamento.md). Em desenvolvimento, `npm
 run start` dentro de `app/` constrói e sobe a mesma coisa.
 
-**O agent semente gravado no banco.** A interface lê agents, não cria: a tela de
-repositórios observados precisa de pelo menos um agent na lista para deixar
-salvar, e num banco recém-criado essa lista está vazia. A gravação é pela linha
-de comando, uma vez:
+**O agent semente gravado no banco.** A tela de repositórios observados precisa
+de pelo menos um agent na lista para deixar salvar. O aplicativo cuida disso
+sozinho: quando abre num banco sem agent nenhum, grava o `pr-review` e escreve
+no log `semente: banco sem agent, pr-review gravado`. Com qualquer agent já no
+banco, não grava nada.
+
+A linha de comando continua servindo para trazer a semente para a versão do
+código, depois de atualizar o repositório. Com o spec igual ao gravado, ela não
+cria versão nova:
 
 ```bash
 cd app
@@ -34,7 +39,6 @@ npm run dev seed
 
 O banco fica em `~/Library/Application Support/locum/watchers.db`, fora do
 repositório, e é o mesmo para o aplicativo empacotado e para a linha de comando.
-Semear pelo terminal e abrir o `Locum.app` depois funciona: é o mesmo arquivo.
 
 **Um runtime que saiba executar os passos.** O agent semente pede
 `claude-code/claude-sonnet-5` na triagem e `claude-code/claude-opus-5` na
@@ -221,9 +225,14 @@ varredura nenhuma, a última aparece como "nunca".
 
 ## 6. O que esperar na primeira varredura
 
-Aqui está a parte que surpreende, e é melhor saber antes: **o agendador não tem
-relógio próprio**. Ele anda por cursor de tempo e é batido de fora. Hoje quem
-bate é o evento de energia do macOS, quando a máquina acorda, e a batida manual:
+O agendador anda por cursor de tempo, um por gatilho, e é batido de fora. Três
+coisas batem:
+
+- **o relógio do aplicativo**, meio minuto depois de abrir e a cada cinco
+  minutos dali em diante, enquanto o aplicativo estiver aberto;
+- **o evento de energia do macOS**, quando a máquina acorda, que já encontra
+  vencido tudo o que passou da hora durante o sono;
+- **a batida manual**, pela linha de comando.
 
 ```bash
 cd app
@@ -232,10 +241,20 @@ npm run dev tick --wait   # o mesmo, esperando as execuções terminarem
 npm run dev triggers      # o que está cadastrado e quando cada um vence
 ```
 
-Ou seja: com o aplicativo aberto numa máquina que não dormiu, um gatilho vencido
-continua vencido. Para ver a primeira varredura acontecer na hora, bata à mão. O
-temporizador dentro do aplicativo é trabalho que ainda não foi feito, e está no
-backlog.
+O relógio não decide o que dispara, só pergunta. Um gatilho de quinze minutos
+dispara quando a batida seguinte encontrar a cadência vencida, então o atraso
+fica em até cinco minutos. Os cinco minutos são de propósito: cada batida também
+roda a conferência de pull request fechado, que pergunta ao GitHub, e bater a
+cada minuto gastaria cota da API para descobrir que nada mudou. Duas batidas
+nunca rodam juntas; quem chega com uma em andamento espera por ela.
+
+Com o gatilho recém-ligado, a primeira varredura acontece na próxima batida do
+relógio, em até cinco minutos. Para não esperar, bata à mão. Pausar na bandeja
+para o relógio e o acordar, e não para a batida manual.
+
+Batida do relógio em que nada venceu não escreve nada no log. Gatilho que falha
+escreve sempre, com o motivo, por exemplo `relógio: batida: gatilho <id> falhou:
+sem token do GitHub`.
 
 Quando a batida acontece, a varredura faz o seguinte:
 
@@ -255,9 +274,10 @@ deploy e o comentário. O contexto de deploy é opcional e pede o servidor MCP
 passo é o que para na fila.
 
 Duas coisas que parecem falha e não são. **Auditoria sem achado nenhum** é o
-resultado esperado num PR sem defeito: a lista volta vazia, nada entra na fila e
-a execução termina bem. E **execução parada esperando decisão** é o estado
-normal do quarto passo, não um travamento.
+resultado esperado num PR sem defeito: a lista volta vazia, o veredito sai
+`APPROVE` e o item entra na fila do mesmo jeito, porque aprovar um pull request
+em seu nome também é algo que sai assinado por você. E **execução parada
+esperando decisão** é o estado normal do quarto passo, não um travamento.
 
 Se nada aparecer, a lista de execuções diz onde parou:
 
@@ -286,13 +306,19 @@ colorida à esquerda e o repositório, o autor e o tamanho do diff na linha.
 
 Cada item tem três saídas:
 
-**Aprovar** publica o comentário no pull request, do jeito que ele está.
+**Aprovar** publica a review no pull request, do jeito que ela está, com o
+veredito que a auditoria escolheu.
 
 **Editar** abre a revisão do que vai sair. É aqui que a leitura de verdade
 acontece: cada achado aparece com arquivo, linha, severidade, o problema e a
 correção sugerida, e cada um tem uma marca dizendo se ele entra na publicação. A
-tela diz, o tempo todo, quantos achados vão sair. Desmarcar tudo e aprovar
-publica nada, que é uma resposta legítima.
+tela diz, o tempo todo, quantos achados vão sair.
+
+O **veredito** também se troca aqui, entre aprovar, só comentar e pedir
+mudança. A auditoria decide pela régua do prompt: pedir mudança quando há achado
+crítico, ou alto com confiança alta; aprovar quando não há achado, ou só baixo;
+só comentar no meio. Desmarcar todos os achados deixa sair só o veredito, e a
+tela avisa isso. Se a intenção é não dizer nada, o caminho é descartar.
 
 **Descartar** fecha o item sem publicar. A execução continua no histórico, com
 os achados, para consulta depois.
@@ -353,7 +379,10 @@ endereço e a credencial.
 O par de passos que abre tarefa mora em `app/src/seed/tracker-issue.ts`, como
 fragmento, e não dentro do agent semente: abrir tarefa é escolha de quem escreve
 o agent, e o `pr-review` de fábrica não tem tracker para apontar. Quem quiser
-concatena os dois passos ao spec do agent dele.
+concatena os dois passos ao spec do agent dele. O editor da tela troca modelo,
+prompt, ferramentas, modo e orçamento dos passos que já existem, e ainda não
+acrescenta passo; a concatenação é pelo `upsert_agent` do servidor MCP, e o
+passo de tarefa gravado por ali nasce em `approve` de qualquer forma.
 
 São dois, e não um handler esperto. O primeiro é de modelo e escreve só prosa,
 em três campos: o objetivo, o que mudou e o que testar. O segundo é de ação,
@@ -406,7 +435,14 @@ começa numa pessoa clicando.
 Existe um modo `draft`, que monta a review no GitHub em estado pendente, visível
 só para você, e existe um `auto`, que nasce desligado. Nenhum dos dois está
 ligado no agent semente, e trocar isso é edição de agent, não um acaso de
-configuração.
+configuração: na tela **Agents**, **Editar** mostra o modo de cada passo de
+ação, e salvar pede uma nota dizendo o que mudou, que vira o registro da versão.
+
+Mesmo em `auto`, a review que aprova ou pede mudança espera o clique. Só a que
+apenas comenta sai sozinha. A trava está no handler, pelo veredito, e não no
+spec. Um spec gravado pelo servidor MCP com `draft` ou `auto` é rebaixado para
+`approve` na gravação, porque subir modo é clique de pessoa; o assistente da
+janela nem chega a gravar agent.
 
 A porta de saída é uma só: nada que escreve fora do Locum passa por outro lugar.
 E a pendência guarda um identificador externo antes de qualquer tentativa de
