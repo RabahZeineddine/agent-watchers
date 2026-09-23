@@ -329,16 +329,14 @@ async function startup(decision: boolean | null): Promise<void> {
  * Estado do interruptor da atualização automática.
  *
  * Como o do login, a linha de comando só mexe no que está guardado: quem fala
- * com o verificador é o processo do Electron. Desligado é o padrão, e vai
- * continuar sendo enquanto o pacote não for assinado, porque atualização que o
- * macOS recusa instalar não vale a chamada de rede que a descobriu.
+ * com o GitHub é o processo do Electron. Sem decisão, vale ligado.
  */
 async function updates(decision: boolean | null): Promise<void> {
   if (decision !== null) await updateService.setEnabled(decision);
 
   const { preference, enabled } = await updateService.state();
   if (preference === null) {
-    console.log("atualização automática: não decidido, e o padrão é desligado");
+    console.log("atualização automática: não decidido, e o padrão é ligado");
     return;
   }
   console.log(

@@ -463,15 +463,14 @@ async function checkReconcile(): Promise<string> {
  * Prova que o interruptor desligado não custa uma requisição sequer.
  *
  * Ler o código e ver que ele decide não chamar não prova nada: a chamada que
- * importa é a que um temporizador faria três segundos depois, longe da linha
+ * importa é a que um temporizador faria dez segundos depois, longe da linha
  * que alguém leu. Por isso aqui a saída de rede é contada de fora, e o critério
  * é a contagem, não a intenção.
  *
- * A segunda metade liga o interruptor e confere que ele é mesmo lido, pelo
- * `planUpdater`, que decide sem armar. Não é detalhe: num pacote com dmg o
- * `app-update.yml` existe, e chamar o `setupUpdater` ligado ali dentro faria o
- * smoke bater no servidor de releases. A preferência de quem desenvolve volta
- * ao que era no fim, porque o smoke roda no banco de verdade.
+ * A segunda metade devolve a preferência ao padrão, que é ligado, e confere
+ * pelo `planUpdater`, que decide sem armar. Não é detalhe: dentro do pacote o
+ * `setupUpdater` ligado perguntaria ao GitHub de verdade. A preferência de quem
+ * desenvolve volta ao que era no fim, porque o smoke roda no banco de verdade.
  */
 async function checkUpdates(): Promise<string> {
   const { updateService } = await import("../src/services/update-service.js");
@@ -488,27 +487,25 @@ async function checkUpdates(): Promise<string> {
   };
 
   try {
-    await updateService.clearPreference();
+    await updateService.setEnabled(false);
     const desligado = await setupUpdater();
     if (desligado.enabled || desligado.armed || updaterArmed()) {
       throw new Error("o verificador de atualização armou com o interruptor desligado");
     }
     if (desligado.reason !== "disabled") {
-      throw new Error(
-        `sem preferência gravada o motivo deveria ser disabled, veio ${desligado.reason}`,
-      );
+      throw new Error(`desligado, o motivo deveria ser disabled, veio ${desligado.reason}`);
     }
     semRede("desligada");
 
-    await updateService.setEnabled(true);
-    const ligado = await planUpdater();
-    if (!ligado.enabled) throw new Error("o interruptor ligado não chegou ao verificador");
-    if (ligado.armed || updaterArmed()) throw new Error("o plano do verificador armou sozinho");
-    semRede("ligada");
+    await updateService.clearPreference();
+    const padrao = await planUpdater();
+    if (!padrao.enabled) throw new Error("sem preferência gravada a atualização devia valer ligada");
+    if (padrao.armed || updaterArmed()) throw new Error("o plano do verificador armou sozinho");
+    semRede("no padrão");
 
     return t("smoke.updates", {
       requests: espia.vistas().length,
-      feed: t(ligado.feed === null ? "smoke.feedAbsent" : "smoke.feedPresent"),
+      reason: padrao.reason ?? "pronta",
     });
   } finally {
     espia.parar();
@@ -5402,7 +5399,8 @@ async function main(): Promise<void> {
   // nem a janela. Desligado, que é o padrão, não custa nada.
   const { setupUpdater } = await import("./updater.js");
   const atualizacao = await setupUpdater();
-  if (atualizacao.armed) console.log(`atualização: verificando em ${atualizacao.feed}`);
+  if (atualizacao.armed) console.log(`atualização: ${atualizacao.current}, conferindo o GitHub ao abrir e a cada 6h`);
+  else console.log(`atualização: parada (${atualizacao.reason}${atualizacao.detail ? `: ${atualizacao.detail}` : ""})`);
 
   // Antes da janela: o preload chama os canais assim que o documento carrega, e
   // canal ainda nao registrado volta como erro de IPC para o renderer.

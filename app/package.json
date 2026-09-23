@@ -24,6 +24,7 @@
     "dist": "electron-builder --publish never",
     "smoke": "npm run build && electron dist/main.cjs --smoke",
     "smoke:dist": "node scripts/smoke-dist.mjs",
+    "release": "node --import tsx scripts/release.ts",
     "verify": "npm run typecheck && npm run check:i18n && npm run build && npm run smoke"
   },
   "dependencies": {
@@ -42,7 +43,6 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "drizzle-orm": "^0.44.0",
-    "electron-updater": "^6.8.9",
     "i18next": "^26.4.2",
     "lucide-react": "^1.47.0",
     "motion": "^13.4.0",

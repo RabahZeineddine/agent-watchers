@@ -7,6 +7,7 @@ import { useIdioma } from "../idioma";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "../../../src/services/i18n-service.js";
+import type { UpdaterState } from "../../../src/update/state.js";
 
 type Provedor = ReadResult<"providers.list">[number];
 type Fallback = ReadResult<"providers.fallbacks">[number];
@@ -133,6 +134,10 @@ export function Configuracao() {
         titulo={t("settings.language.title")}
       >
         <EscolhaDoIdioma />
+      </Secao>
+
+      <Secao descricao={t("settings.updates.description")} titulo={t("settings.updates.title")}>
+        <Atualizacao />
       </Secao>
 
       <Secao
@@ -345,6 +350,81 @@ function EscolhaDoIdioma() {
           {t("settings.language.refused", { message: erro })}
         </p>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------- atualização */
+
+/**
+ * A versão instalada, a que está esperando e o interruptor.
+ *
+ * Abrir a tela não pergunta ao GitHub: o estado vem do que o verificador já
+ * sabe. Conferir sai para a rede atrás de um clique, e a resposta volta com o
+ * download terminado ou com o motivo da falha.
+ */
+function Atualizacao() {
+  const { t } = useTranslation();
+  const lido = useRead("updates.state");
+  const [recarregado, setRecarregado] = useState<UpdaterState | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const estado = recarregado ?? lido.data;
+
+  if (estado === undefined) return <Vazio>{t("settings.updates.loading")}</Vazio>;
+
+  const agir = (canal: "updates.check" | "updates.setEnabled", ligar?: boolean): void => {
+    setOcupado(true);
+    const pedido = canal === "updates.check" ? call("updates.check") : call("updates.setEnabled", ligar === true);
+    pedido.then(setRecarregado, () => undefined).finally(() => setOcupado(false));
+  };
+
+  const parado = estado.reason !== null;
+  const situacao = parado
+    ? t(`settings.updates.reason.${estado.reason}`, { detail: estado.detail ?? "" })
+    : t(`settings.updates.phase.${estado.phase}`, {
+        version: estado.available?.version ?? "",
+        error: estado.error ?? "",
+      });
+
+  return (
+    <div
+      className="flex flex-col gap-2 px-4 py-3"
+      data-locum-probe="atualizacao"
+      data-locum-atualizacao-fase={estado.phase}
+      data-locum-atualizacao-motivo={estado.reason ?? ""}
+    >
+      <p className="text-sm">
+        {t("settings.updates.current", { version: estado.current })}
+        <span className="text-muted-foreground"> · {situacao}</span>
+      </p>
+      {estado.lastCheckAt === null ? null : (
+        <p className="text-muted-foreground text-xs">
+          {t("settings.updates.lastCheck", { when: new Date(estado.lastCheckAt).toLocaleString() })}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {estado.phase === "ready" ? (
+          <Button onClick={() => void call("updates.apply")} size="sm">
+            {t("settings.updates.apply", { version: estado.available?.version ?? "" })}
+          </Button>
+        ) : null}
+        <Button
+          disabled={ocupado || parado}
+          onClick={() => agir("updates.check")}
+          size="sm"
+          variant="secondary"
+        >
+          {ocupado ? t("settings.updates.checking") : t("settings.updates.check")}
+        </Button>
+        <Button
+          disabled={ocupado}
+          onClick={() => agir("updates.setEnabled", !estado.enabled)}
+          size="sm"
+          variant="ghost"
+        >
+          {estado.enabled ? t("settings.updates.turnOff") : t("settings.updates.turnOn")}
+        </Button>
+      </div>
     </div>
   );
 }

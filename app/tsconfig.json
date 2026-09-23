@@ -26,6 +26,7 @@
     "src/**/*.ts",
     "test/**/*.ts",
     "electron/**/*.ts",
+    "scripts/**/*.ts",
     "drizzle.config.ts"
   ]
 }

@@ -11,6 +11,7 @@ import type { ProviderService } from "../src/services/provider-service.js";
 import type { RunService } from "../src/services/run-service.js";
 import type { SlackService } from "../src/services/slack-service.js";
 import type { StartupService } from "../src/services/startup-service.js";
+import type { UpdaterState } from "../src/update/state.js";
 import type { TrackerService } from "../src/services/tracker-service.js";
 import type { TriggerService } from "../src/services/trigger-service.js";
 import type { Scheduler } from "../src/triggers/scheduler.js";
@@ -248,6 +249,17 @@ interface ServiceApi {
   "startup.set": StartupService["setPreference"];
 
   /**
+   * A atualização do próprio Locum. Ler o estado não sai para a rede; quem
+   * pergunta ao GitHub é o `updates.check`, atrás de um clique, e o relógio do
+   * verificador.
+   */
+  "updates.state": () => Promise<UpdaterState>;
+  "updates.setEnabled": (enabled: boolean) => Promise<UpdaterState>;
+  "updates.check": () => Promise<UpdaterState>;
+  /** Fecha, troca e reabre. Devolve `false` quando não há versão baixada. */
+  "updates.apply": () => Promise<boolean>;
+
+  /**
    * Em que idioma a janela fala.
    *
    * A etiqueta do sistema só existe do lado do Electron, então a janela não
@@ -347,6 +359,10 @@ export const BRIDGE_CHANNELS = [
   "triggers.schedule",
   "startup.get",
   "startup.set",
+  "updates.state",
+  "updates.setEnabled",
+  "updates.check",
+  "updates.apply",
   "i18n.state",
   "i18n.setPreference",
   "window.inboxTarget",

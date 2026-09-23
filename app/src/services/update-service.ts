@@ -7,21 +7,21 @@ export const AUTO_UPDATE_KEY = "updates.auto_check";
 export interface UpdatePreference {
   /** `null` quando ninguém decidiu ainda. */
   preference: boolean | null;
-  /** O que vale agora. Sem decisão, vale desligado. */
+  /** O que vale agora. Sem decisão, vale ligado. */
   enabled: boolean;
 }
 
 /**
- * Atualização automática, desligada até alguém ligar.
+ * Atualização automática, ligada até alguém desligar.
  *
- * O padrão desligado não é cautela genérica: sem certificado da Apple o pacote
- * não é assinado, e atualização não assinada o macOS recusa na hora de aplicar.
- * Ligar o verificador nesse estado só gastaria rede para descobrir uma versão
- * que nunca vai instalar.
+ * Nasceu desligada porque o caminho era o Squirrel do macOS, que recusa pacote
+ * sem assinatura da Apple. A troca agora é do próprio Locum, em
+ * `src/update/release.ts`, e funciona sem certificado; o motivo do padrão
+ * desligado deixou de existir.
  *
  * Como no `StartupService`, `null` é diferente de `false`: um diz que ninguém
- * decidiu, o outro que alguém decidiu que não. Os dois resultam em desligado,
- * mas só o segundo sobrevive a um dia em que o padrão mudar.
+ * decidiu, o outro que alguém decidiu que não. Foi essa distinção que deixou o
+ * padrão mudar sem passar por cima de quem já tinha desligado.
  */
 export class UpdateService {
   constructor(private readonly settings: SettingsService = settingsService) {}
@@ -33,7 +33,7 @@ export class UpdateService {
 
   /** O que a casca Electron consulta para decidir se arma o verificador. */
   async isEnabled(): Promise<boolean> {
-    return (await this.getPreference()) === true;
+    return (await this.getPreference()) !== false;
   }
 
   async setEnabled(enabled: boolean): Promise<void> {
@@ -47,7 +47,7 @@ export class UpdateService {
 
   async state(): Promise<UpdatePreference> {
     const preference = await this.getPreference();
-    return { preference, enabled: preference === true };
+    return { preference, enabled: preference !== false };
   }
 }
 

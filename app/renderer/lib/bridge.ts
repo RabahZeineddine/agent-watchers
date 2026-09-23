@@ -79,6 +79,8 @@ export const READ_CHANNELS = [
   // varredura não dispara a próxima.
   "triggers.schedule",
   "startup.get",
+  // Versão instalada, a baixada e quando conferiu. Não pergunta ao GitHub.
+  "updates.state",
   "i18n.state",
   "window.inboxTarget",
 ] as const satisfies readonly BridgeChannel[];
@@ -165,6 +167,11 @@ export const ACTION_CHANNELS = [
   // Escolher idioma é um clique de quem está usando, e a escrita em `settings`
   // vale para a próxima subida também. Não é leitura de tela.
   "i18n.setPreference",
+  // Conferir sai para o GitHub e aplicar fecha o aplicativo: os dois pedem
+  // alguém clicando, e o interruptor é preferência de quem usa a máquina.
+  "updates.setEnabled",
+  "updates.check",
+  "updates.apply",
 ] as const satisfies readonly BridgeChannel[];
 
 export type ActionChannel = (typeof ACTION_CHANNELS)[number];

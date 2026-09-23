@@ -565,6 +565,31 @@
       "unpricedNoCap": "Sem preço para {{models}}: esses passos custam zero no registro e o teto em dólar não os alcança. Cadastre o preço junto do provedor ou um teto em tokens.",
       "today_zero": "hoje {{spent}} USD em {{count}} execuções",
       "tokensToday_zero": "{{count}} tokens cobrados hoje"
+    },
+    "updates": {
+      "title": "Atualização",
+      "description": "O Locum confere o GitHub ao abrir e a cada seis horas. A versão nova é baixada, conferida pelo hash e instalada quando o aplicativo fecha.",
+      "loading": "lendo…",
+      "current": "Versão {{version}}",
+      "lastCheck": "Última conferência: {{when}}",
+      "check": "Conferir agora",
+      "checking": "Conferindo…",
+      "turnOn": "Ligar",
+      "turnOff": "Desligar",
+      "apply": "Reiniciar e atualizar para {{version}}",
+      "reason": {
+        "disabled": "desligada",
+        "dev": "rodando do código; atualize por git pull",
+        "not-replaceable": "não dá para trocar este aplicativo: {{detail}}"
+      },
+      "phase": {
+        "idle": "ainda não conferida",
+        "checking": "conferindo",
+        "downloading": "baixando {{version}}",
+        "ready": "{{version}} baixada, entra ao fechar",
+        "uptodate": "em dia",
+        "failed": "a conferência falhou: {{error}}"
+      }
     }
   },
   "severity": {
@@ -578,9 +603,7 @@
     "loginItem": "preferência {{decision}}, sistema {{status}}",
     "loginItemUndecided": "não decidida",
     "power": "suspend e resume registrados, uma batida depois de {{minutes}}min de sono",
-    "updates": "interruptor desligado por padrão, electron-updater nunca carregado, requisições de rede na subida: {{requests}}; ligado, ele é lido sem armar, configuração de publicação {{feed}}",
-    "feedPresent": "presente",
-    "feedAbsent": "ausente",
+    "updates": "desligada não sai para a rede ({{requests}} requisições); no padrão vale ligada, sem armar, com motivo {{reason}}",
     "secrets": "segredo cifrado no disco, referência no banco, valor só na conexão",
     "notifications": "aviso montado sem exibir, três críticos num run só, clique apontando para o run",
     "reconcile": "batida do agendador cruzando review humano com achados, {{settled}} execução(ões) com desfecho, pull request aberto volta na próxima e fechado não é reprocessado",
@@ -671,5 +694,9 @@
   "schema": {
     "created": "esquema criado do zero, migrações aplicadas: {{count}}",
     "adopted": "banco existente adotado pelas migrações, marcadas como aplicadas: {{count}}"
+  },
+  "updates": {
+    "readyTitle": "Locum {{version}} baixado",
+    "readyBody": "Entra quando o Locum fechar. Pela Configuração dá para reiniciar agora."
   }
 }

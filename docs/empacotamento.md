@@ -1,7 +1,7 @@
 # Empacotamento, instalação e assinatura
 
 Como sai o `.dmg`, o que acontece ao abri-lo sem assinatura, o que muda com uma
-conta de desenvolvedor Apple, e por que a atualização automática depende dela.
+conta de desenvolvedor Apple, e como o Locum se atualiza sem ela.
 
 A configuração vive em `app/electron-builder.yml`, e cada decisão dela está
 comentada no próprio arquivo. Aqui está o procedimento e o que ele significa
@@ -144,8 +144,8 @@ o Locum uma vez pelo Finder antes de usar qualquer retorno de autenticação.
 ## Com conta de desenvolvedor Apple
 
 A conta custa uma assinatura anual e é decisão de quem é dono do repositório.
-Este projeto não gera certificado, não configura notarização e não publica em
-servidor de atualização. O que mudaria, se alguém decidisse assinar:
+Este projeto não gera certificado nem configura notarização. O que mudaria, se
+alguém decidisse assinar:
 
 **A assinatura** carimba o pacote com um certificado Developer ID. Hoje
 `electron-builder.yml` traz `mac.identity: null`, e isso é explícito de
@@ -161,40 +161,70 @@ segredo e não entra neste repositório, nem em variável de ambiente versionada
 **O item de login** passa a funcionar, porque o sistema aceita registrar como
 item de arranque um aplicativo que ele consegue verificar.
 
-**A atualização automática** passa a ser possível, que é o assunto da próxima
-seção.
+**A atualização automática** não depende disso: ela já funciona sem
+assinatura, pela troca própria descrita na próxima seção. Com assinatura, a
+troca continuaria valendo; o que mudaria é o macOS deixar de pedir a
+confirmação da primeira abertura.
 
-## Por que a atualização automática depende disso
+## Atualização automática
 
-O `electron-updater` está instalado e ligado atrás de um interruptor, desligado
-por padrão. O padrão desligado não é preguiça nem cautela genérica.
+O `electron-updater` troca o aplicativo pelo Squirrel do macOS, e o Squirrel
+recusa pacote sem assinatura da Apple. Por isso ele saiu. A troca agora é do
+próprio Locum, em `app/src/update/release.ts`, e funciona sem certificado.
 
-O macOS recusa instalar uma atualização que não esteja assinada. O updater até
-baixaria o pacote novo, mas a troca falharia na hora de aplicar. Ligar a
-verificação hoje só gastaria rede para descobrir uma versão que nunca entra.
+**O que o aplicativo instalado faz.** Dez segundos depois de abrir, e a cada
+seis horas, ele pergunta ao GitHub pelo release mais recente de
+`RabahZeineddine/agent-watchers`, sem token, porque o repositório é público.
+Achando versão maior que a instalada:
 
-Desligado, o `electron-updater` sequer é importado. Um módulo carregado "só
-para consultar" deixa temporizador de pé, e é assim que um verificador acaba
-batendo num servidor que o dono da máquina nunca autorizou. O `--smoke` prova
-isso contando o que sai pelo `http`, pelo `https` e pelo `net` do Electron: ler
-o código e concluir que ele decide não chamar não diz nada sobre o que um
-temporizador faz três segundos depois.
+1. baixa o `locum-update.json` do release, que traz o sha512 de cada pacote;
+2. baixa o `.zip` da arquitetura dele, calculando o hash no caminho, e apaga o
+   arquivo se o hash não bater;
+3. extrai com `ditto`, que preserva os links simbólicos do framework do
+   Electron, e confere que o `Info.plist` diz a versão prometida;
+4. avisa por notificação e espera.
 
-O interruptor mora em `settings` e se lê pela linha de comando:
+A troca só acontece **depois** que o processo sai. Um script desligado do
+aplicativo espera o PID sumir, move o bundle antigo para uma cópia de
+segurança, põe o novo no lugar e apaga a cópia; se o segundo passo falhar, a
+cópia volta. Trocar com o aplicativo aberto é o que corrompe a janela: o
+processo guarda na memória o índice do `app.asar` e passa a ler pedaço de outro
+arquivo.
+
+Em **Configuração > Atualização** ficam a versão instalada, o que está baixado,
+**Conferir agora**, **Reiniciar e atualizar** e o interruptor. Nasce ligado;
+quem desliga fica desligado, porque a preferência distingue "ninguém decidiu"
+de "decidiu que não". Pela linha de comando:
 
 ```bash
 npm run dev updates       # mostra o estado
-npm run dev updates:on    # liga a verificação na subida do aplicativo
-npm run dev updates:off   # desliga
+npm run dev updates:on
+npm run dev updates:off
 ```
 
-Ligar hoje não quebra nada: a seção `publish` do `electron-builder.yml` diz de
-onde a atualização viria, mas quem decide consultá-la é a preferência. E o
-`app-update.yml`, que o electron-builder grava dentro do pacote, só nasce
-quando o alvo é `dmg` ou `zip`: um pacote feito por `dist:dir` fica sem feed, e
-o verificador ligado ali dentro responde que não há o que verificar em vez de
-armar.
+Não atualiza: rodando do repositório (quem tem o código atualiza por `git
+pull`), aberto de dentro do `.dmg` e aberto translocado pelo macOS, que roda
+uma cópia num caminho aleatório. A tela diz qual dos três é.
 
-Com conta de desenvolvedor, o caminho completo seria: assinar, notarizar,
-publicar o release, e só então ligar o interruptor. Nessa ordem. Ligar antes
-entrega ao usuário um download que o sistema dele vai recusar.
+O `--smoke` conta o que sai pelo `http`, pelo `https`, pelo `net` e pelo `fetch`
+e prova que desligado não faz requisição nenhuma.
+
+**Publicar uma versão** é pelo script, de uma árvore limpa no `main`
+sincronizado:
+
+```bash
+cd app
+npm run release              # 0.1.0 vira 0.1.1
+npm run release -- minor     # ou major, ou uma versão x.y.z
+npm run release -- --dry-run # tudo menos commit, push e release
+```
+
+Ele sobe a versão, roda `verify`, os testes, empacota `dmg` e `zip` para arm64,
+roda a fumaça do pacote, gera o manifesto, extrai o zip do mesmo jeito que o
+aplicativo faria, e só então commita, etiqueta, empurra e cria o release pelo
+`gh` da conta pessoal. Só arm64 porque o binário nativo do SQLite em `native/`
+é compilado para arm64.
+
+A primeira versão com o verificador precisa ser instalada à mão: o Locum que
+já estava instalado não tem o código que baixa.
+

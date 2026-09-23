@@ -1,94 +1,196 @@
-import { app, net } from "electron";
+import { app, net, Notification } from "electron";
+import { spawn } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
-import { existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "./i18n.js";
 import { updateService } from "../src/services/update-service.js";
+import { ligarRelogio, umaDeCadaVez, type Relogio } from "../src/triggers/clock.js";
+import {
+  apagar,
+  baixarConferindo,
+  bundleDoExecutavel,
+  extrairBundle,
+  motivoParaNaoTrocar,
+  procurarVersaoNova,
+  scriptDeTroca,
+} from "../src/update/release.js";
+import type { FaseDaAtualizacao, UpdaterState } from "../src/update/state.js";
 
-/** Por que o verificador não subiu, quando não subiu. */
-export type MotivoDaRecusa = "disabled" | "no-feed" | null;
+export type { UpdaterState } from "../src/update/state.js";
 
-export interface UpdaterState {
-  /** `null` quando ninguém decidiu ainda. */
-  preference: boolean | null;
-  /** O que vale agora. Sem decisão, vale desligado. */
-  enabled: boolean;
-  /** Caminho da configuração de publicação, ou `null` quando não há nenhuma. */
-  feed: string | null;
-  /** Se o verificador foi de fato armado nesta subida. */
-  armed: boolean;
-  reason: MotivoDaRecusa;
-}
+/** De quanto em quanto tempo o aplicativo aberto pergunta de novo. */
+const CADENCIA_MS = 6 * 60 * 60_000;
+/** A primeira pergunta espera a subida assentar. */
+const PRIMEIRA_MS = 10_000;
 
 let armado = false;
+let relogio: Relogio | null = null;
+let fase: FaseDaAtualizacao = "idle";
+let conferidaEm: number | null = null;
+let erro: string | null = null;
+let disponivel: { version: string; notes: string } | null = null;
+/** O bundle novo extraído, esperando o processo sair. */
+let preparado: string | null = null;
+let reabrir = false;
+let trocaRegistrada = false;
 
 /**
- * Onde o electron-builder deixa a configuração de publicação.
- *
- * Empacotado ela vai para `Resources`, e é de lá que o electron-updater a lê.
- * Fora do pacote o próprio electron-updater procura por `dev-app-update.yml` na
- * raiz do app, que ninguém versiona: rodando do repositório não há feed, e essa
- * ausência é o que impede o smoke de sair para a rede por acidente.
+ * Pelo `net` do Electron, que respeita o proxy do sistema, e procurado na hora
+ * da chamada para que a espia do smoke enxergue a saída.
  */
-export function feedPath(): string | null {
-  const caminho = app.isPackaged
-    ? join(process.resourcesPath, "app-update.yml")
-    : join(app.getAppPath(), "dev-app-update.yml");
-  return existsSync(caminho) ? caminho : null;
-}
+const buscar = ((url: string, init?: RequestInit) => net.fetch(url, init)) as typeof fetch;
+
+const pastaDeTrabalho = (): string => join(homedir(), "Library", "Caches", "Locum", "update");
 
 /**
  * Decide se o verificador deve subir, sem subir nada.
  *
  * Fica separado do `setupUpdater` para que dar essa resposta nunca custe uma
  * chamada de rede. O smoke precisa exatamente disso: conferir que o interruptor
- * ligado é mesmo lido, sem que a leitura dispare a verificação contra o
- * servidor de releases.
+ * é lido sem que a leitura dispare a pergunta ao GitHub.
  */
 export async function planUpdater(): Promise<UpdaterState> {
   const { preference, enabled } = await updateService.state();
-  const feed = feedPath();
+  const base = {
+    current: app.getVersion(),
+    preference,
+    enabled,
+    armed: armado,
+    detail: null,
+    phase: fase,
+    lastCheckAt: conferidaEm,
+    available: disponivel,
+    error: erro,
+  };
 
-  if (!enabled) return { preference, enabled, feed, armed: false, reason: "disabled" };
-  if (feed === null) return { preference, enabled, feed, armed: false, reason: "no-feed" };
-  return { preference, enabled, feed, armed: false, reason: null };
+  if (!enabled) return { ...base, reason: "disabled" };
+  if (!app.isPackaged) return { ...base, reason: "dev" };
+  const bundle = bundleDoExecutavel(process.execPath);
+  const motivo = bundle === null ? "fora de um .app" : motivoParaNaoTrocar(bundle);
+  if (motivo !== null) return { ...base, reason: "not-replaceable", detail: motivo };
+  return { ...base, reason: null };
 }
 
 /**
- * Arma o verificador de atualização, se e só se alguém tiver ligado.
+ * Arma o verificador, se o interruptor estiver ligado e o bundle puder ser
+ * trocado: uma pergunta logo depois de abrir e outra a cada seis horas.
  *
- * Desligado, o `electron-updater` nem chega a ser importado. Não é economia de
- * memória: é a única forma de garantir que nenhum temporizador dele fique de
- * pé. Um módulo importado "só para consultar" é como um verificador acaba
- * batendo num servidor que o dono da máquina nunca autorizou.
- *
- * Sem configuração de publicação também não arma, e isso vale mesmo com o
- * interruptor ligado: sem certificado da Apple não há o que publicar, e o
- * `electron-updater` sem feed levanta erro na primeira verificação.
+ * Desligado, nada aqui fala com a rede nem deixa temporizador de pé. O smoke
+ * conta a saída pelo `http`, pelo `https` e pelo `net` para provar isso.
  */
 export async function setupUpdater(): Promise<UpdaterState> {
   const plano = await planUpdater();
+  if (plano.reason !== null || armado) return plano;
 
-  if (plano.reason === "no-feed") {
-    console.log("atualização: ligada, mas sem configuração de publicação, nada a verificar");
-    return plano;
-  }
-  if (plano.reason !== null) return plano;
-
-  const { autoUpdater } = await import("electron-updater");
-  autoUpdater.logger = null;
-  // A troca só acontece quando alguém fecha o Locum. Reiniciar por conta
-  // própria no meio do dia derrubaria a bandeja e o agendador junto.
-  autoUpdater.autoInstallOnAppQuit = true;
   armado = true;
-
-  await autoUpdater.checkForUpdatesAndNotify();
+  registrarTroca();
+  relogio = ligarRelogio(() => conferir().then(() => undefined), {
+    cadenciaMs: CADENCIA_MS,
+    primeiraMs: PRIMEIRA_MS,
+    aoFalhar: (err) => console.error("atualização: conferência falhou", err),
+  });
   return { ...plano, armed: true };
+}
+
+/** Desarma o relógio. O que já foi baixado continua esperando a saída. */
+export function teardownUpdater(): void {
+  relogio?.parar();
+  relogio = null;
+  armado = false;
 }
 
 /** Se o verificador chegou a ser armado nesta subida. Serve ao smoke. */
 export function updaterArmed(): boolean {
   return armado;
+}
+
+/** O estado para a tela de configuração. */
+export function updaterState(): Promise<UpdaterState> {
+  return planUpdater();
+}
+
+/**
+ * Pergunta ao GitHub, baixa e prepara. Uma de cada vez: o clique em "conferir
+ * agora" e o relógio podem cair juntos, e dois downloads do mesmo zip no mesmo
+ * arquivo corromperiam os dois.
+ */
+export const conferir = umaDeCadaVez(async (): Promise<void> => {
+  const plano = await planUpdater();
+  if (plano.reason !== null) return;
+  // Já baixado: perguntar de novo só gastaria rede até a pessoa reiniciar.
+  if (preparado !== null) return;
+
+  fase = "checking";
+  erro = null;
+  try {
+    const nova = await procurarVersaoNova({ atual: app.getVersion(), arch: process.arch, buscar });
+    conferidaEm = Date.now();
+    if (nova === null) {
+      fase = "uptodate";
+      return;
+    }
+
+    fase = "downloading";
+    disponivel = { version: nova.version, notes: nova.notes };
+    const pasta = join(pastaDeTrabalho(), nova.version);
+    await apagar(pasta);
+    await mkdir(pasta, { recursive: true });
+    const zip = join(pasta, "pacote.zip");
+    await baixarConferindo(nova.zipUrl, zip, nova.sha512, buscar);
+    preparado = await extrairBundle(zip, join(pasta, "bundle"), nova.version);
+    await rm(zip, { force: true });
+
+    fase = "ready";
+    console.log(`atualização: ${nova.version} baixada, entra quando o Locum fechar`);
+    avisar(nova.version);
+  } catch (err) {
+    fase = "failed";
+    disponivel = preparado === null ? null : disponivel;
+    erro = err instanceof Error ? err.message : String(err);
+    conferidaEm = Date.now();
+    throw err;
+  }
+});
+
+/** Fecha o Locum, troca e abre a versão nova. */
+export function aplicarAgora(): boolean {
+  if (preparado === null) return false;
+  reabrir = true;
+  app.quit();
+  return true;
+}
+
+function avisar(versao: string): void {
+  if (!Notification.isSupported()) return;
+  new Notification({
+    title: t("updates.readyTitle", { version: versao }),
+    body: t("updates.readyBody"),
+  }).show();
+}
+
+/**
+ * A troca de verdade, agendada no `will-quit`.
+ *
+ * Não no `quit`: o processo principal fecha o pool de servidores MCP e sai por
+ * `app.exit`, que não emite `quit`. O script sobe desligado do processo e
+ * espera o PID sumir, então agendar antes de o pool fechar não adianta a troca:
+ * trocar o bundle com o aplicativo de pé é o que faz a janela mostrar pedaço
+ * de outro arquivo.
+ */
+function registrarTroca(): void {
+  if (trocaRegistrada) return;
+  trocaRegistrada = true;
+  app.once("will-quit", () => {
+    const atual = bundleDoExecutavel(process.execPath);
+    if (preparado === null || atual === null) return;
+    const script = scriptDeTroca({ pid: process.pid, atual, novo: preparado, reabrir });
+    const filho = spawn("/bin/sh", ["-c", script], { detached: true, stdio: "ignore" });
+    filho.unref();
+    console.log(`atualização: troca agendada para depois da saída${reabrir ? ", reabrindo" : ""}`);
+  });
 }
 
 /** Uma requisição que saiu enquanto a espia estava de pé. */
@@ -108,8 +210,9 @@ export interface EspiaDeRede {
  *
  * Existe para o smoke: "desligado não faz chamada de rede" só se prova olhando
  * a saída, e não lendo o código que decide não chamar. Cobre os dois caminhos
- * que o `electron-updater` usa, o `net` do Electron quando ele está disponível
- * e o `http`/`https` do Node quando não está.
+ * por onde uma chamada do processo principal sai: `net.request` e `net.fetch`
+ * do Electron, `http`/`https` do Node e o `fetch` global, que é do undici e não
+ * passa por nenhum dos outros.
  *
  * O remendo é global e volta atrás no `parar()`. Fora do smoke ninguém chama
  * isto: contar toda requisição do processo em produção seria pagar por uma
@@ -124,6 +227,8 @@ export function espiarRede(): EspiaDeRede {
     httpsRequest: https.request,
     httpsGet: https.get,
     netRequest: net.request,
+    netFetch: net.fetch,
+    fetch: globalThis.fetch,
   };
 
   const anotar =
@@ -138,6 +243,8 @@ export function espiarRede(): EspiaDeRede {
   https.request = anotar("https", originais.httpsRequest) as typeof https.request;
   https.get = anotar("https", originais.httpsGet) as typeof https.get;
   net.request = anotar("net", originais.netRequest) as typeof net.request;
+  net.fetch = anotar("net.fetch", originais.netFetch) as typeof net.fetch;
+  globalThis.fetch = anotar("fetch", originais.fetch) as typeof fetch;
 
   return {
     vistas: () => [...vistas],
@@ -147,6 +254,8 @@ export function espiarRede(): EspiaDeRede {
       https.request = originais.httpsRequest;
       https.get = originais.httpsGet;
       net.request = originais.netRequest;
+      net.fetch = originais.netFetch;
+      globalThis.fetch = originais.fetch;
     },
   };
 }

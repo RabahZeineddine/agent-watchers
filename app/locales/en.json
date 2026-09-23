@@ -537,6 +537,31 @@
       "tokensToday_other": "{{count}} billed tokens today",
       "unpriced": "No price for {{models}}: these steps cost zero in the record, and the cap is measuring in tokens.",
       "unpricedNoCap": "No price for {{models}}: these steps cost zero in the record and the dollar cap never reaches them. Set the price next to the provider, or a token cap."
+    },
+    "updates": {
+      "title": "Updates",
+      "description": "Locum checks GitHub on launch and every six hours. A new version is downloaded, verified by hash and installed when the app quits.",
+      "loading": "loading…",
+      "current": "Version {{version}}",
+      "lastCheck": "Last check: {{when}}",
+      "check": "Check now",
+      "checking": "Checking…",
+      "turnOn": "Turn on",
+      "turnOff": "Turn off",
+      "apply": "Restart and update to {{version}}",
+      "reason": {
+        "disabled": "off",
+        "dev": "running from source; update with git pull",
+        "not-replaceable": "this app cannot be replaced: {{detail}}"
+      },
+      "phase": {
+        "idle": "not checked yet",
+        "checking": "checking",
+        "downloading": "downloading {{version}}",
+        "ready": "{{version}} downloaded, installs on quit",
+        "uptodate": "up to date",
+        "failed": "the check failed: {{error}}"
+      }
     }
   },
   "severity": {
@@ -550,9 +575,7 @@
     "loginItem": "preference {{decision}}, system {{status}}",
     "loginItemUndecided": "undecided",
     "power": "suspend and resume registered, one beat after {{minutes}}min of sleep",
-    "updates": "switch off by default, electron-updater never loaded, network requests on startup: {{requests}}; switched on it is read without arming, publish config {{feed}}",
-    "feedPresent": "present",
-    "feedAbsent": "absent",
+    "updates": "off makes no network request ({{requests}} requests); default is on, not armed, reason {{reason}}",
     "secrets": "secret encrypted on disk, reference in the database, value only in the connection",
     "notifications": "notice built without showing, three criticals in a single run, click pointing to the run",
     "reconcile": "scheduler beat crossing human review with findings, {{settled}} run(s) settled, open pull request comes back next beat and a closed one is not reprocessed",
@@ -642,5 +665,9 @@
   "schema": {
     "created": "schema created from scratch, migrations applied: {{count}}",
     "adopted": "existing database adopted by migrations, marked as applied: {{count}}"
+  },
+  "updates": {
+    "readyTitle": "Locum {{version}} downloaded",
+    "readyBody": "It installs when Locum quits. Settings can restart it now."
   }
 }

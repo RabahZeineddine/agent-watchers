@@ -21,6 +21,7 @@ import { providerService } from "../src/services/provider-service.js";
 import { runService } from "../src/services/run-service.js";
 import { slackService } from "../src/services/slack-service.js";
 import { startupService } from "../src/services/startup-service.js";
+import { updateService } from "../src/services/update-service.js";
 import { trackerService } from "../src/services/tracker-service.js";
 import { triggerService } from "../src/services/trigger-service.js";
 import { scheduler } from "../src/triggers/scheduler.js";
@@ -179,6 +180,23 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
 
     "startup.get": () => startupService.getPreference(),
     "startup.set": (enabled) => startupService.setPreference(enabled),
+
+    // Import tardio: o verificador só entra quando a tela pergunta por ele.
+    "updates.state": async () => (await import("./updater.js")).updaterState(),
+    "updates.setEnabled": async (enabled) => {
+      const updater = await import("./updater.js");
+      await updateService.setEnabled(enabled);
+      if (enabled) await updater.setupUpdater();
+      else updater.teardownUpdater();
+      return updater.updaterState();
+    },
+    "updates.check": async () => {
+      const updater = await import("./updater.js");
+      // A falha fica no estado, com a mensagem, e a tela mostra de lá.
+      await updater.conferir().catch(() => undefined);
+      return updater.updaterState();
+    },
+    "updates.apply": async () => (await import("./updater.js")).aplicarAgora(),
 
     "i18n.state": () => idiomaDaJanela(),
     "i18n.setPreference": async (language) => {
