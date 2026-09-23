@@ -22,25 +22,28 @@ Três coisas precisam estar no lugar. Nenhuma delas é o token.
 caminho está em [empacotamento.md](empacotamento.md). Em desenvolvimento, `npm
 run start` dentro de `app/` constrói e sobe a mesma coisa.
 
-**O agent semente gravado no banco.** A tela de repositórios observados precisa
-de pelo menos um agent na lista para deixar salvar. O aplicativo cuida disso
-sozinho: quando abre num banco sem agent nenhum, grava o `pr-review` e escreve
-no log `semente: banco sem agent, pr-review gravado`. Com qualquer agent já no
-banco, não grava nada.
+**Um agent importado.** O Locum não traz agent pronto: o banco nasce vazio, e
+agent, skill e servidor MCP são de quem usa. A tela de repositórios observados
+precisa de pelo menos um agent para deixar salvar.
 
-A linha de comando continua servindo para trazer a semente para a versão do
-código, depois de atualizar o repositório. Com o spec igual ao gravado, ela não
-cria versão nova:
+Para começar pela revisão de pull request, importe o exemplo
+[`examples/agents/pr-review.json`](../examples/agents/pr-review.json): na tela
+**Agents**, **Importar** abre o seletor de arquivo. Pela linha de comando:
 
 ```bash
 cd app
-npm run dev seed
+npm run dev import ../examples/agents/pr-review.json
 ```
+
+Importar de novo um arquivo com o mesmo id cria versão nova, com a anterior no
+histórico; arquivo igual ao gravado não cria nada. **Exportar**, no detalhe do
+agent, salva o spec no mesmo formato, e é assim que um agent vai para outra
+máquina.
 
 O banco fica em `~/Library/Application Support/locum/watchers.db`, fora do
 repositório, e é o mesmo para o aplicativo empacotado e para a linha de comando.
 
-**Um runtime que saiba executar os passos.** O agent semente pede
+**Um runtime que saiba executar os passos.** O exemplo `pr-review` pede
 `claude-code/claude-sonnet-5` na triagem e `claude-code/claude-opus-5` na
 auditoria, que gastam a sua assinatura pelo binário do Claude Code já
 autenticado na máquina. Se esse binário existir e estiver autenticado, não há
@@ -55,7 +58,7 @@ indisponível, e quais variáveis ele usa. O `claude-code` aparece marcado como
 assinatura: ele não pede chave, pede o binário. Pela linha de comando a mesma
 lista sai de `npm run dev providers`.
 
-Se o provedor que o agent semente pede estiver indisponível, há duas coisas a
+Se o provedor que o agent pede estiver indisponível, há duas coisas a
 fazer, nesta ordem: dar uma chave a algum provedor, e mandar os modelos do spec
 caírem nele.
 
@@ -189,8 +192,7 @@ trocar, confira de novo.
 
 Ainda na configuração, a seção **Repositórios observados**. São cinco campos:
 
-**O agent que vai revisar.** Depois do `seed`, `pr-review` é o único, e já vem
-escolhido.
+**O agent que vai revisar.** Com um agent só importado, ele já vem escolhido.
 
 **O dono**, que é o login da organização ou da conta. É o `org:` da busca.
 
@@ -287,7 +289,7 @@ npm run dev runs failed   # só as que falharam
 npm run dev inbox         # as aprovações esperando decisão
 ```
 
-O gasto aparece na seção de orçamentos da configuração. O agent semente nasce
+O gasto aparece na seção de orçamentos da configuração. O exemplo `pr-review` vem
 com teto de 0,40 dólar por execução e 6 por dia, e a execução para ao estourar,
 em vez de continuar e cobrar.
 
@@ -338,7 +340,7 @@ só lê.
 
 Este passo é opcional, e fica por último de propósito: ele só faz sentido depois
 que você leu alguns reviews e concluiu que uma parte do que sai merece card no
-quadro, e não comentário no pull request. O agent semente não abre tarefa
+quadro, e não comentário no pull request. O exemplo `pr-review` não abre tarefa
 nenhuma, e nada do que está aqui liga sozinho.
 
 ### Onde pegar a credencial
@@ -376,9 +378,9 @@ endereço e a credencial.
 
 ### O que o Locum cria
 
-O par de passos que abre tarefa mora em `app/src/seed/tracker-issue.ts`, como
-fragmento, e não dentro do agent semente: abrir tarefa é escolha de quem escreve
-o agent, e o `pr-review` de fábrica não tem tracker para apontar. Quem quiser
+O par de passos que abre tarefa mora em `app/src/examples/tracker-issue.ts`,
+como fragmento, e não dentro do exemplo: abrir tarefa é escolha de quem escreve
+o agent, e o `pr-review` não tem tracker para apontar. Quem quiser
 concatena os dois passos ao spec do agent dele. O editor da tela troca modelo,
 prompt, ferramentas, modo e orçamento dos passos que já existem, e ainda não
 acrescenta passo; a concatenação é pelo `upsert_agent` do servidor MCP, e o
@@ -427,14 +429,14 @@ janela seria um segundo caminho até o tracker, sem a fila no meio.
 
 Vale fechar repetindo, porque é a promessa que o resto depende.
 
-O quarto passo do agent semente está cadastrado com `mode: "approve"`. Nesse
+O quarto passo do exemplo `pr-review` está cadastrado com `mode: "approve"`. Nesse
 modo, a porta de saída grava a pendência, devolve "pendente" e volta, sem chamar
 quem publica. O único caminho que publica de verdade é a decisão da fila, e ela
 começa numa pessoa clicando.
 
 Existe um modo `draft`, que monta a review no GitHub em estado pendente, visível
 só para você, e existe um `auto`, que nasce desligado. Nenhum dos dois está
-ligado no agent semente, e trocar isso é edição de agent, não um acaso de
+ligado no exemplo, e trocar isso é edição de agent, não um acaso de
 configuração: na tela **Agents**, **Editar** mostra o modo de cada passo de
 ação, e salvar pede uma nota dizendo o que mudou, que vira o registro da versão.
 

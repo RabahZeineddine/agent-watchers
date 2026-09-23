@@ -9,7 +9,7 @@ tudo roda pela linha de comando, com o mesmo executor que a interface vai usar.
 cp .env.example .env    # preencha GITHUB_TOKEN e MACHINE_ID
 pnpm install
 pnpm db:push
-pnpm dev seed
+pnpm dev import ../examples/agents/pr-review.json
 ```
 
 ## Revisar um PR

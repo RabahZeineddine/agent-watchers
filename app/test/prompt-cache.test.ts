@@ -11,7 +11,7 @@ import { Executor, stablePrefix } from "../src/executor/executor.js";
 import { McpRegistry } from "../src/mcp/registry.js";
 import type { ProviderEntry } from "../src/providers/registry.js";
 import { NativeRuntime } from "../src/runtimes/native.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 import { AgentService } from "../src/services/agent-service.js";
 import { PriceService } from "../src/services/price-service.js";
 

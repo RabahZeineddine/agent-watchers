@@ -71,6 +71,13 @@ interface ServiceApi {
   /** Os modos que cada ação aceita, perguntados ao handler. Só leitura. */
   "actions.describe": () => { kind: string; modes: readonly ("approve" | "draft" | "auto")[]; holdsByContent: boolean }[];
   "agents.duplicate": AgentService["duplicate"];
+  /**
+   * Importar e exportar pelo seletor de arquivo do sistema. Importar grava
+   * agent como pessoa, então mora no mesmo acesso estreito do salvar. Os dois
+   * devolvem `null` quando a pessoa cancela o seletor.
+   */
+  "agents.importFile": () => Promise<{ agentId: string; version: number; created: boolean } | null>;
+  "agents.exportFile": (agentId: string) => Promise<string | null>;
 
   "runs.list": RunService["list"];
   "runs.get": RunService["get"];
@@ -305,6 +312,8 @@ export const BRIDGE_CHANNELS = [
   "agents.saveEdited",
   "actions.describe",
   "agents.duplicate",
+  "agents.importFile",
+  "agents.exportFile",
   "runs.list",
   "runs.get",
   "runs.findings",

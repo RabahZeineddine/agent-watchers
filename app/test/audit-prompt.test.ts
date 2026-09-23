@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { fromJSONSchema } from "zod";
 import { ReviewFinding } from "../src/config/types.js";
 import { renderPrompt } from "../src/executor/executor.js";
-import { demoCleanPr, demoPr } from "../src/seed/demo-event.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { demoCleanPr, demoPr } from "../src/examples/demo-event.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 import { parseTarget } from "../src/services/execution-service.js";
 
 function auditoria() {

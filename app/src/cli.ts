@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrateDb } from "./db/migrate.js";
 import { McpTransport } from "./config/types.js";
@@ -20,23 +22,39 @@ import { collectSlackDigest, buildDigestEvent } from "./digest/ingest.js";
 import { slackService } from "./services/slack-service.js";
 import { pollOpenPullRequests } from "./sources/github.js";
 import { scheduler, type TickResult } from "./triggers/scheduler.js";
-import { prReviewSpec } from "./seed/pr-review.js";
-import { slackDigestSpec } from "./seed/slack-digest.js";
 
 /**
- * Garante a versao do agent semente. A substituicao de modelo nao entra aqui:
- * ela e escolha de cada maquina, feita na configuracao, e um padrao escrito no
- * codigo apontaria para provedor que a maquina pode nem ter.
+ * Grava um agent de um arquivo JSON. O Locum não traz agent de fábrica, então
+ * é por aqui (ou pela tela Agents) que o primeiro entra. Os de
+ * `examples/agents/` servem de ponto de partida.
  */
-async function seed(): Promise<string> {
-  const version = await agentService.upsert(prReviewSpec, "seed", "human");
-  return version.id;
+async function importAgent(caminho: string): Promise<void> {
+  const { version, created } = await agentService.importSpec(readFileSync(caminho, "utf8"), basename(caminho));
+  console.log(`${version.agentId} v${version.version} ${created ? "criado" : "atualizado"} (${version.id})`);
+}
+
+/** Escreve o spec mais recente em arquivo, ou na saída quando não há caminho. */
+async function exportAgent(agentId: string, caminho?: string): Promise<void> {
+  const texto = await agentService.exportSpec(agentId);
+  if (caminho === undefined) process.stdout.write(texto);
+  else {
+    writeFileSync(caminho, texto);
+    console.log(`${agentId} exportado para ${caminho}`);
+  }
+}
+
+/** Separa `--agent <id>` do resto dos argumentos. */
+function opcaoAgent(args: string[]): { agentId?: string; resto: string[] } {
+  const i = args.indexOf("--agent");
+  if (i < 0) return { resto: args };
+  const agentId = args[i + 1];
+  if (!agentId) throw new Error("--agent pede o id do agent");
+  return { agentId, resto: [...args.slice(0, i), ...args.slice(i + 2)] };
 }
 
 /** Roda o pipeline num alvo, real ou sintetico, e imprime o resultado. */
-async function start(target: string): Promise<void> {
-  await seed();
-  const started = await executionService.start({ target });
+async function start(target: string, agentId?: string): Promise<void> {
+  const started = await executionService.start({ target, agentId });
   console.log(`run ${started.runId} (${started.source} ${started.repo}#${started.pull})`);
 
   await printRun(started.runId);
@@ -50,7 +68,7 @@ async function start(target: string): Promise<void> {
  * classificar mora no agent: aqui so se amarram as duas, porque a tela e o
  * agendador vao amarrar as mesmas duas.
  */
-async function digest(): Promise<void> {
+async function digest(agentId: string): Promise<void> {
   const watch = await slackService.get();
   if (watch.server === null) {
     throw new Error("nenhum servidor de Slack cadastrado nesta maquina");
@@ -67,7 +85,10 @@ async function digest(): Promise<void> {
       ` ${bundle.dropped} descartada(s), janela ate ${bundle.until}`,
   );
 
-  const version = await agentService.upsert(slackDigestSpec, "seed", "human");
+  // O agent é o que a pessoa importou, e não o exemplo: regravar o exemplo a
+  // cada digest desfaria qualquer edição feita nele.
+  const version = await agentService.getLatestVersion(agentId);
+  if (!version) throw new Error(`agent "${agentId}" não existe; importe um, por exemplo examples/agents/slack-digest.json`);
   const executor = await buildExecutor();
   const runId = await executor.createRun(version.id, eventId);
   const status = await executor.execute(runId);
@@ -122,8 +143,8 @@ function formatRun(run: RunSummary): string {
 }
 
 /**
- * O que roda nesta maquina, a tabela de substituicao e onde cada passo do
- * agent semente cairia hoje.
+ * O que roda nesta maquina, a tabela de substituicao e onde cada modelo pedido
+ * pelos agents cadastrados cairia hoje.
  */
 async function providers(): Promise<void> {
   for (const p of providerService.listProviders()) {
@@ -141,10 +162,15 @@ async function providers(): Promise<void> {
   if (fallbacks.length === 0) console.log("  nenhuma");
   for (const f of fallbacks) console.log(`  ${f.fromModel} -> ${f.toModel} (ordem ${f.order})`);
 
-  const modelos = [
-    ...new Set(prReviewSpec.steps.filter((s) => s.type === "model").map((s) => s.model)),
-  ];
-  console.log("\npassos do agent semente:");
+  // Os modelos que os agents cadastrados pedem, de todos eles: sem agent de
+  // fábrica, o que interessa é onde os passos desta máquina cairiam hoje.
+  const modelos = new Set<string>();
+  for (const agent of await agentService.list()) {
+    const versao = await agentService.getLatestVersion(agent.id);
+    for (const passo of versao?.spec.steps ?? []) if (passo.type === "model") modelos.add(passo.model);
+  }
+  console.log("\nmodelos pedidos pelos agents:");
+  if (modelos.size === 0) console.log("  nenhum agent cadastrado");
   for (const modelo of modelos) {
     const preview = await providerService.resolvePreview(modelo, machineId);
     console.log(
@@ -409,17 +435,23 @@ function migrarAntes(): void {
 
 async function main(): Promise<void> {
   migrarAntes();
-  const [cmd, ...args] = process.argv.slice(2);
+  const [cmd, ...todos] = process.argv.slice(2);
+  const { agentId, resto: args } = opcaoAgent(todos);
   const arg = args[0];
   const executor = () => buildExecutor();
 
   switch (cmd) {
-    case "seed":
-      console.log(`versao ${await seed()}`);
+    case "import":
+      if (!arg) throw new Error("uso: import <arquivo.json>");
+      await importAgent(arg);
+      break;
+    case "export":
+      if (!arg) throw new Error("uso: export <agent-id> [arquivo.json]");
+      await exportAgent(arg, args[1]);
       break;
     case "demo":
       // "demo limpo" roda o diff correto, que tem que voltar sem achado.
-      await start(arg === "limpo" ? "sintetico-limpo" : "sintetico");
+      await start(arg === "limpo" ? "sintetico-limpo" : "sintetico", agentId);
       break;
     case "fixture:run": {
       // Execucao plantada, sem chamar modelo. Ela existe para a interface e
@@ -430,8 +462,8 @@ async function main(): Promise<void> {
       break;
     }
     case "review":
-      if (!arg) throw new Error('uso: review owner/repo#123');
-      await start(arg);
+      if (!arg) throw new Error("uso: review owner/repo#123 [--agent <id>]");
+      await start(arg, agentId);
       break;
     case "poll": {
       const owner = process.env.GITHUB_OWNER;
@@ -441,7 +473,7 @@ async function main(): Promise<void> {
       break;
     }
     case "digest":
-      await digest();
+      await digest(agentId ?? "slack-digest");
       break;
     case "inbox":
       await inbox();
@@ -565,13 +597,14 @@ async function main(): Promise<void> {
         [
           "uso: pnpm dev <comando>",
           "",
-          "  seed                     grava a versao do agent semente",
-          "  demo                     roda o pipeline num PR sintetico, sem credencial",
+          "  import <arquivo.json>    grava um agent de arquivo (exemplos em examples/agents/)",
+          "  export <agent> [arquivo] escreve o spec mais recente, no formato do import",
+          "  demo [--agent id]        roda o agent num PR sintetico, sem credencial",
           "  demo limpo               o mesmo, num PR correto que deve voltar sem achado",
           "  fixture:run              planta uma execucao pronta no banco, sem chamar modelo",
-          "  review owner/repo#123    roda o pipeline num PR especifico",
+          "  review owner/repo#123    roda o agent num PR especifico (--agent quando houver mais de um)",
           "  poll [regex-de-repo]     varre PRs abertos da org e cria eventos",
-          "  digest                   junta o Slack desde a ultima entrega e roda o agent de digest",
+          "  digest [--agent id]      junta o Slack desde a ultima entrega e roda o agent de digest (slack-digest)",
           "  inbox                    lista aprovacoes pendentes",
           "  runs [status]            lista as ultimas execucoes",
           "  reconcile <run-id>       cruza o review humano com os achados e grava os desfechos",

@@ -3,7 +3,7 @@ import { CodeBlock, CodeBlockCopyButton } from "@/components/ai-elements/code-bl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
-import { duplicarAgent } from "@/lib/editar-agent";
+import { duplicarAgent, exportarAgent, importarAgent } from "@/lib/editar-agent";
 import { EditorDeAgent } from "../editor-agent";
 import { comContexto, diffJson, type LinhaDoDiff } from "@/lib/diff";
 import { cn } from "@/lib/utils";
@@ -40,22 +40,47 @@ function Lista({ navegar }: { navegar: TelaProps["navegar"] }) {
   const { t } = useTranslation();
   const agents = useRead("agents.overview");
   const linhas = agents.data ?? [];
+  const [erroDeImportar, setErroDeImportar] = useState<string | null>(null);
+
+  /*
+   * O Locum não traz agent de fábrica: importar é a porta de entrada. Agent
+   * que já existe ganha versão nova, e a tela abre nele para quem importou ver
+   * o que chegou.
+   */
+  const importar = (): void => {
+    setErroDeImportar(null);
+    importarAgent().then(
+      (feito) => {
+        if (feito !== null) navegar("agents", feito.agentId);
+      },
+      (err: unknown) => setErroDeImportar(err instanceof Error ? err.message : String(err)),
+    );
+  };
 
   return (
     <div className="flex flex-col gap-3">
-      <div
-        className="text-muted-foreground text-xs"
-        data-agents={linhas.map((a) => a.id).join(",")}
-        data-estado={agents.status}
-        data-locum-probe="agents"
-        data-total={linhas.length}
-      >
-        {agents.status === "error"
-          ? t("agents.refused", { message: agents.error.message })
-          : agents.status === "loading"
-            ? t("agents.loading")
-            : t("agents.count", { count: linhas.length })}
+      <div className="flex items-center gap-3">
+        <div
+          className="text-muted-foreground text-xs"
+          data-agents={linhas.map((a) => a.id).join(",")}
+          data-estado={agents.status}
+          data-locum-probe="agents"
+          data-total={linhas.length}
+        >
+          {agents.status === "error"
+            ? t("agents.refused", { message: agents.error.message })
+            : agents.status === "loading"
+              ? t("agents.loading")
+              : t("agents.count", { count: linhas.length })}
+        </div>
+        <Button className="ml-auto cursor-pointer" data-locum-importar="" onClick={importar} size="sm" variant="secondary">
+          {t("agents.io.import")}
+        </Button>
       </div>
+
+      {erroDeImportar === null ? null : (
+        <p className="text-destructive text-xs">{t("agents.io.importRefused", { message: erroDeImportar })}</p>
+      )}
 
       {agents.status === "ready" && linhas.length === 0 ? (
         <p className="text-muted-foreground text-sm">
@@ -230,6 +255,7 @@ function DetalheDoAgent({
 }) {
   const { t } = useTranslation();
   const [duplicando, setDuplicando] = useState(false);
+  const [exportado, setExportado] = useState<string | null>(null);
   const versoes = useRead("agents.versions", agentId);
   const maquina = useRead("machine.profile");
   const [escolhida, setEscolhida] = useState<number | null>(null);
@@ -272,6 +298,21 @@ function DetalheDoAgent({
         </span>
         {!editando && (
           <>
+            <Button
+              className="cursor-pointer"
+              onClick={() => {
+                setExportado(null);
+                exportarAgent(agentId).then(
+                  (caminho) => setExportado(caminho === null ? null : t("agents.io.exported", { path: caminho })),
+                  (err: unknown) =>
+                    setExportado(t("agents.io.exportRefused", { message: err instanceof Error ? err.message : String(err) })),
+                );
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              {t("agents.io.export")}
+            </Button>
             <Button className="cursor-pointer" onClick={() => setDuplicando(true)} size="sm" variant="ghost">
               {t("agents.editor.duplicate")}
             </Button>
@@ -286,6 +327,10 @@ function DetalheDoAgent({
           </>
         )}
       </div>
+
+      {exportado === null ? null : (
+        <p className="text-muted-foreground text-xs">{exportado}</p>
+      )}
 
       {duplicando && (
         <Duplicar

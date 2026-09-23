@@ -7,7 +7,7 @@ import { ApprovalGate } from "../src/approval/gate.js";
 import { AgentSpec } from "../src/config/types.js";
 import { db, schema } from "../src/db/index.js";
 import { migrateDb } from "../src/db/migrate.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 import { AgentService } from "../src/services/agent-service.js";
 import { ApprovalService } from "../src/services/approval-service.js";
 import { githubReviewHandler, type ReviewClient } from "../src/sources/github.js";

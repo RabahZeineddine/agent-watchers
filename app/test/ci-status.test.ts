@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { fetchCiStatus, summarizeChecks, type CheckRun, type ChecksClient } from "../src/sources/ci-status.js";
 import { fetchPr, type PrClient } from "../src/sources/github.js";
 import { renderPrompt } from "../src/executor/executor.js";
-import { demoPr } from "../src/seed/demo-event.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { demoPr } from "../src/examples/demo-event.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 
 const check = (name: string, conclusion: string | null, status = "completed", title?: string): CheckRun => ({
   name,

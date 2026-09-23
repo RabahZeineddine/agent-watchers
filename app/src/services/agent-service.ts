@@ -33,6 +33,9 @@ export interface AgentOverview extends AgentRow {
 /** Quem esta gravando. Agent nao sobe modo de passo de acao; pessoa sobe. */
 export type Actor = "human" | "agent";
 
+/** Identificador de agent: vira nome em URL, em log e em arquivo exportado. */
+const ID_DE_AGENT = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
 /** Passo de acao que teve o modo rebaixado na gravacao. */
 export interface ActionDowngrade {
   step: string;
@@ -282,7 +285,7 @@ export class AgentService {
   async duplicate(fromId: string, newId: string, newName: string): Promise<AgentVersion> {
     const id = newId.trim();
     const nome = newName.trim();
-    if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(id)) {
+    if (!ID_DE_AGENT.test(id)) {
       throw new Error("identificador em minúsculas, números e hífen, de 2 a 63 caracteres");
     }
     if (nome.length === 0) throw new Error("o agent novo precisa de nome");
@@ -292,6 +295,55 @@ export class AgentService {
     if (!origem) throw new Error(`agent "${fromId}" não existe`);
 
     return this.upsert({ ...origem.spec, id, name: nome }, `duplicado de ${fromId}`, "human");
+  }
+
+  /**
+   * Grava um agent a partir do texto de um arquivo, como uma pessoa faria.
+   *
+   * É a porta de entrada de agent no Locum, que não traz nenhum de fábrica:
+   * quem usa escreve o seu, ou pega um de `examples/agents/`, e importa. Agent
+   * que já existe ganha versão nova, com a anterior no histórico, e spec igual
+   * ao gravado não cria versão nenhuma. O ator é pessoa porque o arquivo foi
+   * escolhido por alguém; o que chega por agent entra pelo `upsert` do servidor
+   * MCP, com o rebaixamento de modo.
+   */
+  async importSpec(
+    texto: string,
+    origem: string,
+  ): Promise<{ version: AgentVersion; created: boolean }> {
+    let bruto: unknown;
+    try {
+      bruto = JSON.parse(texto);
+    } catch (err) {
+      throw new Error(`${origem} não é JSON válido: ${err instanceof Error ? err.message : err}`);
+    }
+    const lido = AgentSpec.safeParse(bruto);
+    if (!lido.success) {
+      const onde = lido.error.issues
+        .slice(0, 5)
+        .map((i) => `${i.path.join(".") || "(raiz)"}: ${i.message}`)
+        .join("; ");
+      throw new Error(`${origem} não é um agent válido: ${onde}`);
+    }
+    // A mesma regra do `duplicate`: o id vira nome em URL, em log e em arquivo.
+    if (!ID_DE_AGENT.test(lido.data.id)) {
+      throw new Error(`${origem}: o id "${lido.data.id}" precisa ser minúsculas, números e hífen, de 2 a 63 caracteres`);
+    }
+    const created = (await this.get(lido.data.id)) === undefined;
+    const version = await this.upsert(lido.data, `importado de ${origem}`, "human");
+    return { version, created };
+  }
+
+  /**
+   * O spec da versão mais recente, no formato que o `importSpec` lê de volta.
+   *
+   * Exportar e importar é o caminho de levar um agent para outra máquina, e o
+   * sincronismo entre máquinas, quando vier, vai andar por este mesmo formato.
+   */
+  async exportSpec(agentId: string): Promise<string> {
+    const versao = await this.getLatestVersion(agentId);
+    if (!versao) throw new Error(`agent "${agentId}" não existe`);
+    return `${JSON.stringify(versao.spec, null, 2)}\n`;
   }
 
   /**

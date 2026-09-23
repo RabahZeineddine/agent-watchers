@@ -4,7 +4,7 @@
     "refused": "the bridge refused: {{message}}",
     "count_one": "{{count}} agent",
     "count_other": "{{count}} agents",
-    "empty": "No agent registered. The <code>npm run dev seed</code> command writes the seed agent.",
+    "empty": "No agents yet. Locum ships with none: import a JSON file of your own, or one of the examples in the repository's <code>examples/agents/</code>. An assistant connected to Locum's MCP server can also create one.",
     "enabled": "enabled",
     "disabled": "disabled",
     "detail": {
@@ -126,6 +126,15 @@
         "creating": "Creating...",
         "copyName": "{{name}} (copy)"
       }
+    },
+    "io": {
+      "import": "Import",
+      "export": "Export",
+      "importTitle": "Import agent",
+      "exportTitle": "Export agent",
+      "importRefused": "Import failed: {{message}}",
+      "exportRefused": "Export failed: {{message}}",
+      "exported": "Exported to {{path}}"
     }
   },
   "assistant": {

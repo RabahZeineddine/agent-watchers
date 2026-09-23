@@ -2322,8 +2322,8 @@ async function checkTrackerIssue(): Promise<string> {
   const { eq } = await import("drizzle-orm");
   const { db, schema } = await import("../src/db/index.js");
   const { buildExecutor, buildGate } = await import("../src/executor/build.js");
-  const { demoPr } = await import("../src/seed/demo-event.js");
-  const { trackerIssueSteps } = await import("../src/seed/tracker-issue.js");
+  const { demoPr } = await import("../src/examples/demo-event.js");
+  const { trackerIssueSteps } = await import("../src/examples/tracker-issue.js");
   const { agentService } = await import("../src/services/agent-service.js");
   const { trackerService } = await import("../src/services/tracker-service.js");
   const { TrackerIssueProposal } = await import("../src/trackers/proposal.js");
@@ -2883,7 +2883,7 @@ async function checkDigest(): Promise<string> {
   );
   const { DigestProposal } = await import("../src/digest/proposal.js");
   const { buildExecutor, buildGate } = await import("../src/executor/build.js");
-  const { slackDigestSpec } = await import("../src/seed/slack-digest.js");
+  const { slackDigestSpec } = await import("../src/examples/agents.js");
   const { agentService } = await import("../src/services/agent-service.js");
   const { approvalService } = await import("../src/services/approval-service.js");
   const { slackSource } = await import("../src/sources/slack.js");
@@ -3177,7 +3177,7 @@ async function checkSlackPost(): Promise<string> {
   const { db, schema } = await import("../src/db/index.js");
   const { AgentSpec } = await import("../src/config/types.js");
   const { buildExecutor, buildGate } = await import("../src/executor/build.js");
-  const { slackReplySpec } = await import("../src/seed/slack-reply.js");
+  const { slackReplySpec } = await import("../src/examples/agents.js");
   const { agentService } = await import("../src/services/agent-service.js");
   const { approvalService } = await import("../src/services/approval-service.js");
   const { SlackPostProposal } = await import("../src/slack/proposal.js");
@@ -5279,7 +5279,7 @@ async function main(): Promise<void> {
     // A pasta de rascunho nasce vazia, e boa parte da bateria parte do agent
     // semente. Numa pasta que já o tem, `upsert` com o mesmo spec não grava nada.
     const { agentService } = await import("../src/services/agent-service.js");
-    const { prReviewSpec } = await import("../src/seed/pr-review.js");
+    const { prReviewSpec } = await import("../src/examples/agents.js");
     await agentService.upsert(prReviewSpec, "seed", "human");
     const agents = await checkCore();
     const schema = t("smoke.schema", { count: esquema.disponiveis });
@@ -5371,17 +5371,6 @@ async function main(): Promise<void> {
     console.log(
       t("loginItem.applied", { preference: startup.preference, status: startup.status }),
     );
-  }
-
-  // Banco recém-criado não tem agent, e a tela de repositórios observados não
-  // deixa salvar sem um. Quem abriu o `.dmg` não tem a linha de comando à mão
-  // para rodar o `seed`, então a semente entra aqui, uma vez: com qualquer
-  // agent no banco, nada é gravado.
-  const { agentService } = await import("../src/services/agent-service.js");
-  if ((await agentService.list()).length === 0) {
-    const { prReviewSpec } = await import("../src/seed/pr-review.js");
-    await agentService.upsert(prReviewSpec, "seed", "human");
-    console.log("semente: banco sem agent, pr-review gravado");
   }
 
   await setupTray({ openWindow: showWindow });

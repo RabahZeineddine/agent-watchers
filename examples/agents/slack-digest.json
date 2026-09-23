@@ -1,0 +1,82 @@
+{
+  "id": "slack-digest",
+  "name": "Digest do Slack",
+  "defaultTools": [],
+  "skills": [],
+  "budget": {
+    "perRunUsd": 0.1,
+    "perDayUsd": 1
+  },
+  "steps": [
+    {
+      "type": "model",
+      "key": "read",
+      "name": "Leitura",
+      "needs": [],
+      "optional": false,
+      "model": "claude-code/claude-sonnet-5",
+      "maxSteps": 4,
+      "requiresServers": [],
+      "prompt": "Você recebe a conversa que chegou desde a última entrega, já agrupada\npor canal e por thread. Escreva o digest.\n\nPara cada assunto, diga em `kind` o que ele é:\n`needs_reply` quando alguém espera resposta de quem vai ler,\n`info` quando é para saber e não exige nada,\n`ignore` quando não muda nada para quem vai ler.\n\nEm `summary`, o que aconteceu no assunto, em uma ou duas frases.\nEm `subject`, o assunto da thread como ele se lê, não o texto inteiro.\nEm `channel`, o canal exatamente como ele veio.\n\nNão invente canal, não invente thread, e não resuma o que não veio: o\nque ficou fora do recorte aparece como `more` e não é seu para supor.\n\nConversa:\n{{event.channels}}",
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "headline",
+          "items"
+        ],
+        "properties": {
+          "headline": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "channel",
+                "subject",
+                "kind",
+                "summary"
+              ],
+              "properties": {
+                "channel": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "needs_reply",
+                    "info",
+                    "ignore"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "threadTs": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "action",
+      "key": "deliver",
+      "name": "Entregar o digest",
+      "needs": [
+        "read"
+      ],
+      "optional": false,
+      "action": "digest.deliver",
+      "mode": "approve",
+      "input": "read"
+    }
+  ]
+}

@@ -20,7 +20,7 @@ alcançável pela linha de comando, com o mesmo executor que a interface usa.
 ```bash
 cd app
 npm install
-npm run dev seed
+npm run dev import ../examples/agents/pr-review.json   # o Locum não traz agent pronto
 npm run dev demo     # pipeline completo num PR sintético, sem credencial
 ```
 

@@ -1,5 +1,5 @@
 import type { AgentSpec } from "../config/types.js";
-import { prReviewSpec } from "../seed/pr-review.js";
+import { prReviewSpec } from "../examples/agents.js";
 import { agentService, type AgentVersion } from "../services/agent-service.js";
 
 /**

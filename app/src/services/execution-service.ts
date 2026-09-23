@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db as defaultDb, schema } from "../db/index.js";
 import { buildExecutor } from "../executor/build.js";
-import { demoCleanPr, demoPr } from "../seed/demo-event.js";
-import { prReviewSpec } from "../seed/pr-review.js";
+import { demoCleanPr, demoPr } from "../examples/demo-event.js";
 import { fetchPr, type PrContext } from "../sources/github.js";
 import { agentService, AgentService, type AgentVersion } from "./agent-service.js";
 
@@ -126,10 +125,26 @@ export class ExecutionService {
     return { runId, status: await runner.execute(runId) };
   }
 
+  /**
+   * A versão do agent pedido, ou do único que existe quando ninguém pediu.
+   *
+   * Não há agent de fábrica para cair por padrão: com mais de um cadastrado,
+   * adivinhar qual rodaria gastaria modelo no agent errado.
+   */
   private async versionFor(agentId?: string) {
-    const id = agentId ?? prReviewSpec.id;
+    let id = agentId;
+    if (id === undefined) {
+      const todos = await this.agents.list();
+      if (todos.length === 0) {
+        throw new Error("nenhum agent cadastrado: importe um, por exemplo de examples/agents/");
+      }
+      if (todos.length > 1) {
+        throw new Error(`diga qual agent roda: ${todos.map((a) => a.id).join(", ")}`);
+      }
+      id = todos[0]!.id;
+    }
     const version = await this.agents.getLatestVersion(id);
-    if (!version) throw new Error(`agent "${id}" nao tem versao gravada, rode seed antes`);
+    if (!version) throw new Error(`agent "${id}" não existe; importe antes de rodar`);
     return version;
   }
 

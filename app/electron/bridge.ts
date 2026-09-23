@@ -1,4 +1,6 @@
-import { app, ipcMain, type BrowserWindow, type WebContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type WebContents } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { chatSession } from "./chat.js";
 import {
   BRIDGE_CHANNELS,
@@ -7,7 +9,7 @@ import {
   type WindowLanguage,
 } from "./bridge-contract.js";
 import { buildExecutor, buildGate } from "../src/executor/build.js";
-import { aplicarIdioma } from "./i18n.js";
+import { aplicarIdioma, t } from "./i18n.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
 import { credentialService } from "../src/services/credential-service.js";
@@ -91,6 +93,28 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "agents.saveEdited": (agentId, spec, note) => agentService.saveEdited(agentId, spec, note),
     "actions.describe": async () => buildGate().describe(),
     "agents.duplicate": (fromId, newId, newName) => agentService.duplicate(fromId, newId, newName),
+    "agents.importFile": async () => {
+      const janela = BrowserWindow.getFocusedWindow();
+      const opcoes = {
+        title: t("agents.io.importTitle"),
+        filters: [{ name: "Agent", extensions: ["json"] }],
+        properties: ["openFile" as const],
+      };
+      const escolha = janela ? await dialog.showOpenDialog(janela, opcoes) : await dialog.showOpenDialog(opcoes);
+      const caminho = escolha.filePaths[0];
+      if (escolha.canceled || caminho === undefined) return null;
+      const { version, created } = await agentService.importSpec(await readFile(caminho, "utf8"), basename(caminho));
+      return { agentId: version.agentId, version: version.version, created };
+    },
+    "agents.exportFile": async (agentId) => {
+      const texto = await agentService.exportSpec(agentId);
+      const janela = BrowserWindow.getFocusedWindow();
+      const opcoes = { title: t("agents.io.exportTitle"), defaultPath: join(app.getPath("documents"), `${agentId}.json`) };
+      const escolha = janela ? await dialog.showSaveDialog(janela, opcoes) : await dialog.showSaveDialog(opcoes);
+      if (escolha.canceled || escolha.filePath === undefined) return null;
+      await writeFile(escolha.filePath, texto);
+      return escolha.filePath;
+    },
     "agents.budgets": () => agentService.budgets(),
 
     "runs.list": (filter) => runService.list(filter),

@@ -4,7 +4,7 @@
     "refused": "a ponte recusou: {{message}}",
     "count_one": "{{count}} agent",
     "count_other": "{{count}} agents",
-    "empty": "Nenhum agent cadastrado. O comando <code>npm run dev seed</code> grava o agent semente.",
+    "empty": "Nenhum agent ainda. O Locum não traz agent pronto: importe um arquivo JSON seu, ou um dos exemplos em <code>examples/agents/</code> do repositório. Um assistente ligado ao servidor MCP do Locum também pode criar um.",
     "enabled": "habilitado",
     "disabled": "desabilitado",
     "detail": {
@@ -133,7 +133,16 @@
     "count_zero": "{{count}} agents",
     "skills_zero": "{{count}} skills",
     "steps_zero": "{{count}} passos",
-    "tools_zero": "{{count}} ferramentas"
+    "tools_zero": "{{count}} ferramentas",
+    "io": {
+      "import": "Importar",
+      "export": "Exportar",
+      "importTitle": "Importar agent",
+      "exportTitle": "Exportar agent",
+      "importRefused": "Não importou: {{message}}",
+      "exportRefused": "Não exportou: {{message}}",
+      "exported": "Exportado para {{path}}"
+    }
   },
   "assistant": {
     "title": "Assistente",

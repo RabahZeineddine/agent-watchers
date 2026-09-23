@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { limitDiff, type PrFile } from "../src/sources/diff-limit.js";
 import { renderPrompt } from "../src/executor/executor.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 import { GithubService, DEFAULT_DIFF_MAX_CHARS } from "../src/services/github-service.js";
 import { SettingsService } from "../src/services/settings-service.js";
 import { bancoDeTeste } from "./helpers/db.js";

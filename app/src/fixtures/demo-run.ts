@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
-import { demoPr } from "../seed/demo-event.js";
-import { prReviewSpec } from "../seed/pr-review.js";
+import { demoPr } from "../examples/demo-event.js";
+import { prReviewSpec } from "../examples/agents.js";
 import { agentService } from "../services/agent-service.js";
 
 /**

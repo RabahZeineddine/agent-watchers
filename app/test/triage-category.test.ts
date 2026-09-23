@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fromJSONSchema } from "zod";
 import { renderPrompt } from "../src/executor/executor.js";
-import { prReviewSpec } from "../src/seed/pr-review.js";
+import { prReviewSpec } from "../src/examples/agents.js";
 
 function passo(chave: string) {
   const p = prReviewSpec.steps.find((s) => s.key === chave);
