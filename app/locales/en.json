@@ -432,7 +432,7 @@
     },
     "watched": {
       "title": "Watched repositories",
-      "description": "What Locum scans, how often, and with which agent. A trigger is born parked: registering it turns nothing on, and turning it on is the second click.",
+      "description": "What this agent scans and how often. A trigger starts stopped: registering turns nothing on, and turning it on is the second click.",
       "empty": "No repository watched. Until a trigger is on, Locum only runs when someone asks.",
       "agent": "agent that will review",
       "owner": "organization or account owner",
@@ -458,7 +458,7 @@
       "beats": "last scan {{last}} · next {{next}}",
       "never": "never",
       "parked": "none, the trigger is parked",
-      "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token stored above, and filtering by authorship needs it checked: its account is what tells which pull requests are yours. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
+      "howTo": "The repository pattern is a regular expression matched against the name, so \"^api-\" catches every repo starting with it and \"^my-service$\" catches a single one. Scanning needs the GitHub token saved in Settings > Connections, and filtering by authorship needs it checked: its account is what tells which pull requests are yours. No finding turns into a comment on its own: it stops in the queue and waits for your click.",
       "refused": "the bridge refused: {{message}}"
     },
     "slack": {
@@ -533,8 +533,8 @@
       "howTo": "On Jira, the token comes from id.atlassian.com/manage-profile/security/api-tokens and travels with the account email, because the authentication is basic. On GitHub Issues, a token with write access to Issues on the target repository is enough, and it is deliberately separate from the token that reads pull requests. Registering opens no task: the action step does that, and it waits in the queue for your approval."
     },
     "budgets": {
-      "title": "Budgets",
-      "description": "The cap comes from the top version of each agent, and today's spending from what already ran.",
+      "title": "Budget",
+      "description": "The cap comes from this agent's latest version, and today's spend from what already ran.",
       "version": "v{{version}}",
       "unknownVersion": "v?",
       "perRun": "per run {{amount}}",
@@ -573,6 +573,11 @@
         "uptodate": "up to date",
         "failed": "the check failed: {{error}}"
       }
+    },
+    "sections": {
+      "geral": "General",
+      "modelos": "Models",
+      "conexoes": "Connections"
     }
   },
   "severity": {

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { call, useRead, type ReadResult } from "@/lib/bridge";
 import { duplicarAgent, exportarAgent, importarAgent } from "@/lib/editar-agent";
 import { EditorDeAgent } from "../editor-agent";
+import { LinhaDoOrcamento, Observados, Secao } from "./configuracao";
 import { comContexto, diffJson, type LinhaDoDiff } from "@/lib/diff";
 import { cn } from "@/lib/utils";
 import { ArrowLeft } from "lucide-react";
@@ -368,10 +369,34 @@ function DetalheDoAgent({
         versao={atual.version}
       />
 
+      <Secao descricao={t("settings.watched.description")} titulo={t("settings.watched.title")}>
+        <Observados agentId={agentId} />
+      </Secao>
+
+      <OrcamentoDoAgent agentId={agentId} />
+
       <Comparacao anterior={anterior} atual={atual} />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Quanto este agent pode gastar e quanto gastou hoje.
+ *
+ * Morava na Configuração, numa lista com todos os agents, e é pergunta sobre
+ * um agent só: quem abre o agent quer saber o teto dele ali mesmo.
+ */
+function OrcamentoDoAgent({ agentId }: { agentId: string }) {
+  const { t } = useTranslation();
+  const orcamentos = useRead("agents.budgets");
+  const deste = (orcamentos.data ?? []).find((o) => o.agentId === agentId);
+  if (deste === undefined) return null;
+  return (
+    <Secao descricao={t("settings.budgets.description")} titulo={t("settings.budgets.title")}>
+      <LinhaDoOrcamento orcamento={deste} />
+    </Secao>
   );
 }
 

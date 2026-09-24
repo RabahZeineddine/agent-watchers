@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Language } from "../../../src/services/i18n-service.js";
 import type { UpdaterState } from "../../../src/update/state.js";
+import type { TelaProps } from "../rotas";
 
 type Provedor = ReadResult<"providers.list">[number];
 type Fallback = ReadResult<"providers.fallbacks">[number];
@@ -40,8 +41,22 @@ type Teste = ReadResult<"mcp.test">;
  * tela subiria todo cadastro de uma vez, o que num app que fica na bandeja o
  * dia todo e barulho caro.
  */
-export function Configuracao() {
+/**
+ * As seções da Configuração, cada uma com rota própria.
+ *
+ * Era uma página só com doze blocos, e metade não era configuração do app:
+ * repositório observado e orçamento são de um agent, e moram no detalhe dele.
+ * O que ficou se divide pelo que a pessoa veio fazer: ajustar o app, dizer
+ * quais modelos rodam, ou ligar o Locum a outro serviço.
+ */
+export const SECOES = ["geral", "modelos", "conexoes"] as const;
+export type SecaoId = (typeof SECOES)[number];
+
+export function Configuracao({ detalhe, navegar }: TelaProps) {
   const { t } = useTranslation();
+  const secao: SecaoId = (SECOES as readonly string[]).includes(detalhe ?? "")
+    ? (detalhe as SecaoId)
+    : "geral";
   const maquina = useRead("machine.profile");
   const machineId = maquina.data?.machineId ?? null;
 
@@ -118,128 +133,141 @@ export function Configuracao() {
       data-locum-cofre={credenciais.data?.available === true ? "legivel" : "fechado"}
       data-locum-fallbacks={fallbacks.data?.length ?? -1}
       data-locum-maquina={machineId ?? ""}
-      data-locum-orcamentos={listaDeOrcamentos.map((o) => o.agentId).join(",")}
+      data-locum-secao-ativa={secao}
       data-locum-probe="configuracao"
       data-locum-provedores={listaDeProvedores.map((p) => p.name).join(",")}
       data-locum-servidores={(servidores.data ?? []).map((s) => s.config.name).join(",")}
     >
+      <div className="flex gap-1" data-locum-probe="secoes" role="tablist">
+        {SECOES.map((id) => (
+          <Button
+            aria-selected={id === secao}
+            className="cursor-pointer"
+            data-locum-secao={id}
+            key={id}
+            onClick={() => navegar("configuracao", id)}
+            role="tab"
+            size="sm"
+            variant={id === secao ? "secondary" : "ghost"}
+          >
+            {t(`settings.sections.${id}`)}
+          </Button>
+        ))}
+      </div>
+
       {erro === undefined ? null : (
         <p className="text-destructive text-sm">
           {t("settings.refused", { channel: erro.channel, message: erro.message })}
         </p>
       )}
 
-      <Secao
-        descricao={t("settings.language.description")}
-        titulo={t("settings.language.title")}
-      >
-        <EscolhaDoIdioma />
-      </Secao>
+      {secao === "geral" ? (
+        <>
+          <Secao
+            descricao={t("settings.language.description")}
+            titulo={t("settings.language.title")}
+          >
+            <EscolhaDoIdioma />
+          </Secao>
 
-      <Secao descricao={t("settings.updates.description")} titulo={t("settings.updates.title")}>
-        <Atualizacao />
-      </Secao>
+          <Secao descricao={t("settings.updates.description")} titulo={t("settings.updates.title")}>
+            <Atualizacao />
+          </Secao>
+        </>
+      ) : null}
 
-      <Secao
-        descricao={t("settings.assistantModel.description")}
-        titulo={t("settings.assistantModel.title")}
-      >
-        <EscolhaDoModelo />
-      </Secao>
+      {secao === "modelos" ? (
+        <>
+          <Secao
+            descricao={t("settings.providers.description")}
+            titulo={t("settings.providers.title")}
+          >
+            {listaDeProvedores.map((provedor) => (
+              <LinhaDoProvedor
+                chave={chavesPorProvedor.get(provedor.name)}
+                key={provedor.name}
+                precos={listaDePrecos.filter((p) => p.provider === provedor.name)}
+                provedor={provedor}
+                recarregar={recarregarProvedores}
+                recarregarPrecos={recarregarPrecos}
+              />
+            ))}
+          </Secao>
 
-      <Secao
-        descricao={t("settings.providers.description")}
-        titulo={t("settings.providers.title")}
-      >
-        {listaDeProvedores.map((provedor) => (
-          <LinhaDoProvedor
-            chave={chavesPorProvedor.get(provedor.name)}
-            key={provedor.name}
-            precos={listaDePrecos.filter((p) => p.provider === provedor.name)}
-            provedor={provedor}
-            recarregar={recarregarProvedores}
-            recarregarPrecos={recarregarPrecos}
-          />
-        ))}
-      </Secao>
+          <Secao
+            descricao={t("settings.registered.description")}
+            titulo={t("settings.registered.title")}
+          >
+            <ProvedoresCadastrados recarregar={recarregarProvedores} />
+          </Secao>
 
-      <Secao
-        descricao={t("settings.registered.description")}
-        titulo={t("settings.registered.title")}
-      >
-        <ProvedoresCadastrados recarregar={recarregarProvedores} />
-      </Secao>
+          <Secao
+            descricao={t("settings.fallbacks.description", { machine: machineId ?? "..." })}
+            titulo={t("settings.fallbacks.title")}
+          >
+            {(fallbacks.data ?? []).length === 0 ? (
+              <Vazio>{t("settings.fallbacks.empty")}</Vazio>
+            ) : (
+              (fallbacks.data ?? []).map((fallback) => (
+                <LinhaDoFallback fallback={fallback} key={`${fallback.fromModel}>${fallback.toModel}`} />
+              ))
+            )}
+          </Secao>
 
-      <Secao
-        descricao={t("settings.fallbacks.description", { machine: machineId ?? "..." })}
-        titulo={t("settings.fallbacks.title")}
-      >
-        {(fallbacks.data ?? []).length === 0 ? (
-          <Vazio>{t("settings.fallbacks.empty")}</Vazio>
-        ) : (
-          (fallbacks.data ?? []).map((fallback) => (
-            <LinhaDoFallback fallback={fallback} key={`${fallback.fromModel}>${fallback.toModel}`} />
-          ))
-        )}
-      </Secao>
+          <Secao
+            descricao={t("settings.assistantModel.description")}
+            titulo={t("settings.assistantModel.title")}
+          >
+            <EscolhaDoModelo />
+          </Secao>
+        </>
+      ) : null}
 
-      <Secao
-        descricao={t("settings.servers.description")}
-        titulo={t("settings.servers.title")}
-      >
-        {(servidores.data ?? []).length === 0 ? (
-          <Vazio>{t("settings.servers.empty")}</Vazio>
-        ) : (
-          (servidores.data ?? []).map((servidor) => (
-            <LinhaDoServidor
-              credencial={porCadastro.get(`mcp:${servidor.config.name}`)}
-              key={servidor.config.name}
-              servidor={servidor}
-            />
-          ))
-        )}
-      </Secao>
+      {secao === "conexoes" ? (
+        <>
+          <Secao
+            descricao={t("settings.github.description")}
+            titulo={t("settings.github.title")}
+          >
+            <Github />
+          </Secao>
 
-      <Secao
-        descricao={t("settings.github.description")}
-        titulo={t("settings.github.title")}
-      >
-        <Github />
-      </Secao>
+          <Secao descricao={t("settings.slack.description")} titulo={t("settings.slack.title")}>
+            <Slack />
+          </Secao>
 
-      <Secao
-        descricao={t("settings.watched.description")}
-        titulo={t("settings.watched.title")}
-      >
-        <Observados />
-      </Secao>
+          <Secao
+            descricao={t("settings.trackers.description")}
+            titulo={t("settings.trackers.title")}
+          >
+            <Trackers />
+          </Secao>
 
-      <Secao descricao={t("settings.slack.description")} titulo={t("settings.slack.title")}>
-        <Slack />
-      </Secao>
-
-      <Secao
-        descricao={t("settings.trackers.description")}
-        titulo={t("settings.trackers.title")}
-      >
-        <Trackers />
-      </Secao>
-
-      <Secao
-        descricao={t("settings.budgets.description")}
-        titulo={t("settings.budgets.title")}
-      >
-        {listaDeOrcamentos.map((orcamento) => (
-          <LinhaDoOrcamento key={orcamento.agentId} orcamento={orcamento} />
-        ))}
-      </Secao>
+          <Secao
+            descricao={t("settings.servers.description")}
+            titulo={t("settings.servers.title")}
+          >
+            {(servidores.data ?? []).length === 0 ? (
+              <Vazio>{t("settings.servers.empty")}</Vazio>
+            ) : (
+              (servidores.data ?? []).map((servidor) => (
+                <LinhaDoServidor
+                  credencial={porCadastro.get(`mcp:${servidor.config.name}`)}
+                  key={servidor.config.name}
+                  servidor={servidor}
+                />
+              ))
+            )}
+          </Secao>
+        </>
+      ) : null}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ secoes */
 
-function Secao({
+export function Secao({
   children,
   descricao,
   titulo,
@@ -1897,7 +1925,7 @@ const ROTULO_DA_AUTORIA: Record<Autoria, string> = {
  * para na fila de aprovação, que continua sendo o único lugar onde sai
  * comentário, e só com clique.
  */
-function Observados() {
+export function Observados({ agentId: fixo }: { agentId?: string } = {}) {
   const { i18n, t } = useTranslation();
   const agents = useRead("agents.list");
   const inicial = useRead("triggers.schedule");
@@ -1914,12 +1942,14 @@ function Observados() {
   const recusa = erro ?? inicial.error?.message ?? null;
   // Só a varredura: gatilho de relógio e de MCP entram por outro caminho e não
   // têm dono nem padrão de repositório para esta seção mostrar.
-  const gatilhos = (agenda ?? []).filter((g) => g.kind === "poll");
+  const gatilhos = (agenda ?? []).filter(
+    (g) => g.kind === "poll" && (fixo === undefined || g.agentId === fixo),
+  );
 
   const listaDeAgents = agents.data ?? [];
   // O primeiro da lista é o padrão, e não uma opção vazia: quem tem um agent só
   // não deveria precisar escolhê-lo para cadastrar o que observar.
-  const escolhido = agentId !== "" ? agentId : (listaDeAgents[0]?.id ?? "");
+  const escolhido = fixo ?? (agentId !== "" ? agentId : (listaDeAgents[0]?.id ?? ""));
 
   // A leitura que falha vira texto na tela e não lista vazia: sem isso, ponte
   // recusada e nenhum repositório observado ficam iguais para quem olha.
@@ -1987,19 +2017,22 @@ function Observados() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={t("settings.watched.agent")}
-          className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
-          data-locum-observar-agent=""
-          onChange={(evento) => setAgentId(evento.target.value)}
-          value={escolhido}
-        >
-          {listaDeAgents.map((agent) => (
-            <option key={agent.id} value={agent.id}>
-              {agent.id}
-            </option>
-          ))}
-        </select>
+        {/* Dentro do agent, o agent já está escolhido: a lista só aparece fora dele. */}
+        {fixo === undefined ? (
+          <select
+            aria-label={t("settings.watched.agent")}
+            className="border-border bg-background cursor-pointer rounded-md border px-2 py-1.5 text-xs"
+            data-locum-observar-agent=""
+            onChange={(evento) => setAgentId(evento.target.value)}
+            value={escolhido}
+          >
+            {listaDeAgents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.id}
+              </option>
+            ))}
+          </select>
+        ) : null}
 
         <input
           aria-label={t("settings.watched.owner")}
@@ -2431,7 +2464,7 @@ function Slack() {
 
 /* ---------------------------------------------------------------- orcamentos */
 
-function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
+export function LinhaDoOrcamento({ orcamento }: { orcamento: Orcamento }) {
   const { t } = useTranslation();
   // Teto ausente e teto ausente, e escrever zero ali mentiria sobre o limite.
   const moeda = (valor: number | null): string =>

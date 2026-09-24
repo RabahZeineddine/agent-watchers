@@ -1370,13 +1370,12 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
   const { providerService } = await import("../src/services/provider-service.js");
   const { FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
 
-  await irPara(window, "configuracao");
+  await irPara(window, "configuracao", "modelos");
   const tela = await esperarProbe<{
     maquina: string;
     provedores: string;
     fallbacks: number;
     servidores: string;
-    orcamentos: string;
   }>(
     window,
     "configuracao",
@@ -1388,7 +1387,6 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
         provedores: probe.dataset.locumProvedores,
         fallbacks: Number(probe.dataset.locumFallbacks),
         servidores: probe.dataset.locumServidores,
-        orcamentos: probe.dataset.locumOrcamentos,
       };
     })()`,
   );
@@ -1463,12 +1461,18 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
     throw new Error(`o servidor de brinquedo ${FIXTURE_SERVER} nao apareceu na tela`);
   }
 
+  // O orçamento saiu da Configuração e mora no detalhe de cada agent: cada um
+  // tem de mostrar a linha dele lá.
   const orcamentos = await agentService.budgets();
-  if (tela.orcamentos !== orcamentos.map((o) => o.agentId).join(",")) {
-    throw new Error(
-      `a tela listou os orcamentos de ${tela.orcamentos} e o servico tem ${orcamentos.length}`,
+  for (const orcamento of orcamentos) {
+    await irPara(window, "agents", orcamento.agentId);
+    await esperarProbe<true>(
+      window,
+      `orçamento de ${orcamento.agentId}`,
+      `document.querySelector('[data-locum-orcamento="${orcamento.agentId}"]') === null ? null : true`,
     );
   }
+  await irPara(window, "configuracao", "conexoes");
 
   // Segredo nao tem como chegar na tela, porque nao ha canal que o devolva. O
   // que da para conferir daqui e que o marcador nao guarda nada alem do
@@ -1568,6 +1572,7 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
  * onde a resposta sai de dentro da maquina.
  */
 async function checkProviderKeys(window: BrowserWindow): Promise<string> {
+  await irPara(window, "configuracao", "modelos");
   const { createServer } = await import("node:http");
   const { eq } = await import("drizzle-orm");
   const { db, schema } = await import("../src/db/index.js");
@@ -1770,6 +1775,7 @@ async function checkProviderKeys(window: BrowserWindow): Promise<string> {
  * linha é plantada e apagada aqui.
  */
 async function checkRegisteredProviders(window: BrowserWindow): Promise<string> {
+  await irPara(window, "configuracao", "modelos");
   const { createServer } = await import("node:http");
   const { and, eq } = await import("drizzle-orm");
   const { db, schema } = await import("../src/db/index.js");
@@ -2024,6 +2030,7 @@ async function checkRegisteredProviders(window: BrowserWindow): Promise<string> 
  * aprovação, e ele é assunto da próxima story.
  */
 async function checkTrackers(window: BrowserWindow): Promise<string> {
+  await irPara(window, "configuracao", "conexoes");
   const { createServer } = await import("node:http");
   const { eq } = await import("drizzle-orm");
   const { db, schema } = await import("../src/db/index.js");
@@ -3633,6 +3640,7 @@ async function checkMcpPoll(): Promise<string> {
  * desenvolve, e sair de um exame tendo apagado o Slack dele seria estrago.
  */
 async function checkSlackWindow(window: BrowserWindow): Promise<string> {
+  await irPara(window, "configuracao", "conexoes");
   const { slackService } = await import("../src/services/slack-service.js");
   const { FIXTURE_SERVER } = await import("../src/fixtures/mcp-fixture.js");
 
@@ -3778,6 +3786,8 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
 
   const [agent] = await agentService.list();
   if (agent === undefined) throw new Error("nenhum agent cadastrado para observar repositorio");
+  // Repositório observado é do agent, e mora no detalhe dele.
+  await irPara(window, "agents", agent.id);
 
   const dono = `locum-smoke-${randomUUID().slice(0, 8)}`;
   const repo = `^locum-smoke-${randomUUID().slice(0, 8)}$`;
@@ -3808,7 +3818,8 @@ async function checkWatched(window: BrowserWindow): Promise<string> {
         campo.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       };
-      if (!escolher("[data-locum-observar-agent]", ${JSON.stringify(agent.id)})) return false;
+      // Dentro do agent a lista de agents não aparece: o agent já está escolhido.
+      if (document.querySelector("[data-locum-observar-agent]") !== null) return false;
       if (!escolher("[data-locum-observar-autoria]", ${JSON.stringify(autoria)})) return false;
       if (!digitar("[data-locum-observar-dono]", ${JSON.stringify(dono)})) return false;
       if (!digitar("[data-locum-observar-repo]", ${JSON.stringify(repo)})) return false;
@@ -4029,6 +4040,7 @@ async function esperarDoServico<T>(
  * olhando.
  */
 async function checkGithub(window: BrowserWindow): Promise<string> {
+  await irPara(window, "configuracao", "conexoes");
   const { secretService } = await import("../src/services/secret-service.js");
   const { settingsService } = await import("../src/services/settings-service.js");
   const {
@@ -4652,14 +4664,16 @@ async function lerTelas(window: BrowserWindow): Promise<TelasVistas> {
     })()`,
   );
 
-  await irPara(window, "configuracao");
+  // O orçamento mora no detalhe do agent desde que saiu da Configuração.
+  const { agentService: agentsDoOrcamento } = await import("../src/services/agent-service.js");
+  const [comOrcamento] = await agentsDoOrcamento.budgets();
+  if (comOrcamento === undefined) throw new Error("nenhum agent com orçamento para ler o texto");
+  await irPara(window, "agents", comOrcamento.agentId);
   const orcamento = await esperarProbe<{ texto: string; runs: number; gasto: string }>(
     window,
     "orcamento",
     `(() => {
-      const probe = document.querySelector("[data-locum-probe=configuracao]");
-      if (probe === null || probe.dataset.estado !== "pronto") return null;
-      const linha = document.querySelector("[data-locum-orcamento]");
+      const linha = document.querySelector('[data-locum-orcamento="${comOrcamento.agentId}"]');
       const hoje = linha?.querySelector("[data-locum-hoje]");
       if (linha === null || hoje === undefined || hoje === null) return null;
       return {
@@ -5233,6 +5247,7 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
   // topo puxaria o banco antes disso.
   const { runService } = await import("../src/services/run-service.js");
   const primeiroRun = (await runService.list({ limit: 1 }))[0]?.id;
+  const primeiroAgent = (await (await import("../src/services/agent-service.js")).agentService.list())[0]?.id;
 
   const { approvalService } = await import("../src/services/approval-service.js");
   const primeiraPendencia = (await approvalService.listPending())[0]?.id;
@@ -5243,7 +5258,11 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
     ["execucoes", undefined],
     ["execucoes", primeiroRun],
     ["agents", undefined],
-    ["configuracao", undefined],
+    ["agents", primeiroAgent],
+    // Uma foto por seção, com o nome dela: a Configuração tem três.
+    ["configuracao", "geral"],
+    ["configuracao", "modelos"],
+    ["configuracao", "conexoes"],
   ];
 
   for (const [id, detalhe] of destinos) {
@@ -5252,11 +5271,22 @@ async function capturarTelas(janela: BrowserWindow): Promise<void> {
     // registraria o esqueleto em vez do conteúdo.
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const imagem = await janela.webContents.capturePage();
-    writeFileSync(join(destino, `${id}${detalhe ? "-detalhe" : ""}.png`), imagem.toPNG());
+    const sufixo = detalhe === undefined ? "" : id === "configuracao" ? `-${detalhe}` : "-detalhe";
+    writeFileSync(join(destino, `${id}${sufixo}.png`), imagem.toPNG());
+  }
+
+  // O que vigia e quanto gasta ficam abaixo dos passos, fora da primeira foto.
+  if (primeiroAgent) {
+    await irPara(janela, "agents", primeiroAgent);
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await janela.webContents.executeJavaScript(
+      `(document.querySelector("[data-locum-probe=observados]")?.scrollIntoView({ block: "start" }), null)`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    writeFileSync(join(destino, "agents-vigia.png"), (await janela.webContents.capturePage()).toPNG());
   }
 
   // O editor abre por clique, então a captura clica.
-  const primeiroAgent = (await (await import("../src/services/agent-service.js")).agentService.list())[0]?.id;
   if (primeiroAgent) {
     await irPara(janela, "agents", primeiroAgent);
     await janela.webContents.executeJavaScript(
