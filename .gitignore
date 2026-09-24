@@ -31,3 +31,6 @@ Thumbs.db
 scripts/ralph/logs/
 app/release/
 app/build/icon.iconset/
+
+# configuração local do Claude Code de quem desenvolve
+.claude/

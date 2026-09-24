@@ -115,13 +115,9 @@ MIT. Veja [LICENSE](LICENSE).
 app/            núcleo em TypeScript, o produto daqui para a frente
 docs/           decisões, pesquisa, estado e roadmap
 scripts/ralph/  loop de execução: script, prompt da iteração, backlog e progresso
-app.py          versão anterior em Python, mantida só como referência
-core/           idem
-watchers/       idem
-static/         idem
+examples/       agents de exemplo, para importar
 ```
 
-A versão em Python continua no repositório por enquanto para consulta. O gateway
-de LLM, o cliente de LLM e as pontes MCP dela deixam de existir na v2, porque
-são resolvidos por biblioteca. O que sobrevive em espírito é o armazenamento de
-estado e os adaptadores de tracker, reescritos em TypeScript.
+O Locum começou como uma versão em Python, que saiu do repositório quando o que
+ela fazia passou para o TypeScript. Quem quiser consultar acha no histórico, no
+commit anterior à remoção.
