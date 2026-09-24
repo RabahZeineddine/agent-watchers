@@ -6,6 +6,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { t } from "./i18n.js";
+import { VERSAO } from "./versao.js";
 import { updateService } from "../src/services/update-service.js";
 import { ligarRelogio, umaDeCadaVez, type Relogio } from "../src/triggers/clock.js";
 import {
@@ -55,7 +56,7 @@ const pastaDeTrabalho = (): string => join(homedir(), "Library", "Caches", "Locu
 export async function planUpdater(): Promise<UpdaterState> {
   const { preference, enabled } = await updateService.state();
   const base = {
-    current: app.getVersion(),
+    current: VERSAO,
     preference,
     enabled,
     armed: armado,
@@ -126,7 +127,7 @@ export const conferir = umaDeCadaVez(async (): Promise<void> => {
   fase = "checking";
   erro = null;
   try {
-    const nova = await procurarVersaoNova({ atual: app.getVersion(), arch: process.arch, buscar });
+    const nova = await procurarVersaoNova({ atual: VERSAO, arch: process.arch, buscar });
     conferidaEm = Date.now();
     if (nova === null) {
       fase = "uptodate";

@@ -74,6 +74,7 @@ export function Layout() {
   const agents = useRead("agents.list");
   const runs = useRead("runs.list");
   const pendencias = useRead("approvals.listPending");
+  const versao = useRead("app.version");
 
   const erro = agents.error ?? runs.error ?? pendencias.error;
   const carregando =
@@ -125,13 +126,29 @@ export function Layout() {
           execucoes={runs.data?.length ?? -1}
           naFila={naFila}
         />
+        {versao.data === undefined ? null : (
+          <button
+            className="px-3 pb-3 text-left text-[11px] text-muted-foreground/70 hover:text-muted-foreground"
+            data-locum-probe="versao"
+            onClick={() => navegar("configuracao")}
+            title={t("nav.versionHint")}
+            type="button"
+          >
+            {t("nav.version", { version: versao.data })}
+          </button>
+        )}
       </nav>
 
-      {/* A faixa de arrasto vive no conteúdo porque o cabeçalho saiu: sem ela
-          a janela só se moveria pela barra lateral. */}
       <div className="bg-background flex min-w-0 flex-1 flex-col">
+        {/*
+          A faixa de arrasto é um elemento próprio, acima do que rola, e não uma
+          classe no `main`. No Electron a área de arrasto engole os eventos do
+          mouse: com o `main` inteiro arrastável, a roda não rolava a tela, o
+          `textarea` não recebia clique e texto nenhum se selecionava.
+        */}
+        <div aria-hidden className="regiao-de-arrasto h-9 shrink-0" data-locum-probe="arrasto" />
         <main
-          className="regiao-de-arrasto min-h-0 flex-1 overflow-auto px-8 pt-9 pb-10"
+          className="min-h-0 flex-1 overflow-auto px-8 pb-10"
           data-ativo={ativa}
           data-detalhe={detalhe ?? ""}
           data-locum-probe="rota"

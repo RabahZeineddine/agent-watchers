@@ -236,7 +236,9 @@
     "inbox": "Inbox",
     "runs": "Runs",
     "agents": "Agents",
-    "settings": "Settings"
+    "settings": "Settings",
+    "version": "version {{version}}",
+    "versionHint": "Updates, in Settings"
   },
   "notification": {
     "runFailed": {
@@ -640,7 +642,8 @@
     "open": "Open",
     "pause": "Pause everything",
     "resume": "Resume everything",
-    "quit": "Quit"
+    "quit": "Quit",
+    "version": "Locum {{version}}"
   },
   "review": {
     "title": "Review before publishing",
@@ -678,5 +681,60 @@
   "updates": {
     "readyTitle": "Locum {{version}} downloaded",
     "readyBody": "It installs when Locum quits. Settings can restart it now."
+  },
+  "menu": {
+    "app": {
+      "about": "About Locum",
+      "checkUpdates": "Check for Updates…",
+      "settings": "Settings…",
+      "services": "Services",
+      "hide": "Hide Locum",
+      "hideOthers": "Hide Others",
+      "unhide": "Show All",
+      "quit": "Quit Locum"
+    },
+    "edit": {
+      "title": "Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All"
+    },
+    "view": {
+      "title": "View",
+      "resetZoom": "Actual Size",
+      "zoomIn": "Zoom In",
+      "zoomOut": "Zoom Out",
+      "fullScreen": "Toggle Full Screen",
+      "reload": "Reload",
+      "devTools": "Developer Tools"
+    },
+    "window": {
+      "title": "Window",
+      "minimize": "Minimize",
+      "zoom": "Zoom",
+      "close": "Close Window",
+      "front": "Bring All to Front"
+    },
+    "help": {
+      "title": "Help",
+      "repo": "Locum on GitHub",
+      "releaseNotes": "Release Notes for {{version}}",
+      "issue": "Report an Issue…"
+    },
+    "updates": {
+      "title": "Locum Update",
+      "upToDate": "Locum {{version}} is the latest version.",
+      "ready": "Locum {{version}} was downloaded and installs when the app quits.",
+      "failed": "The check failed: {{error}}",
+      "restart": "Restart Now",
+      "later": "Later"
+    }
+  },
+  "about": {
+    "copyright": "© {{year}} Rabah Zeineddine · MIT license",
+    "credits": "Agents that run on your machine and stop at an approval queue before anything goes out."
   }
 }

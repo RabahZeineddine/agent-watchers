@@ -250,7 +250,9 @@
     "inbox": "Inbox",
     "runs": "Execuções",
     "agents": "Agents",
-    "settings": "Configuração"
+    "settings": "Configuração",
+    "version": "versão {{version}}",
+    "versionHint": "Atualização, em Configuração"
   },
   "notification": {
     "runFailed": {
@@ -668,7 +670,8 @@
     "open": "Abrir",
     "pause": "Pausar tudo",
     "resume": "Retomar tudo",
-    "quit": "Sair"
+    "quit": "Sair",
+    "version": "Locum {{version}}"
   },
   "review": {
     "title": "Revisar antes de publicar",
@@ -707,5 +710,60 @@
   "updates": {
     "readyTitle": "Locum {{version}} baixado",
     "readyBody": "Entra quando o Locum fechar. Pela Configuração dá para reiniciar agora."
+  },
+  "menu": {
+    "app": {
+      "about": "Sobre o Locum",
+      "checkUpdates": "Procurar atualizações…",
+      "settings": "Configurações…",
+      "services": "Serviços",
+      "hide": "Ocultar Locum",
+      "hideOthers": "Ocultar os outros",
+      "unhide": "Mostrar tudo",
+      "quit": "Sair do Locum"
+    },
+    "edit": {
+      "title": "Editar",
+      "undo": "Desfazer",
+      "redo": "Refazer",
+      "cut": "Recortar",
+      "copy": "Copiar",
+      "paste": "Colar",
+      "selectAll": "Selecionar tudo"
+    },
+    "view": {
+      "title": "Ver",
+      "resetZoom": "Tamanho real",
+      "zoomIn": "Aumentar",
+      "zoomOut": "Diminuir",
+      "fullScreen": "Tela cheia",
+      "reload": "Recarregar",
+      "devTools": "Ferramentas de desenvolvedor"
+    },
+    "window": {
+      "title": "Janela",
+      "minimize": "Minimizar",
+      "zoom": "Zoom",
+      "close": "Fechar janela",
+      "front": "Trazer tudo para a frente"
+    },
+    "help": {
+      "title": "Ajuda",
+      "repo": "Locum no GitHub",
+      "releaseNotes": "Notas da versão {{version}}",
+      "issue": "Relatar um problema…"
+    },
+    "updates": {
+      "title": "Atualização do Locum",
+      "upToDate": "O Locum {{version}} é a versão mais recente.",
+      "ready": "O Locum {{version}} foi baixado e entra quando o aplicativo fechar.",
+      "failed": "A conferência falhou: {{error}}",
+      "restart": "Reiniciar agora",
+      "later": "Depois"
+    }
+  },
+  "about": {
+    "copyright": "© {{year}} Rabah Zeineddine · licença MIT",
+    "credits": "Agents que rodam na sua máquina e param numa fila de aprovação antes de qualquer coisa sair."
   }
 }

@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from "electron";
 import { captureDeepLinks } from "./deep-link.js";
+import { VERSAO } from "./versao.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { aplicarIdioma, idiomaAtual, iniciarI18n, t } from "./i18n.js";
@@ -893,7 +894,7 @@ async function checkRenderer(): Promise<string> {
     // desenhar, e conferir logo depois do `loadFile` pegaria a raiz ainda
     // vazia. Montar em ingles e corrigir depois faria a tela piscar em toda
     // subida de quem escolheu portugues, entao quem espera e o exame.
-    const visto = await esperarProbe<{ raiz: number; marca: string; folha: string }>(
+    const visto = await esperarProbe<{ raiz: number; marca: string; folha: string; faixa: string; conteudo: string }>(
       window,
       "raiz",
       `(() => {
@@ -904,6 +905,14 @@ async function checkRenderer(): Promise<string> {
           raiz: raiz.childElementCount,
           marca: document.querySelector("[data-locum-probe=marca]")?.textContent ?? "",
           folha: probe === null ? "sem marcador" : getComputedStyle(probe).display,
+          faixa: (() => {
+            const el = document.querySelector("[data-locum-probe=arrasto]");
+            return el === null ? "sem faixa" : getComputedStyle(el).getPropertyValue("-webkit-app-region");
+          })(),
+          conteudo: (() => {
+            const el = document.querySelector("[data-locum-probe=rota]");
+            return el === null ? "sem conteudo" : getComputedStyle(el).getPropertyValue("-webkit-app-region");
+          })(),
         };
       })()`,
     );
@@ -913,6 +922,11 @@ async function checkRenderer(): Promise<string> {
     if (visto.folha !== "none") {
       throw new Error(`o marcador do Tailwind ficou com display ${visto.folha} em vez de none`);
     }
+    // Área de arrasto engole roda, clique em textarea e seleção de texto. A
+    // faixa tem de arrastar, e o conteúdo que rola não pode: foi assim que a
+    // Configuração deixou de rolar.
+    if (visto.faixa !== "drag") throw new Error(`a faixa de arrasto ficou com app-region ${visto.faixa}`);
+    if (visto.conteudo === "drag") throw new Error("o conteúdo que rola ficou arrastável e não recebe a roda");
 
     const rotas = await checkRoutes(window);
     const paleta = await checkPalette(window);
@@ -1362,6 +1376,24 @@ async function checkConfig(window: BrowserWindow): Promise<string> {
 
   if (tela.maquina !== machineId) {
     throw new Error(`a tela diz estar em "${tela.maquina}" e a maquina e "${machineId}"`);
+  }
+
+  // A Configuração é a tela mais longa, e foi nela que o scroll quebrou. Aqui
+  // se confere que o conteúdo passa da janela e que a área que rola anda; a
+  // roda de verdade depende também de ela não ser arrastável, que a subida da
+  // interface já confere.
+  const rolagem = (await window.webContents.executeJavaScript(
+    `(() => {
+      const main = document.querySelector("[data-locum-probe=rota]");
+      const antes = main.scrollTop;
+      main.scrollTop = 400;
+      const depois = main.scrollTop;
+      main.scrollTop = antes;
+      return { sobra: main.scrollHeight - main.clientHeight, andou: depois - antes };
+    })()`,
+  )) as { sobra: number; andou: number };
+  if (rolagem.sobra > 0 && rolagem.andou <= 0) {
+    throw new Error(`a Configuração passa ${rolagem.sobra}px da janela e não rola`);
   }
 
   const provedores = providerService.listProviders();
@@ -4992,6 +5024,9 @@ async function checkMainText(): Promise<string> {
         doDicionario(dicionario, idioma, "tray.open"),
         doDicionario(dicionario, idioma, "tray.pause"),
         "",
+        doDicionario(dicionario, idioma, "tray.version", { version: VERSAO }),
+        doDicionario(dicionario, idioma, "menu.app.about"),
+        "",
         doDicionario(dicionario, idioma, "tray.quit"),
       ];
       if (rotulos.join("|") !== esperados.join("|")) {
@@ -5287,6 +5322,13 @@ async function main(): Promise<void> {
     const loginItem = await checkLoginItem();
 
     const tray = await setupTray({ openWindow: showWindow });
+    const { appMenuLabels, setupAppMenu } = await import("./menu.js");
+    setupAppMenu({ janela: ensureWindow });
+    const menu = appMenuLabels();
+    const esperado = ["Locum", t("menu.edit.title"), t("menu.view.title"), t("menu.window.title"), t("menu.help.title")];
+    if (menu.join("|") !== esperado.join("|")) {
+      throw new Error(`o menu da aplicação saiu com ${menu.join(", ")} e o dicionário pede ${esperado.join(", ")}`);
+    }
     const pending = await countPending();
     if (tray.isDestroyed()) throw new Error("bandeja nao sobreviveu a criacao");
     if (trayPendingCount() !== pending) {
@@ -5374,6 +5416,9 @@ async function main(): Promise<void> {
   }
 
   await setupTray({ openWindow: showWindow });
+
+  const { setupAppMenu } = await import("./menu.js");
+  setupAppMenu({ janela: ensureWindow });
 
   const { setupNotifications } = await import("./notify.js");
   const jaNaFila = await setupNotifications({ openInbox });

@@ -10,6 +10,7 @@ import {
 } from "./bridge-contract.js";
 import { buildExecutor, buildGate } from "../src/executor/build.js";
 import { aplicarIdioma, t } from "./i18n.js";
+import { VERSAO } from "./versao.js";
 import { agentService } from "../src/services/agent-service.js";
 import { approvalService } from "../src/services/approval-service.js";
 import { credentialService } from "../src/services/credential-service.js";
@@ -202,6 +203,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
     "triggers.setEnabled": (id, enabled) => triggerService.setEnabled(id, enabled),
     "triggers.schedule": (at) => scheduler.schedule(at),
 
+    "app.version": async () => VERSAO,
     "startup.get": () => startupService.getPreference(),
     "startup.set": (enabled) => startupService.setPreference(enabled),
 
@@ -232,6 +234,7 @@ function buildHandlers(bridgeHandlers: BridgeHandlers): LocumApi {
       // sequência porque os rótulos dele já estão escritos na barra do sistema.
       await aplicarIdioma(estado.language);
       await refreshTray();
+      (await import("./menu.js")).refreshAppMenu();
       return estado;
     },
 

@@ -196,7 +196,9 @@
 
   .regiao-de-arrasto button,
   .regiao-de-arrasto a,
-  .regiao-de-arrasto input {
+  .regiao-de-arrasto input,
+  .regiao-de-arrasto textarea,
+  .regiao-de-arrasto select {
     -webkit-app-region: no-drag;
   }
 }

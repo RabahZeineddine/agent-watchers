@@ -1,5 +1,6 @@
 import { app, Menu, nativeImage, Tray } from "electron";
 import { t } from "./i18n.js";
+import { VERSAO } from "./versao.js";
 import { approvalService } from "../src/services/approval-service.js";
 
 // O icone vive em base64 aqui dentro em vez de num arquivo porque o build
@@ -105,6 +106,9 @@ function buildMenu(): Menu {
         void refreshTray();
       },
     },
+    { type: "separator" },
+    { label: t("tray.version", { version: VERSAO }), enabled: false },
+    { label: t("menu.app.about"), click: () => app.showAboutPanel() },
     { type: "separator" },
     { label: t("tray.quit"), click: () => app.quit() },
   ]);

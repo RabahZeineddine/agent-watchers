@@ -252,6 +252,9 @@ interface ServiceApi {
    */
   "triggers.schedule": Scheduler["schedule"];
 
+  /** A versão instalada, para o rodapé da barra lateral. */
+  "app.version": () => Promise<string>;
+
   "startup.get": StartupService["getPreference"];
   "startup.set": StartupService["setPreference"];
 
@@ -366,6 +369,7 @@ export const BRIDGE_CHANNELS = [
   "triggers.remove",
   "triggers.setEnabled",
   "triggers.schedule",
+  "app.version",
   "startup.get",
   "startup.set",
   "updates.state",

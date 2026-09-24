@@ -79,6 +79,7 @@ export const READ_CHANNELS = [
   // varredura não dispara a próxima.
   "triggers.schedule",
   "startup.get",
+  "app.version",
   // Versão instalada, a baixada e quando conferiu. Não pergunta ao GitHub.
   "updates.state",
   "i18n.state",
