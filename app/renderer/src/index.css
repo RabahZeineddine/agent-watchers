@@ -194,6 +194,17 @@
     -webkit-app-region: drag;
   }
 
+  /*
+   * O arrasto vale pela posição na tela, e não por qual elemento está por
+   * cima: um painel que cobre a faixa do topo, como o do assistente, perde o
+   * clique para o arrasto se não disser que está fora dele.
+   */
+  .sem-arrasto,
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
+    -webkit-app-region: no-drag;
+  }
+
   .regiao-de-arrasto button,
   .regiao-de-arrasto a,
   .regiao-de-arrasto input,

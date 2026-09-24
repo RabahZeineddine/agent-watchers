@@ -95,7 +95,10 @@ export function Assistente() {
   const indisponivel = status.status === "ready" && !status.data.disponivel;
 
   return (
-    <aside className="border-border bg-popover/97 animate-in slide-in-from-right-4 fixed top-0 right-0 bottom-0 z-40 flex w-[420px] flex-col border-l shadow-[-24px_0_48px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl duration-200">
+    <aside
+      className="sem-arrasto border-border bg-popover/97 animate-in slide-in-from-right-4 fixed top-0 right-0 bottom-0 z-40 flex w-[420px] flex-col border-l shadow-[-24px_0_48px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl duration-200"
+      data-locum-probe="assistente-painel"
+    >
       <header className="border-border flex items-center gap-2 border-b px-4 py-3">
         <MessageSquare className="text-muted-foreground size-4" aria-hidden />
         <span className="flex-1 text-sm font-medium">{t("assistant.title")}</span>

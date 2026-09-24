@@ -1154,6 +1154,25 @@ async function checkPalette(window: BrowserWindow): Promise<string> {
   );
   if ((await estado()) !== "nao") throw new Error("Escape nao fechou a paleta de comandos");
 
+  // O painel do assistente cobre a faixa de arrasto do topo, onde mora o X
+  // dele. Sem se declarar fora do arrasto, o clique no X vira arrastar janela.
+  await tecla(
+    `(globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true })), null)`,
+  );
+  const painel = (await window.webContents.executeJavaScript(
+    `(() => {
+      const el = document.querySelector("[data-locum-probe=assistente-painel]");
+      return el === null ? null : getComputedStyle(el).getPropertyValue("-webkit-app-region");
+    })()`,
+  )) as string | null;
+  if (painel === null) throw new Error("o atalho nao abriu o painel do assistente");
+  if (painel !== "no-drag") throw new Error(`o painel do assistente ficou com app-region ${painel}, e o X cai no arrasto`);
+  await tecla(`(document.querySelector("[data-locum-probe=assistente-painel] header button")?.click(), null)`);
+  const fechou = (await window.webContents.executeJavaScript(
+    `document.querySelector("[data-locum-probe=assistente-painel]") === null`,
+  )) as boolean;
+  if (!fechou) throw new Error("o X nao fechou o painel do assistente");
+
   return t("smoke.palette");
 }
 

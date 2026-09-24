@@ -40,7 +40,7 @@ export function Paleta() {
         <div
           aria-label={t("palette.label")}
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[20vh]"
+          className="sem-arrasto fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[20vh]"
           onClick={(evento) => {
             if (evento.target === evento.currentTarget) setAberta(false);
           }}
