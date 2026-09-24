@@ -3647,6 +3647,15 @@ async function checkSlackWindow(window: BrowserWindow): Promise<string> {
   const antes = await slackService.get();
   const canal = `C-smoke-${randomUUID().slice(0, 8)}`;
 
+  // A seção monta do zero quando se chega de outra tela, e a lista de
+  // servidores do formulário vem depois, pela ponte. Escolher antes dela
+  // chegar cai numa opção que ainda não existe e deixa o botão desabilitado.
+  await esperarProbe<true>(
+    window,
+    "formulário do Slack",
+    `document.querySelector('[data-locum-slack-escolha] option[value="${FIXTURE_SERVER}"]') === null ? null : true`,
+  );
+
   try {
     const guardou = await window.webContents.executeJavaScript(
       `(() => {

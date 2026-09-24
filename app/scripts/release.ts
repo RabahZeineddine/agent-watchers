@@ -82,6 +82,16 @@ if (visibilidade !== "PUBLIC") {
   else falhar(aviso);
 }
 
+// Apagar `release/` com um Locum aberto de dentro dela corrompe a janela dele:
+// o processo guarda o índice do `app.asar` antigo e passa a ler pedaço de outro
+// arquivo. Quem abriu o app pela pasta do build tem de fechá-lo antes.
+const abertos = spawnSync("pgrep", ["-f", join(APP, "release")], { encoding: "utf8" }).stdout.trim();
+if (abertos !== "") {
+  falhar(
+    `há Locum aberto de dentro de ${join(APP, "release")} (pid ${abertos.split("\n").join(", ")}); ` +
+      "feche e instale pelo .dmg em /Applications antes de publicar",
+  );
+}
 const pacote = JSON.parse(readFileSync(join(APP, "package.json"), "utf8")) as { version: string };
 const versao = proximaVersao(pacote.version, pedido);
 const etiqueta = `v${versao}`;
