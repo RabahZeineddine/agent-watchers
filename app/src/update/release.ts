@@ -22,8 +22,13 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 
-/** O repositório que publica os releases. O ambiente troca, para teste. */
-export const UPDATE_REPO = process.env.LOCUM_UPDATE_REPO ?? "RabahZeineddine/agent-watchers";
+/**
+ * O repositório que publica os releases. O ambiente troca, para teste.
+ *
+ * Ele se chamava `agent-watchers`, e o 0.1.1 saiu com esse nome gravado: segue
+ * funcionando porque o GitHub redireciona a API do nome antigo para o novo.
+ */
+export const UPDATE_REPO = process.env.LOCUM_UPDATE_REPO ?? "RabahZeineddine/locum";
 export const UPDATE_API = process.env.LOCUM_UPDATE_API ?? "https://api.github.com";
 
 /** Nome do asset que descreve os pacotes de um release. */

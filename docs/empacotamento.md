@@ -174,7 +174,7 @@ próprio Locum, em `app/src/update/release.ts`, e funciona sem certificado.
 
 **O que o aplicativo instalado faz.** Dez segundos depois de abrir, e a cada
 seis horas, ele pergunta ao GitHub pelo release mais recente de
-`RabahZeineddine/agent-watchers`, sem token, porque o repositório é público.
+`RabahZeineddine/locum`, sem token, porque o repositório é público.
 Achando versão maior que a instalada:
 
 1. baixa o `locum-update.json` do release, que traz o sha512 de cada pacote;
